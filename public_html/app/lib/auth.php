@@ -376,9 +376,10 @@ function auth_event_label(string $event): string
 }
 
 /**
- * يسجل حدثًا في سجل الدخول والأمان مع العنوان والمتصفح، ويرفع رقم إصدار البيانات حتى يظهر
- * الحدث في صفحة الإعدادات المفتوحة تلقائيًا. لا يوقف العملية الأصلية أبدًا: أي فشل (مثل غياب
- * الجدول قبل تحديث قاعدة البيانات) يُكتب في سجل الأخطاء فقط.
+ * يسجل حدثًا في سجل الدخول والأمان مع العنوان والمتصفح. لا يرفع رقم إصدار البيانات عمدًا:
+ * محاولات الدخول الفاشلة يرسلها أي شخص من الخارج، ورفع الإصدار معها يجعل كل صفحة مفتوحة
+ * تعيد التحميل باستمرار أثناء هجوم. يظهر الحدث مع أول تحديث تالٍ للبيانات أو عند فتح الصفحة.
+ * لا يوقف العملية الأصلية أبدًا: أي فشل (مثل غياب الجدول قبل تحديث قاعدة البيانات) يُكتب في سجل الأخطاء فقط.
  * $pruneOneIn: حذف السجلات القديمة باحتمال 1 من N بعد التسجيل (القيمة 1 تحذف دائمًا).
  */
 function auth_event(PDO $pdo, string $event, string $username, int $pruneOneIn = AUTH_EVENTS_PRUNE_ONE_IN): void
@@ -404,7 +405,6 @@ function auth_event(PDO $pdo, string $event, string $username, int $pruneOneIn =
 
         $pdo->prepare('INSERT INTO auth_events (event, username, ip, user_agent, created_at) VALUES (?, ?, ?, ?, ?)')
             ->execute([$event, $username, $ip, $agent, now()]);
-        data_version_bump($pdo);
 
         if ($pruneOneIn <= 1 || random_int(1, $pruneOneIn) === 1) {
             auth_events_prune($pdo);

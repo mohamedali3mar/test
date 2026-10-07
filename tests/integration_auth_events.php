@@ -161,7 +161,7 @@ check_eq('  اسم المستخدم', 'admin', $e[0]['username'] ?? null);
 check_eq('  العنوان من client_ip_key', '198.51.100.23', $e[0]['ip'] ?? null);
 check_eq('  المتصفح من الترويسة', $_SERVER['HTTP_USER_AGENT'], $e[0]['user_agent'] ?? null);
 check('  الوقت الآن', abs(strtotime((string) ($e[0]['created_at'] ?? '')) - time()) <= 5, (string) ($e[0]['created_at'] ?? ''));
-check_eq('كل حدث يرفع رقم إصدار البيانات (للتحديث التلقائي)', $v0 + 1, (int) data_version($pdo));
+check_eq('الحدث لا يرفع رقم إصدار البيانات (حتى لا تعيد الصفحات المفتوحة التحميل أثناء هجوم)', $v0, (int) data_version($pdo));
 
 $mark = last_event_id($pdo);
 $_SERVER['HTTP_USER_AGENT'] = str_repeat('x', 300);
@@ -275,7 +275,7 @@ $mark = last_event_id($pdo);
 $m7 = attempt_login($pdo, 'admin', 'Correct-Horse-9');
 check('كلمة المرور الصحيحة محظورة أيضًا أثناء الحظر', str_contains((string) $m7, 'محاولات دخول كثيرة') && current_user_id() === 0);
 check_eq('تكرار المحاولة أثناء الحظر خلال دقيقة لا يضيف صفًا (حماية من إغراق السجل)', [], events_after($pdo, $mark));
-check_eq('  ولا يرفع رقم الإصدار مرة أخرى', $v1 + 1, (int) data_version($pdo));
+check_eq('  ولا يرفع رقم الإصدار', $v1, (int) data_version($pdo));
 check_eq('لا دخول ناجح أثناء الحظر', 0, (int) $pdo->query("SELECT COUNT(*) FROM auth_events WHERE event = 'login_ok' AND id > $mark")->fetchColumn());
 $pdo->prepare("UPDATE auth_events SET created_at = ? WHERE event = 'login_locked'")->execute([date('Y-m-d H:i:s', time() - 61)]);
 attempt_login($pdo, 'admin', 'wrong-again');
