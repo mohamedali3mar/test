@@ -174,7 +174,10 @@ function insert_document(PDO $pdo, array $d): int
 {
     $cols = ['kind', 'doc_no', 'warehouse_id', 'warehouse_name', 'to_warehouse_id', 'to_warehouse_name',
         'party_name', 'reference', 'notes', 'line_count', 'total_qty', 'total_volume_m3', 'total_amount',
-        'currency', 'request_token', 'request_hash', 'created_at', 'created_by'];
+        'currency', 'request_token', 'request_hash', 'created_at', 'created_by',
+        // الحسابات (المرحلة الثانية): التاريخ المحاسبي افتراضيًا هو وقت الإنشاء
+        'doc_date', 'party_id', 'payment_type', 'paid_amount', 'cash_box_id', 'cash_box_name', 'total_cost'];
+    $d['doc_date'] ??= $d['created_at'] ?? null;
     $values = [];
     foreach ($cols as $c) {
         $values[] = $d[$c] ?? null;
@@ -188,7 +191,7 @@ function insert_line(PDO $pdo, int $docId, array $l): void
 {
     $cols = ['line_no', 'item_id', 'wood_type_name', 'width_unit', 'thickness_unit', 'length_unit', 'quantity',
         'piece_volume_m3', 'total_volume_m3', 'price_per_m3', 'amount', 'balance_before', 'balance_after',
-        'to_balance_before', 'to_balance_after'];
+        'to_balance_before', 'to_balance_after', 'cost_per_m3', 'cost_amount'];
     $values = [$docId];
     foreach ($cols as $c) {
         $values[] = $l[$c] ?? null;

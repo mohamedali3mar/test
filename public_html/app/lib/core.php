@@ -26,6 +26,7 @@ const DEFAULT_SETTINGS = [
     'digits'          => 'arabic',   // arabic | western
     'volume_decimals' => 'full',     // full | 2..6
     'volume_pad'      => '0',        // 1 = إظهار الأصفار في وضع الخانات الثابتة
+    'closing_date'    => '',         // تاريخ الإقفال Y-m-d: لا تسجيل ولا إلغاء بتاريخ في يومه أو قبله
 ];
 
 function app_config(): array
