@@ -31,7 +31,7 @@ render_header(doc_print_title($kind) . ' ' . fmt_int((int) $d['doc_no']), 'docum
 
   <dl class="print-meta">
     <div><dt>رقم <?= $kind === 'sale' ? 'الفاتورة' : 'الإذن' ?></dt><dd><?= h(fmt_int((int) $d['doc_no'])) ?></dd></div>
-    <div><dt>التاريخ</dt><dd><?= h(fmt_datetime($d['created_at'])) ?></dd></div>
+    <div><dt>التاريخ</dt><dd><?= h(fmt_datetime($d['doc_date'])) ?></dd></div>
     <?php if ($kind === 'transfer'): ?>
       <div><dt>من مخزن</dt><dd><?= h($d['warehouse_name']) ?></dd></div>
       <div><dt>إلى مخزن</dt><dd><?= h((string) $d['to_warehouse_name']) ?></dd></div>
@@ -40,6 +40,9 @@ render_header(doc_print_title($kind) . ' ' . fmt_int((int) $d['doc_no']), 'docum
     <?php endif; ?>
     <?php if ($d['party_name'] !== null): ?>
       <div><dt><?= $kind === 'sale' ? 'العميل' : 'المورد' ?></dt><dd><?= h($d['party_name']) ?></dd></div>
+    <?php endif; ?>
+    <?php if ($kind === 'sale' && $d['payment_type'] !== null): /* لا تُطبع التكلفة أو الربح أبدًا */ ?>
+      <div><dt>طريقة الدفع</dt><dd><?= h(PAYMENT_TYPE_LABELS[$d['payment_type']] ?? $d['payment_type']) ?></dd></div>
     <?php endif; ?>
     <?php if ($d['reference'] !== null): ?>
       <div><dt>المرجع</dt><dd><?= h($d['reference']) ?></dd></div>
@@ -95,6 +98,13 @@ render_header(doc_print_title($kind) . ' ' . fmt_int((int) $d['doc_no']), 'docum
       <span>إجمالي القيمة</span>
       <strong><?= h(fmt_money_currency((string) $d['total_amount'], $d['currency'])) ?></strong>
     </p>
+    <?php if ($d['payment_type'] !== null):
+        $printPaid = money_to_piasters((string) $d['paid_amount']); ?>
+      <dl class="print-meta">
+        <div><dt>المدفوع</dt><dd><?= h(fmt_piasters($printPaid)) ?></dd></div>
+        <div><dt>المتبقي</dt><dd><?= h(fmt_piasters(money_to_piasters((string) $d['total_amount']) - $printPaid)) ?></dd></div>
+      </dl>
+    <?php endif; ?>
   <?php endif; ?>
   <?php if ($rounded && $kind === 'sale'): ?>
     <p class="print-note">الأحجام معروضة مقربة، والقيمة محسوبة من الحجم الدقيق.</p>

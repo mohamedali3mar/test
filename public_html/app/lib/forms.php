@@ -139,3 +139,91 @@ function warehouse_select(string $name, string $id, array $warehouses, string $s
         . ($remember ? ' data-remember="' . h($name) . '"' . ($selected !== '' ? ' data-posted="1"' : '') : '') . '>'
         . options_html($warehouses, $selected, $placeholder) . '</select>';
 }
+
+/* ===================== حقول الحساب: الطرف وطريقة الدفع والخزنة والتاريخ ===================== */
+
+const PAYMENT_FORM_FIELDS = ['party_id', 'payment_type', 'paid_amount', 'cash_box_id', 'doc_date'];
+
+/** القيم الافتراضية لحقول الحساب في نموذج جديد */
+function payment_form_defaults(array $boxes): array
+{
+    return [
+        'party_id' => '', 'payment_type' => 'cash', 'paid_amount' => '',
+        'cash_box_id' => $boxes ? (string) $boxes[0]['id'] : '', 'doc_date' => '',
+    ];
+}
+
+/**
+ * حقول العميل/المورد وطريقة الدفع والمبلغ المدفوع والخزنة، والتاريخ للمدير فقط.
+ * تعمل بدون JavaScript؛ payment.js يخفي المبلغ المدفوع إلا في الدفع الجزئي،
+ * وفي الوارد ($costField) يخفي تفاصيل الدفع حتى تُدخل التكلفة.
+ */
+function render_payment_fields(array $form, array $errors, string $partyKind, array $parties, array $boxes, string $costField = ''): string
+{
+    $isSale = $partyKind === 'customer';
+    ob_start(); ?>
+<fieldset class="payment" data-payment<?= $costField !== '' ? ' data-payment-cost="' . h($costField) . '"' : '' ?>>
+  <legend><?= $isSale ? 'العميل والدفع' : 'المورد والدفع' ?></legend>
+  <div class="field-row">
+    <div class="field">
+      <label for="party_id"><?= $isSale ? 'حساب العميل' : 'حساب المورد' ?></label>
+      <select id="party_id" name="party_id"<?= field_attrs($errors, 'party_id', 'hint-party') ?>>
+        <option value=""><?= $isSale ? 'عميل نقدي (بدون حساب)' : 'بدون حساب مورد' ?></option>
+        <?php foreach ($parties as $p): ?>
+          <option value="<?= (int) $p['id'] ?>"<?= (string) $p['id'] === (string) $form['party_id'] ? ' selected' : '' ?>><?= h($p['name']) ?></option>
+        <?php endforeach; ?>
+      </select>
+      <p class="hint" id="hint-party"><?= $isSale
+          ? 'الدفع الآجل والجزئي يحتاجان حساب عميل.'
+          : 'طريقة الدفع تُطبق عند إدخال التكلفة. الشراء الآجل والجزئي يحتاجان حساب مورد، والشراء بتكلفة بدون مورد يُصرف نقدًا من الخزنة.' ?></p>
+      <?= field_error($errors, 'party_id') ?>
+    </div>
+    <?php if (acct_can('manual_date')): ?>
+      <div class="field">
+        <label for="doc_date">تاريخ المستند <span class="optional">(فارغ = اليوم)</span></label>
+        <input type="date" id="doc_date" name="doc_date" value="<?= h($form['doc_date']) ?>" max="<?= h(date('Y-m-d')) ?>"<?= field_attrs($errors, 'doc_date') ?>>
+        <?= field_error($errors, 'doc_date') ?>
+      </div>
+    <?php endif; ?>
+  </div>
+  <?php if (!acct_can('manual_date')): ?><?= field_error($errors, 'doc_date') ?><?php endif; ?>
+  <div data-payment-details>
+    <fieldset class="payment-type">
+      <legend>طريقة الدفع</legend>
+      <?php foreach (PAYMENT_TYPE_LABELS as $value => $label): ?>
+        <label><input type="radio" name="payment_type" value="<?= h($value) ?>" data-payment-type<?= $form['payment_type'] === $value ? ' checked' : '' ?>> <?= h($label) ?></label>
+      <?php endforeach; ?>
+      <?= field_error($errors, 'payment_type') ?>
+    </fieldset>
+    <div class="field-row">
+      <div class="field" data-paid-field>
+        <label for="paid_amount">المبلغ المدفوع <span class="optional">(للدفع الجزئي)</span></label>
+        <input type="text" inputmode="decimal" id="paid_amount" name="paid_amount" value="<?= h($form['paid_amount']) ?>" autocomplete="off" maxlength="20"<?= field_attrs($errors, 'paid_amount') ?>>
+        <?= field_error($errors, 'paid_amount') ?>
+      </div>
+      <div class="field">
+        <label for="cash_box_id">الخزنة</label>
+        <select id="cash_box_id" name="cash_box_id"<?= field_attrs($errors, 'cash_box_id') ?>>
+          <?php foreach ($boxes as $b): ?>
+            <option value="<?= (int) $b['id'] ?>"<?= (string) $b['id'] === (string) $form['cash_box_id'] ? ' selected' : '' ?>><?= h($b['name']) ?></option>
+          <?php endforeach; ?>
+        </select>
+        <?= field_error($errors, 'cash_box_id') ?>
+      </div>
+    </div>
+  </div>
+</fieldset>
+<script src="<?= h(asset('js/payment.js')) ?>" defer></script>
+<?php
+    return (string) ob_get_clean();
+}
+
+/** حقول الحساب كحقول مخفية (صفحة المراجعة) */
+function payment_hidden_fields(array $form): string
+{
+    $html = '';
+    foreach (PAYMENT_FORM_FIELDS as $f) {
+        $html .= '<input type="hidden" name="' . h($f) . '" value="' . h((string) ($form[$f] ?? '')) . '">';
+    }
+    return $html;
+}

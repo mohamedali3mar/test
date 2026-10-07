@@ -4,7 +4,8 @@ defined('APP_ROOT') || exit;
 $pdo = db();
 $errors = [];
 $fields = ['warehouse_id', 'wood_type_id', 'width', 'width_unit', 'thickness', 'thickness_unit', 'length', 'length_unit',
-    'quantity', 'party_name', 'reference', 'notes', 'request_token'];
+    'quantity', 'party_name', 'reference', 'notes', 'request_token', 'cost_per_m3', ...PAYMENT_FORM_FIELDS];
+$boxes = cash_boxes_for_user($pdo);
 $posted = $_SERVER['REQUEST_METHOD'] === 'POST';
 
 if (input($_GET, 'clear') === '1') {
@@ -24,7 +25,8 @@ $defaults = [
     'party_name' => (string) ($sticky['party_name'] ?? ''),
     'reference' => (string) ($sticky['reference'] ?? ''),
     'request_token' => new_request_token(),
-];
+    'cost_per_m3' => '',
+] + payment_form_defaults($boxes);
 $form = $posted ? string_inputs($_POST, $fields) : $defaults;
 
 if ($posted) {
@@ -72,6 +74,12 @@ render_header('إضافة وارد', 'receive');
       <div><dt>العدد</dt><dd><?= h(fmt_int((int) $doneLine['quantity'])) ?> قطعة</dd></div>
       <div><dt>الحجم</dt><dd><?= h(fmt_volume($doneLine['total_volume_m3'])) ?> م³</dd></div>
       <div><dt>الرصيد بعد الإضافة</dt><dd><?= h(fmt_int((int) $doneLine['balance_after'])) ?> قطعة</dd></div>
+      <?php if ($done['payment_type'] !== null): $donePaid = money_to_piasters((string) $done['paid_amount']); ?>
+        <div><dt>قيمة الشراء</dt><dd><?= h(fmt_money_currency((string) $done['total_cost'])) ?></dd></div>
+        <div><dt>طريقة الدفع</dt><dd><?= h(PAYMENT_TYPE_LABELS[$done['payment_type']] ?? '') ?></dd></div>
+        <div><dt>المدفوع</dt><dd><?= h(fmt_piasters($donePaid)) ?></dd></div>
+        <div><dt>المتبقي</dt><dd><?= h(fmt_piasters(money_to_piasters((string) $done['total_cost']) - $donePaid)) ?></dd></div>
+      <?php endif; ?>
     </dl>
     <p class="row-actions">
       <a href="<?= h(url('document', ['id' => (int) $done['id']])) ?>">تفاصيل المستند</a>
@@ -129,6 +137,13 @@ render_header('إضافة وارد', 'receive');
     <?= field_error($errors, 'quantity') ?>
   </div>
 
+  <div class="field field-narrow">
+    <label for="cost_per_m3">تكلفة المتر المكعب <span class="optional">(اختياري)</span></label>
+    <input type="text" inputmode="decimal" id="cost_per_m3" name="cost_per_m3" value="<?= h($form['cost_per_m3']) ?>" autocomplete="off" maxlength="20"<?= field_attrs($errors, 'cost_per_m3', 'hint-cost') ?>>
+    <p class="hint" id="hint-cost">بدون تكلفة يُقيَّم الوارد بمتوسط تكلفة الصنف الحالي. قيمة الشراء = حجم الكمية × تكلفة المتر، وتظهر في المراجعة على الخادم بعد الحفظ.</p>
+    <?= field_error($errors, 'cost_per_m3') ?>
+  </div>
+
   <section class="calc-panel" aria-labelledby="calc-title">
     <h2 id="calc-title">الحساب</h2>
     <dl class="facts">
@@ -143,7 +158,7 @@ render_header('إضافة وارد', 'receive');
 
   <div class="field-row">
     <div class="field">
-      <label for="party_name">اسم المورد <span class="optional">(اختياري)</span></label>
+      <label for="party_name">اسم المورد بدون حساب <span class="optional">(اختياري)</span></label>
       <input type="text" id="party_name" name="party_name" value="<?= h($form['party_name']) ?>" maxlength="120"<?= field_attrs($errors, 'party_name') ?>>
       <?= field_error($errors, 'party_name') ?>
     </div>
@@ -153,6 +168,7 @@ render_header('إضافة وارد', 'receive');
       <?= field_error($errors, 'reference') ?>
     </div>
   </div>
+  <?= render_payment_fields($form, $errors, 'supplier', parties_for_select($pdo, 'supplier'), $boxes, 'cost_per_m3') ?>
   <div class="field">
     <label for="notes">ملاحظات <span class="optional">(اختياري)</span></label>
     <textarea id="notes" name="notes" rows="3" maxlength="1000"<?= field_attrs($errors, 'notes', 'hint-notes') ?>><?= h($form['notes']) ?></textarea>

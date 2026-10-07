@@ -6,10 +6,13 @@ defined('APP_ROOT') || exit;
  *
  * قواعد ثابتة في كل العمليات:
  *  - كل عملية معاملة واحدة: الرصيد والمستند وأسطره والترقيم إما تُحفظ معًا أو لا يُحفظ شيء.
- *  - ترتيب الأقفال واحد دائمًا لمنع الجمود:
- *      (الإلغاء فقط) صف المستند ← صفوف items مرتبة تصاعديًا (حصري في الوارد، مشترك في غيره)
- *      ← صفوف stock مرتبة تصاعديًا (item_id, warehouse_id) ← صف عداد الترقيم ← إدراج المستند
- *      ← رفع data_version آخر شيء.
+ *  - ترتيب الأقفال واحد دائمًا لمنع الجمود (الترتيب الكامل في رأس accounting.php):
+ *      (الإلغاء فقط) صف المستند ← صف العميل أو المورد ← صفوف الخزائن تصاعديًا
+ *      ← صفوف items مرتبة تصاعديًا (FOR UPDATE في الوارد والبيع وإلغائهما لأن قيمة المخزون تتغير،
+ *        ومشترك LOCK IN SHARE MODE في التحويل وإلغائه) ثم قراءة Q المقفلة من stock
+ *      ← صفوف stock مرتبة تصاعديًا (item_id, warehouse_id) ← صف عداد الترقيم ← إدراج المستند وأسطره
+ *      ← قيود الدفاتر ← سجل المراقبة ← رفع data_version آخر شيء.
+ *  - تكلفة المخزون بالمتوسط المرجح في costing.php، والمبالغ بالقروش (int) كما في accounting.php.
  *  - لا قراءات غير مقفلة داخل المعاملات (تُقرأ البيانات الثابتة قبلها)، توافقًا مع MariaDB 11.6+.
  *  - الرصيد الملزم يُقرأ بعد القفل (SELECT ... FOR UPDATE)، وليس من القيمة المعروضة في الواجهة.
  *  - رمز الطلب request_token فريد، ومعه بصمة المحتوى request_hash، فإعادة الإرسال لا تكرر العملية.
@@ -237,6 +240,153 @@ function translate_db_error(PDOException $e, PDO $pdo, string $token, string $ki
     throw $e;
 }
 
+/* ===================== الطرف وطريقة الدفع والتاريخ ===================== */
+
+/**
+ * يقرأ حقول الحساب المشتركة بين الوارد والبيع (قبل المعاملة، بدون قفل): الطرف، طريقة الدفع،
+ * المبلغ المدفوع كما أُدخل، الخزنة، والتاريخ المحاسبي. المقارنة بالإجمالي في payment_settle.
+ *   - payment_type غير مرسل = نقدي. cash_box_id غير مرسل = أول خزنة متاحة للمستخدم.
+ */
+function payment_fields(PDO $pdo, array $in, string $partyKind, array &$errors): array
+{
+    $noun = $partyKind === 'customer' ? 'العميل' : 'المورد';
+    $party = null;
+    $rawParty = trim(is_string($in['party_id'] ?? null) || is_int($in['party_id'] ?? null) ? (string) $in['party_id'] : '');
+    if ($rawParty !== '' && $rawParty !== '0') {
+        $stmt = $pdo->prepare('SELECT id, kind, name, balance, credit_limit, is_active FROM parties WHERE id = ?');
+        $stmt->execute([ctype_digit($rawParty) ? (int) $rawParty : 0]);
+        $party = $stmt->fetch() ?: null;
+        if (!$party || $party['kind'] !== $partyKind) {
+            $errors['party_id'] = "{$noun} غير موجود. اختر من القائمة.";
+            $party = null;
+        } elseif (!(int) $party['is_active']) {
+            $errors['party_id'] = "حساب {$noun} «{$party['name']}» موقوف.";
+            $party = null;
+        }
+    }
+    $type = array_key_exists('payment_type', $in) ? (is_string($in['payment_type']) ? $in['payment_type'] : '') : 'cash';
+    if (!isset(PAYMENT_TYPE_LABELS[$type])) {
+        $errors['payment_type'] = 'اختر طريقة الدفع.';
+        $type = 'cash';
+    }
+    $boxes = [];
+    foreach (cash_boxes_for_user($pdo) as $b) {
+        $boxes[(int) $b['id']] = $b;
+    }
+    if (array_key_exists('cash_box_id', $in)) {
+        $rawBox = is_string($in['cash_box_id']) || is_int($in['cash_box_id']) ? trim((string) $in['cash_box_id']) : '';
+        $box = ctype_digit($rawBox) ? ($boxes[(int) $rawBox] ?? null) : null;
+        $boxError = $rawBox === '' ? 'اختر الخزنة.' : 'الخزنة غير موجودة أو موقوفة. اختر من القائمة.';
+    } else {
+        $box = $boxes ? reset($boxes) : null;
+        $boxError = 'لا توجد خزنة نشطة. أضف خزنة أولًا.';
+    }
+    $date = acct_doc_date($in, $errors);
+    $rawDate = trim(is_string($in['doc_date'] ?? null) ? $in['doc_date'] : '');
+    return [
+        'party' => $party,
+        'payment_type' => $type,
+        'paid_raw' => is_string($in['paid_amount'] ?? null) ? $in['paid_amount'] : '',
+        'cash_box' => $box,
+        'cash_box_error' => $box ? null : $boxError,
+        'doc_date' => $date,
+        // للبصمة: التاريخ كما اختاره المستخدم (فارغ = اليوم وقت الحفظ) حتى تبقى ثابتة عند إعادة الإرسال
+        'date_key' => $rawDate === '' ? '' : substr($date, 0, 10),
+        'noun' => $noun,
+    ];
+}
+
+/**
+ * يطبق قواعد طريقة الدفع على الإجمالي (بالقروش) ويكمل: paid، remaining، cash_box (null إذا لم يُدفع شيء).
+ *   نقدي: المدفوع = الإجمالي والخزنة مطلوبة والطرف اختياري.
+ *   آجل: الطرف مطلوب والمدفوع صفر.  جزئي: الطرف مطلوب و 0 < المدفوع < الإجمالي والخزنة مطلوبة.
+ */
+function payment_settle(array $pay, int $total, array &$errors): array
+{
+    $type = $pay['payment_type'];
+    $paid = 0;
+    if ($type !== 'cash' && !$pay['party']) {
+        $errors['party_id'] ??= sprintf('اختر %s: الدفع %s يحتاج حسابًا.', $pay['noun'], PAYMENT_TYPE_LABELS[$type]);
+    }
+    if ($type === 'cash') {
+        $paid = $total;
+    } elseif ($type === 'partial') {
+        [$p, $err] = parse_money_input($pay['paid_raw'], 'المبلغ المدفوع');
+        if ($err !== null) {
+            $errors['paid_amount'] = $err;
+        } elseif ($p >= $total) {
+            $errors['paid_amount'] = sprintf('المبلغ المدفوع في الدفع الجزئي يجب أن يكون أقل من الإجمالي (%s). للدفع الكامل اختر «نقدي».', fmt_piasters($total));
+        } else {
+            $paid = $p;
+        }
+    }
+    if ($paid > 0 && !$pay['cash_box']) {
+        $errors['cash_box_id'] ??= (string) $pay['cash_box_error'];
+    }
+    $pay['paid'] = $paid;
+    $pay['total'] = $total;
+    $pay['remaining'] = $total - $paid;
+    if ($paid === 0) {
+        $pay['cash_box'] = null;
+    }
+    return $pay;
+}
+
+/** خطأ حد الائتمان إن وُجد. $balance رصيد العميل الحالي بالقروش */
+function credit_limit_error(array $party, int $balance, int $remaining): ?string
+{
+    if ($remaining <= 0 || $party['credit_limit'] === null) {
+        return null;
+    }
+    $limit = money_to_piasters((string) $party['credit_limit']);
+    if ($balance + $remaining <= $limit) {
+        return null;
+    }
+    return sprintf(
+        'تتجاوز الفاتورة حد الائتمان للعميل «%s»: الحد %s والرصيد الحالي %s، والمتاح للبيع الآجل %s.',
+        $party['name'],
+        fmt_piasters($limit),
+        fmt_party_balance($balance, 'customer'),
+        fmt_piasters(max(0, $limit - $balance))
+    );
+}
+
+/** قيم البصمة لحقول الحساب */
+function payment_hash_parts(array $pay): array
+{
+    return [
+        $pay['party'] ? (int) $pay['party']['id'] : 0,
+        $pay['payment_type'], $pay['paid'],
+        $pay['cash_box'] ? (int) $pay['cash_box']['id'] : 0,
+        $pay['date_key'],
+    ];
+}
+
+/** أعمدة المستند الخاصة بالحساب */
+function payment_document_columns(array $pay, int $totalCost): array
+{
+    return [
+        'doc_date' => $pay['doc_date'],
+        'party_id' => $pay['party'] ? (int) $pay['party']['id'] : null,
+        'payment_type' => $pay['payment_type'],
+        'paid_amount' => $pay['payment_type'] !== null ? piasters_to_money($pay['paid']) : null,
+        'cash_box_id' => $pay['cash_box'] ? (int) $pay['cash_box']['id'] : null,
+        'cash_box_name' => $pay['cash_box']['name'] ?? null,
+        'total_cost' => piasters_to_money($totalCost),
+    ];
+}
+
+/** يقفل الطرف والخزنة (الخطوتان 2 و3) ويعيد [صف الطرف أو null, صف الخزنة أو null] */
+function lock_payment_rows(PDO $pdo, array $pay, string $partyKind): array
+{
+    $party = $pay['party'] ? lock_party($pdo, (int) $pay['party']['id'], $partyKind) : null;
+    $box = null;
+    if ($pay['cash_box']) {
+        $box = lock_cash_boxes($pdo, [(int) $pay['cash_box']['id']])[(int) $pay['cash_box']['id']];
+    }
+    return [$party, $box];
+}
+
 /* ===================== الوارد ===================== */
 
 function validate_receipt(PDO $pdo, array $in): array
@@ -269,6 +419,16 @@ function validate_receipt(PDO $pdo, array $in): array
         'reference' => ['مرجع التوريد', 120, false],
         'notes' => ['الملاحظات', 1000, true],
     ], $errors);
+    // تكلفة المتر المكعب اختيارية؛ بدونها يُقيَّم الوارد بمتوسط التكلفة الحالي (أو بلا قيمة)
+    $costRaw = trim(is_string($in['cost_per_m3'] ?? null) ? $in['cost_per_m3'] : '');
+    $cost = null;
+    if ($costRaw !== '') {
+        [$cost, $err] = parse_price($costRaw);
+        if ($err !== null) {
+            $errors['cost_per_m3'] = str_replace(['سعر المتر المكعب', 'السعر'], ['تكلفة المتر المكعب', 'التكلفة'], $err);
+        }
+    }
+    $pay = payment_fields($pdo, $in, 'supplier', $errors);
     $token = check_token($in, $errors);
     if ($errors) {
         throw new ValidationException($errors);
@@ -276,6 +436,18 @@ function validate_receipt(PDO $pdo, array $in): array
 
     $pieceUm3 = piece_volume_um3($dims['width']['um'], $dims['thickness']['um'], $dims['length']['um']);
     $totalUm3 = Num::mul($pieceUm3, (string) $qty);
+    if ($cost !== null) {
+        // وارد بتكلفة: له قيمة معروفة وطريقة دفع (بدون مورد = شراء نقدي من الخزنة)
+        $pay = payment_settle($pay, (int) sale_amount_piasters($totalUm3, $cost), $errors);
+        if ($errors) {
+            throw new ValidationException($errors);
+        }
+    } else {
+        $pay = ['payment_type' => null, 'paid' => 0, 'total' => null, 'remaining' => 0, 'cash_box' => null] + $pay;
+    }
+    if ($pay['party']) {
+        $text['party_name'] = $pay['party']['name'];
+    }
     return $text + [
         'warehouse' => $wh,
         'type' => $type,
@@ -283,6 +455,9 @@ function validate_receipt(PDO $pdo, array $in): array
         'quantity' => $qty,
         'piece_m3' => um3_to_m3($pieceUm3),
         'total_m3' => um3_to_m3($totalUm3),
+        'total_um3' => $totalUm3,
+        'cost_piasters' => $cost,
+        'pay' => $pay,
         'request_token' => $token,
         'hash' => request_hash([
             'in', (int) $wh['id'], (int) $type['id'],
@@ -290,6 +465,7 @@ function validate_receipt(PDO $pdo, array $in): array
             $dims['thickness']['um'], $dims['thickness']['unit'],
             $dims['length']['um'], $dims['length']['unit'],
             $qty, $text['party_name'], $text['reference'], $text['notes'],
+            $cost, ...payment_hash_parts($pay),
         ]),
     ];
 }
@@ -307,6 +483,8 @@ function record_receipt(PDO $pdo, int $userId, array $in): array
             $d = $v['dims'];
             $wid = (int) $v['warehouse']['id'];
             $identity = [(int) $v['type']['id'], $d['width']['um'], $d['thickness']['um'], $d['length']['um']];
+            $pay = $v['pay'];
+            [$supplier, $box] = lock_payment_rows($pdo, $pay, 'supplier');
 
             // الصنف: يُنشأ إن لم يوجد، ثم يُقرأ بمفتاحه الفريد مع القفل
             $pdo->prepare(
@@ -319,6 +497,8 @@ function record_receipt(PDO $pdo, int $userId, array $in): array
             if ($itemId <= 0) {
                 throw new RuntimeException('Item upsert failed');
             }
+            // قيمة المخزون الحالية V وكل القطع Q (قراءة مقفلة بعد قفل الصنف)
+            $cost = costing_lock_items($pdo, [$itemId])[$itemId];
 
             $bal = lock_stock_rows($pdo, [[$itemId, $wid]], true);
             $before = (int) $bal[$itemId . ':' . $wid];
@@ -326,6 +506,7 @@ function record_receipt(PDO $pdo, int $userId, array $in): array
             if ($after > MAX_STOCK) {
                 throw new ValidationException(['quantity' => 'الرصيد الناتج أكبر من الحد المسموح للصنف.']);
             }
+            $value = costing_receipt_value($cost['value'], $cost['qty'], $v['quantity'], $v['total_um3'], $v['cost_piasters']);
 
             $docNo = counter_next($pdo, DOC_COUNTERS['in']);
             $docId = insert_document($pdo, [
@@ -335,14 +516,36 @@ function record_receipt(PDO $pdo, int $userId, array $in): array
                 'line_count' => 1, 'total_qty' => $v['quantity'], 'total_volume_m3' => $v['total_m3'],
                 'request_token' => $v['request_token'], 'request_hash' => $v['hash'],
                 'created_at' => $now, 'created_by' => $userId,
-            ]);
+            ] + payment_document_columns($pay, $value));
             insert_line($pdo, $docId, [
                 'line_no' => 1, 'item_id' => $itemId, 'wood_type_name' => $v['type']['name'],
                 'width_unit' => $d['width']['unit'], 'thickness_unit' => $d['thickness']['unit'], 'length_unit' => $d['length']['unit'],
                 'quantity' => $v['quantity'], 'piece_volume_m3' => $v['piece_m3'], 'total_volume_m3' => $v['total_m3'],
                 'balance_before' => $before, 'balance_after' => $after,
+                'cost_per_m3' => $v['cost_piasters'] !== null ? Num::toDecimal($v['cost_piasters'], 2) : null,
+                'cost_amount' => piasters_to_money($value),
             ]);
             set_stock($pdo, $itemId, $wid, $after, $now);
+            costing_set_value($pdo, $itemId, $cost['value'] + $value);
+
+            // القيود: المورد +التكلفة، والمدفوع يخرج من الخزنة (لا تصبح سالبة)
+            $desc = 'وارد رقم ' . $docNo;
+            $date = $pay['doc_date'];
+            if ($pay['payment_type'] !== null) {
+                if ($supplier) {
+                    ledger_party($pdo, (int) $supplier['id'], $date, $docId, null, 'purchase', $value, $desc);
+                    if ($pay['paid'] > 0) {
+                        ledger_party($pdo, (int) $supplier['id'], $date, $docId, null, 'purchase_payment', -$pay['paid'], 'دفعة ' . $desc);
+                    }
+                }
+                if ($pay['paid'] > 0) {
+                    ledger_cash($pdo, (int) $box['id'], $date, $docId, null, 'purchase', -$pay['paid'], $desc);
+                }
+            }
+            acct_audit($pdo, 'document_create', $desc, 'document', $docId, [
+                'total_cost' => piasters_to_money($value), 'payment_type' => $pay['payment_type'],
+                'paid' => piasters_to_money($pay['paid']), 'doc_date' => $date,
+            ]);
             data_version_bump($pdo);
             return ['id' => $docId, 'kind' => 'in', 'doc_no' => $docNo, 'duplicate' => false];
         });
@@ -482,6 +685,7 @@ function validate_sale(PDO $pdo, array $in, bool $checkStock = true): array
         'party_name' => ['اسم العميل', 120, false],
         'notes' => ['الملاحظات', 1000, true],
     ], $errors);
+    $pay = payment_fields($pdo, $in, 'customer', $errors);
     $token = check_token($in, $errors);
     if ($errors) {
         throw new ValidationException($errors);
@@ -493,17 +697,32 @@ function validate_sale(PDO $pdo, array $in, bool $checkStock = true): array
         }
     }
     [$lines, $totQty, $totM3, $totAmount] = lines_with_figures($lines);
+    $pay = payment_settle($pay, money_to_piasters($totAmount), $errors);
+    if (!$errors && $pay['party']) {
+        // فحص مبدئي لحد الائتمان (يُعاد بعد قفل حساب العميل)
+        if ($err = credit_limit_error($pay['party'], money_to_piasters((string) $pay['party']['balance']), $pay['remaining'])) {
+            $errors['party_id'] = $err;
+        }
+    }
+    if ($errors) {
+        throw new ValidationException($errors);
+    }
+    if ($pay['party']) {
+        $text['party_name'] = $pay['party']['name'];
+    }
     return $text + [
         'warehouse' => $wh,
         'lines' => $lines,
         'total_qty' => $totQty,
         'total_m3' => $totM3,
         'total_amount' => $totAmount,
+        'pay' => $pay,
         'request_token' => $token,
         'hash' => request_hash([
             'sale', (int) $wh['id'],
             array_values(array_map(fn ($l) => [(int) $l['item']['id'], $l['quantity'], $l['price_piasters']], $lines)),
             $text['party_name'], $text['notes'],
+            ...payment_hash_parts($pay),
         ]),
     ];
 }
@@ -526,7 +745,13 @@ function record_sale(PDO $pdo, int $userId, array $in): array
     $currency = app_setting('currency');
     try {
         return db_transaction($pdo, function (PDO $pdo) use ($v, $wid, $userId, $itemIds, $currency) {
-            lock_items_shared($pdo, $itemIds);
+            $pay = $v['pay'];
+            [$customer, $box] = lock_payment_rows($pdo, $pay, 'customer');
+            if ($customer && ($err = credit_limit_error($customer, money_to_piasters((string) $customer['balance']), $pay['remaining']))) {
+                throw new ValidationException(['party_id' => $err]);
+            }
+            // الأصناف FOR UPDATE لأن قيمة المخزون تتغير، مع Q بقراءة مقفلة
+            $costs = costing_lock_items($pdo, $itemIds);
             $pairs = array_map(fn ($id) => [$id, $wid], $itemIds);
             $bal = lock_stock_rows($pdo, $pairs, false);
             $available = [];
@@ -535,6 +760,15 @@ function record_sale(PDO $pdo, int $userId, array $in): array
             }
             if ($errors = stock_errors($v['lines'], $available, ' الآن')) {
                 throw new ValidationException($errors);
+            }
+
+            // تكلفة البضاعة المباعة لكل سطر بالمتوسط المرجح: V × q ÷ Q
+            $cogs = [];
+            $totalCost = 0;
+            foreach ($v['lines'] as $idx => $l) {
+                $c = $costs[(int) $l['item']['id']];
+                $cogs[$idx] = costing_sale_cogs($c['value'], $c['qty'], $l['quantity']);
+                $totalCost += $cogs[$idx];
             }
 
             $now = now();
@@ -547,10 +781,11 @@ function record_sale(PDO $pdo, int $userId, array $in): array
                 'total_amount' => $v['total_amount'], 'currency' => $currency,
                 'request_token' => $v['request_token'], 'request_hash' => $v['hash'],
                 'created_at' => $now, 'created_by' => $userId,
-            ]);
-            foreach ($v['lines'] as $l) {
+            ] + payment_document_columns($pay, $totalCost));
+            foreach ($v['lines'] as $idx => $l) {
                 $item = $l['item'];
-                $before = $available[(int) $item['id']];
+                $id = (int) $item['id'];
+                $before = $available[$id];
                 $after = $before - $l['quantity'];
                 insert_line($pdo, $docId, [
                     'line_no' => $l['line_no'], 'item_id' => $item['id'], 'wood_type_name' => $item['wood_type_name'],
@@ -558,9 +793,28 @@ function record_sale(PDO $pdo, int $userId, array $in): array
                     'quantity' => $l['quantity'], 'piece_volume_m3' => $l['piece_m3'], 'total_volume_m3' => $l['total_m3'],
                     'price_per_m3' => $l['price'], 'amount' => $l['amount'],
                     'balance_before' => $before, 'balance_after' => $after,
+                    'cost_amount' => piasters_to_money($cogs[$idx]),
                 ]);
-                set_stock($pdo, (int) $item['id'], $wid, $after, $now);
+                set_stock($pdo, $id, $wid, $after, $now);
+                costing_set_value($pdo, $id, $costs[$id]['value'] - $cogs[$idx]);
             }
+
+            // القيود: العميل +الإجمالي ثم −المدفوع، والمدفوع يدخل الخزنة
+            $desc = 'فاتورة بيع رقم ' . $docNo;
+            $date = $pay['doc_date'];
+            if ($customer) {
+                ledger_party($pdo, (int) $customer['id'], $date, $docId, null, 'sale', $pay['total'], $desc);
+                if ($pay['paid'] > 0) {
+                    ledger_party($pdo, (int) $customer['id'], $date, $docId, null, 'sale_payment', -$pay['paid'], 'دفعة ' . $desc);
+                }
+            }
+            if ($pay['paid'] > 0) {
+                ledger_cash($pdo, (int) $box['id'], $date, $docId, null, 'sale', $pay['paid'], $desc);
+            }
+            acct_audit($pdo, 'document_create', $desc, 'document', $docId, [
+                'total' => $v['total_amount'], 'payment_type' => $pay['payment_type'],
+                'paid' => piasters_to_money($pay['paid']), 'doc_date' => $date,
+            ]);
             data_version_bump($pdo);
             return ['id' => $docId, 'kind' => 'sale', 'doc_no' => $docNo, 'duplicate' => false];
         });
@@ -703,9 +957,12 @@ function cancel_document(PDO $pdo, int $userId, int $docId, string $reasonRaw): 
     if (mb_strlen($reason) > 255) {
         throw new ValidationException(['reason' => 'سبب الإلغاء أطول من المسموح (255 حرفًا).']);
     }
-    // أسطر المستند لا تتغير أبدًا بعد الحفظ، فتُقرأ قبل المعاملة (لا قراءة غير مقفلة داخلها)
+    // أسطر المستند وأطراف قيوده لا تتغير أبدًا بعد الحفظ (الإلغاء يضيف قيودًا عكسية لنفس الأطراف)،
+    // فتُقرأ قبل المعاملة (لا قراءة غير مقفلة داخلها). وتاريخ الإقفال يُقرأ قبلها أيضًا.
     $lines = document_lines($pdo, $docId);
-    return db_transaction($pdo, function (PDO $pdo) use ($userId, $docId, $reason, $lines) {
+    $sources = ledger_sources_of($pdo, 'document', $docId);
+    closing_date();
+    return db_transaction($pdo, function (PDO $pdo) use ($userId, $docId, $reason, $lines, $sources) {
         $stmt = $pdo->prepare('SELECT * FROM documents WHERE id = ? FOR UPDATE');
         $stmt->execute([$docId]);
         $doc = $stmt->fetch();
@@ -715,7 +972,25 @@ function cancel_document(PDO $pdo, int $userId, int $docId, string $reasonRaw): 
         if ($doc['status'] !== 'active') {
             throw new ValidationException(['document' => 'هذا المستند ملغى بالفعل.']);
         }
-        lock_items_shared($pdo, array_map(fn ($l) => (int) $l['item_id'], $lines));
+        if (!period_is_open((string) $doc['doc_date'])) {
+            throw new ValidationException(['document' => sprintf(
+                'لا يمكن إلغاء هذا المستند: تاريخه %s يقع في فترة مقفلة (حتى %s).',
+                digits(substr((string) $doc['doc_date'], 0, 10)),
+                digits(closing_date())
+            )]);
+        }
+        // الطرف ثم الخزائن (تصاعديًا) قبل الأصناف، حسب ترتيب الأقفال
+        $partyKind = $doc['kind'] === 'sale' ? 'customer' : 'supplier';
+        foreach ($sources['parties'] as $pid) {
+            lock_party($pdo, $pid, $partyKind, false);
+        }
+        lock_cash_boxes($pdo, $sources['cash_boxes'], false);
+        $itemIds = array_map(fn ($l) => (int) $l['item_id'], $lines);
+        $valued = $doc['kind'] === 'in' || $doc['kind'] === 'sale';
+        $costs = $valued ? costing_lock_items($pdo, $itemIds) : [];
+        if (!$valued) {
+            lock_items_shared($pdo, $itemIds);
+        }
 
         $deltas = [];
         $add = function (array $l, int $wh, string $whName, int $delta) use (&$deltas) {
@@ -760,6 +1035,25 @@ function cancel_document(PDO $pdo, int $userId, int $docId, string $reasonRaw): 
         foreach ($deltas as $k => $d) {
             set_stock($pdo, $d['item'], $d['wh'], (int) $bal[$k] + $d['delta'], $now);
         }
+        // قيمة المخزون: البيع يعيد تكلفته المحفوظة، والوارد يخصم قيمته مع ضبط الحدود وتسجيل الفرق
+        $label = doc_label($doc);
+        foreach ($valued ? $lines : [] as $l) {
+            $id = (int) $l['item_id'];
+            $lineCost = money_to_piasters((string) ($l['cost_amount'] ?? '0'));
+            if ($doc['kind'] === 'sale') {
+                $costs[$id]['value'] += $lineCost;
+            } else {
+                $costs[$id]['qty'] -= (int) $l['quantity'];
+                [$final, $adj] = costing_cancel_receipt_value($costs[$id]['value'], $costs[$id]['qty'], $lineCost);
+                $costs[$id]['value'] = $final;
+                if ($adj !== 0) {
+                    costing_record_adjustment($pdo, $id, $docId, $adj, $costs[$id]['qty'] <= 0
+                        ? "إلغاء {$label}: نفدت كمية الصنف وبقيت قيمة، فضُبطت قيمة المخزون على صفر"
+                        : "إلغاء {$label}: قيمة المخزون المحسوبة أقل من صفر، فضُبطت على صفر", $userId);
+                }
+            }
+            costing_set_value($pdo, $id, $costs[$id]['value']);
+        }
         $stmt = $pdo->prepare(
             "UPDATE documents SET status = 'cancelled', cancelled_at = ?, cancelled_by = ?, cancel_reason = ?
              WHERE id = ? AND status = 'active'"
@@ -768,6 +1062,13 @@ function cancel_document(PDO $pdo, int $userId, int $docId, string $reasonRaw): 
         if ($stmt->rowCount() !== 1) {
             throw new RuntimeException('Cancel update affected no rows');
         }
+        // القيود العكسية بتاريخ الإلغاء؛ رد نقدية بيع يُرفض إذا لم يكفِ رصيد الخزنة
+        try {
+            reverse_ledgers($pdo, 'document', $docId, $now, 'إلغاء ' . $label);
+        } catch (ValidationException $e) {
+            throw new ValidationException(['document' => 'لا يمكن إلغاء هذا المستند: رصيد الخزنة لا يكفي لرد المبلغ. ' . implode(' ', $e->errors)]);
+        }
+        acct_audit($pdo, 'document_cancel', 'إلغاء ' . $label, 'document', $docId, ['reason' => $reason]);
         data_version_bump($pdo);
         return $doc;
     });

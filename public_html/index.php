@@ -29,6 +29,7 @@ const ROUTES = [
     'warehouses' => ['file' => 'catalog',    'public' => false, 'catalog' => 'warehouse'],
     'settings'   => ['file' => 'settings',   'public' => false],
     'api'        => ['file' => 'api',        'public' => false],
+    'opening_valuation' => ['file' => 'opening_valuation', 'public' => false],
 ];
 
 $route = input($_GET, 'r');
