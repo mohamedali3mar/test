@@ -279,4 +279,18 @@ check('رقم النسخة يتضمن وقت تعديل الملف', asset_versi
 check('رابط CSS يتضمن رقم النسخة بوقت التعديل', asset('css/app.css') === 'assets/css/app.css?v=' . rawurlencode(APP_VERSION . '-' . filemtime(dirname(APP_ROOT) . '/assets/css/app.css')));
 
 session_destroy();
+section('رمز CSRF مقنّع ضد BREACH');
+$_SESSION['csrf'] = bin2hex(random_bytes(32));
+$m1 = csrf_masked_token();
+$m2 = csrf_masked_token();
+check('الرمز المقنّع ١٢٨ خانة ست عشرية', preg_match('/^[0-9a-f]{128}\z/', $m1) === 1);
+check('يختلف في كل عرض', $m1 !== $m2);
+check('لا يحتوي الرمز الأصلي', !str_contains($m1, $_SESSION['csrf']) && !str_contains(csrf_field(), $_SESSION['csrf']));
+check_eq('يُفك للرمز الأصلي', $_SESSION['csrf'], csrf_unmask($m1));
+check_eq('  والثاني أيضًا', $_SESSION['csrf'], csrf_unmask($m2));
+check_eq('الرمز الخام مقبول كما هو', $_SESSION['csrf'], csrf_unmask($_SESSION['csrf']));
+check_eq('صيغة خاطئة = فارغ', '', csrf_unmask('xyz'));
+check_eq('طول خاطئ = فارغ', '', csrf_unmask(str_repeat('a', 100)));
+check('رمز مقنّع معدّل لا يطابق', csrf_unmask(substr($m1, 0, 127) . ($m1[127] === 'a' ? 'b' : 'a')) !== $_SESSION['csrf']);
+
 finish();

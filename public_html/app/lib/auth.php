@@ -162,16 +162,43 @@ function csrf_token(): string
     return $_SESSION['csrf'];
 }
 
+/**
+ * الرمز كما يُكتب في الصفحة: قناع عشوائي جديد مع كل عرض + (الرمز XOR القناع).
+ * الصفحات مضغوطة، فلو ظهر الرمز الثابت نفسه بجوار نص يتحكم فيه المهاجم (مثل البحث)
+ * أمكن استنتاجه من حجم الرد المضغوط (هجوم BREACH). القناع يجعل النص مختلفًا في كل مرة.
+ */
+function csrf_masked_token(): string
+{
+    $token = hex2bin(csrf_token());
+    $mask = random_bytes(strlen($token));
+    return bin2hex($mask) . bin2hex($mask ^ $token);
+}
+
+/** يعيد الرمز الأصلي من الرمز المقنّع (أو الرمز الخام كما هو)، أو '' إذا كانت الصيغة غير صحيحة */
+function csrf_unmask(string $sent): string
+{
+    if (preg_match('/^[0-9a-f]{64}\z/', $sent)) {
+        return $sent;
+    }
+    if (!preg_match('/^[0-9a-f]{128}\z/', $sent)) {
+        return '';
+    }
+    $mask = hex2bin(substr($sent, 0, 64));
+    $masked = hex2bin(substr($sent, 64));
+    return bin2hex($mask ^ $masked);
+}
+
 function csrf_field(): string
 {
-    return '<input type="hidden" name="csrf" value="' . h(csrf_token()) . '">';
+    return '<input type="hidden" name="csrf" value="' . h(csrf_masked_token()) . '">';
 }
 
 /** يرفض أي طلب POST بدون رمز CSRF صحيح، أو صادر من موقع آخر حسب ترويسة Sec-Fetch-Site */
 function verify_csrf(): void
 {
     $sent = $_POST['csrf'] ?? '';
-    if (is_cross_site_request() || !is_string($sent) || empty($_SESSION['csrf']) || !hash_equals($_SESSION['csrf'], $sent)) {
+    $sent = is_string($sent) ? csrf_unmask($sent) : '';
+    if (is_cross_site_request() || $sent === '' || empty($_SESSION['csrf']) || !hash_equals($_SESSION['csrf'], $sent)) {
         render_simple_error('انتهت صلاحية النموذج أو الطلب غير صالح. ارجع للصفحة وأعد المحاولة.', 400);
     }
 }
