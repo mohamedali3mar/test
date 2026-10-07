@@ -140,6 +140,22 @@ function render_header(string $title, string $active = '', string $bodyClass = '
         <a href="<?= h(url($route)) ?>"<?= $route === $active ? ' aria-current="page"' : '' ?>><?= h($label) ?></a>
       <?php endforeach; ?>
     </nav>
+    <?php /* على الموبايل تختفي القائمة الأفقية ويظهر هذا الزر بدلًا منها (يعمل بدون JavaScript) */ ?>
+    <details class="nav-menu">
+      <summary>
+        <span>القائمة</span>
+        <?php if (isset(NAV[$active])): ?>
+          <span class="visually-hidden">، الصفحة الحالية:</span>
+          <span class="nav-menu-current"><?= h(NAV[$active]) ?></span>
+        <?php endif; ?>
+        <span class="nav-menu-state" aria-hidden="true"></span>
+      </summary>
+      <nav class="nav-menu-links" aria-label="القائمة الرئيسية">
+        <?php foreach (NAV as $route => $label): ?>
+          <a href="<?= h(url($route)) ?>"<?= $route === $active ? ' aria-current="page"' : '' ?>><?= h($label) ?></a>
+        <?php endforeach; ?>
+      </nav>
+    </details>
     <form method="post" action="<?= h(url('logout')) ?>" class="logout-form">
       <?= csrf_field() ?>
       <button type="submit" class="btn btn-quiet">خروج</button>

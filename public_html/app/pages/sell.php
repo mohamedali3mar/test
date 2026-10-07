@@ -54,7 +54,7 @@ if ($review) {
   <div><dt>العميل</dt><dd><?= $review['party_name'] !== '' ? h($review['party_name']) : '<span class="muted">لم يُحدد</span>' ?></dd></div>
   <?php if ($review['notes'] !== ''): ?><div><dt>ملاحظات</dt><dd class="pre"><?= h($review['notes']) ?></dd></div><?php endif; ?>
 </dl>
-<div class="table-wrap">
+<div class="table-wrap table-stack">
   <table>
     <caption class="visually-hidden">أسطر الفاتورة</caption>
     <thead>
@@ -73,25 +73,25 @@ if ($review) {
     <tbody>
       <?php foreach ($review['lines'] as $l): $have = (int) ($avail[(int) $l['item']['id']] ?? 0); ?>
       <tr>
-        <td class="num"><?= h(fmt_int($l['line_no'])) ?></td>
-        <td><?= h($l['item']['wood_type_name']) ?></td>
-        <td><?= h(fmt_size($l['item'])) ?></td>
-        <td class="num"><?= h(fmt_int($l['quantity'])) ?></td>
-        <td class="num"><?= h(fmt_volume($l['total_m3'])) ?></td>
-        <td class="num"><?= h(fmt_money($l['price'])) ?></td>
-        <td class="num"><?= h(fmt_money($l['amount'])) ?></td>
-        <td class="num"><?= h(fmt_int($have)) ?></td>
-        <td class="num"><?= h(fmt_int($have - $l['quantity'])) ?></td>
+        <td class="num" data-label="<?= h('السطر') ?>"><?= h(fmt_int($l['line_no'])) ?></td>
+        <td data-label="<?= h('النوع') ?>"><?= h($l['item']['wood_type_name']) ?></td>
+        <td data-label="<?= h('المقاس') ?>"><?= h(fmt_size($l['item'])) ?></td>
+        <td class="num" data-label="<?= h('العدد') ?>"><?= h(fmt_int($l['quantity'])) ?></td>
+        <td class="num" data-label="<?= h('الحجم (م³)') ?>"><?= h(fmt_volume($l['total_m3'])) ?></td>
+        <td class="num" data-label="<?= h('سعر المتر (' . app_setting('currency') . ')') ?>"><?= h(fmt_money($l['price'])) ?></td>
+        <td class="num" data-label="<?= h('القيمة') ?>"><?= h(fmt_money($l['amount'])) ?></td>
+        <td class="num" data-label="<?= h('المتاح الآن') ?>"><?= h(fmt_int($have)) ?></td>
+        <td class="num" data-label="<?= h('بعد البيع') ?>"><?= h(fmt_int($have - $l['quantity'])) ?></td>
       </tr>
       <?php endforeach; ?>
     </tbody>
     <tfoot>
       <tr class="row-total">
         <th scope="row" colspan="3">الإجمالي</th>
-        <td class="num"><?= h(fmt_int($review['total_qty'])) ?></td>
-        <td class="num"><?= h(fmt_volume($review['total_m3'])) ?></td>
+        <td class="num" data-label="<?= h('العدد') ?>"><?= h(fmt_int($review['total_qty'])) ?></td>
+        <td class="num" data-label="<?= h('الحجم (م³)') ?>"><?= h(fmt_volume($review['total_m3'])) ?></td>
         <td></td>
-        <td class="num"><?= h(fmt_money_currency($review['total_amount'])) ?></td>
+        <td class="num" data-label="<?= h('القيمة') ?>"><?= h(fmt_money_currency($review['total_amount'])) ?></td>
         <td colspan="2"></td>
       </tr>
     </tfoot>

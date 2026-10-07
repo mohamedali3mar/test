@@ -70,7 +70,7 @@ render_header(doc_label($d), 'documents');
   <div><dt>ملاحظات</dt><dd class="pre"><?= $d['notes'] !== null ? h($d['notes']) : '<span class="muted">لا توجد</span>' ?></dd></div>
 </dl>
 
-<div class="table-wrap">
+<div class="table-wrap table-stack">
   <table>
     <caption class="visually-hidden">أسطر المستند مع الأرصدة وقت الحركة</caption>
     <thead>
@@ -93,20 +93,20 @@ render_header(doc_label($d), 'documents');
     <tbody>
       <?php foreach ($lines as $l): ?>
       <tr>
-        <td class="num"><?= h(fmt_int((int) $l['line_no'])) ?></td>
-        <td><?= h($l['wood_type_name']) ?></td>
-        <td><?= h(fmt_size($l)) ?></td>
-        <td class="muted"><?= h(fmt_meters($l)) ?></td>
-        <td class="num"><?= h(fmt_int((int) $l['quantity'])) ?></td>
-        <td class="num"><?= h(fmt_volume($l['piece_volume_m3'])) ?></td>
-        <td class="num"><?= h(fmt_volume($l['total_volume_m3'])) ?></td>
+        <td class="num" data-label="<?= h('السطر') ?>"><?= h(fmt_int((int) $l['line_no'])) ?></td>
+        <td data-label="<?= h('النوع') ?>"><?= h($l['wood_type_name']) ?></td>
+        <td data-label="<?= h('المقاس') ?>"><?= h(fmt_size($l)) ?></td>
+        <td class="muted" data-label="<?= h('بالمتر') ?>"><?= h(fmt_meters($l)) ?></td>
+        <td class="num" data-label="<?= h('العدد') ?>"><?= h(fmt_int((int) $l['quantity'])) ?></td>
+        <td class="num" data-label="<?= h('حجم القطعة (م³)') ?>"><?= h(fmt_volume($l['piece_volume_m3'])) ?></td>
+        <td class="num" data-label="<?= h('الحجم (م³)') ?>"><?= h(fmt_volume($l['total_volume_m3'])) ?></td>
         <?php if ($kind === 'sale'): ?>
-          <td class="num"><?= h(fmt_money((string) $l['price_per_m3'])) ?></td>
-          <td class="num"><?= h(fmt_money((string) $l['amount'])) ?></td>
+          <td class="num" data-label="<?= h('سعر المتر') ?>"><?= h(fmt_money((string) $l['price_per_m3'])) ?></td>
+          <td class="num" data-label="<?= h('القيمة') ?>"><?= h(fmt_money((string) $l['amount'])) ?></td>
         <?php endif; ?>
-        <td class="num"><?= h(fmt_int((int) $l['balance_before']) . ' / ' . fmt_int((int) $l['balance_after'])) ?></td>
+        <td class="num" data-label="<?= h($kind === 'transfer' ? 'رصيد المصدر قبل/بعد' : 'الرصيد قبل/بعد') ?>"><?= h(fmt_int((int) $l['balance_before']) . ' / ' . fmt_int((int) $l['balance_after'])) ?></td>
         <?php if ($kind === 'transfer'): ?>
-          <td class="num"><?= h(fmt_int((int) $l['to_balance_before']) . ' / ' . fmt_int((int) $l['to_balance_after'])) ?></td>
+          <td class="num" data-label="<?= h('رصيد المستلم قبل/بعد') ?>"><?= h(fmt_int((int) $l['to_balance_before']) . ' / ' . fmt_int((int) $l['to_balance_after'])) ?></td>
         <?php endif; ?>
       </tr>
       <?php endforeach; ?>
