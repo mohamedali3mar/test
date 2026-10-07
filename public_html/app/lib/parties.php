@@ -106,7 +106,8 @@ function party_validate(string $kind, array $in): array
         [$p, $err] = parse_money_input($rawOpening, 'الرصيد الافتتاحي', true);
         if ($err !== null) {
             $errors['opening_balance'] = $err;
-        } else {
+        } elseif ((int) $p !== 0) {
+            // رصيد افتتاحي صفر لا يحتاج اتجاهًا
             $dir = is_string($in['opening_direction'] ?? null) ? $in['opening_direction'] : '';
             if (!isset(PARTY_DIRECTIONS[$dir])) {
                 $errors['opening_direction'] = 'اختر اتجاه الرصيد الافتتاحي: عليه أو له.';
