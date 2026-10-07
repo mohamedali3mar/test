@@ -102,9 +102,22 @@ if ($locked) {
             $errors['password'] = $problem;
         }
         if (!$errors) {
-            $pdo->prepare('UPDATE users SET password_hash = ?, auth_version = auth_version + 1 WHERE id = ?')
-                ->execute([password_hash($password, PASSWORD_DEFAULT), $userId]);
-            $pdo->prepare('DELETE FROM login_attempts WHERE username = ?')->execute([$username]);
+            // الحساب المستعاد يصبح مديرًا نشطًا (طريق استعادة المالك حتى لو عُطل أو خُفض دوره)، ويُسجل في المراقبة
+            $hash = password_hash($password, PASSWORD_DEFAULT);
+            db_transaction($pdo, function (PDO $pdo) use ($hash, $userId, $username) {
+                try {
+                    $pdo->prepare("UPDATE users SET password_hash = ?, auth_version = auth_version + 1, is_active = 1, role = 'admin' WHERE id = ?")
+                        ->execute([$hash, $userId]);
+                } catch (PDOException $e) {
+                    if (audit_db_error_code($e) !== 1054) { // قبل الترقية 004 لا توجد أعمدة الدور والتفعيل
+                        throw $e;
+                    }
+                    $pdo->prepare('UPDATE users SET password_hash = ?, auth_version = auth_version + 1 WHERE id = ?')->execute([$hash, $userId]);
+                }
+                $pdo->prepare('DELETE FROM login_attempts WHERE username = ?')->execute([$username]);
+                audit_record($pdo, 'user.password_reset', sprintf('استعادة كلمة مرور المدير %s من صفحة التثبيت (حساب مدير نشط)', $username), 'user', $userId);
+                data_version_bump($pdo);
+            });
             @unlink(RESET_ALLOW_FILE);
             $selfDeleted = @unlink(__FILE__);
             echo '<div class="alert alert-success" role="status">تم تعيين كلمة المرور الجديدة.</div>';

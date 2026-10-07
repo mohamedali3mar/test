@@ -89,6 +89,7 @@ $page = min($page, $pages);
 $stmt = $pdo->prepare('SELECT d.* FROM documents d' . $whereSql . ' ORDER BY d.id DESC LIMIT ' . $perPage . ' OFFSET ' . (($page - 1) * $perPage));
 $stmt->execute($params);
 $rows = $stmt->fetchAll();
+$userNames = users_name_map($pdo);
 
 $warehouses = catalog_all($pdo, 'warehouse');
 $types = catalog_all($pdo, 'type');
@@ -167,6 +168,7 @@ render_header('الفواتير والحركات', 'documents');
         <tr>
           <th scope="col">المستند</th>
           <th scope="col">التاريخ</th>
+          <th scope="col">المستخدم</th>
           <th scope="col">المخزن</th>
           <th scope="col">العميل / المورد</th>
           <th scope="col" class="num">الأسطر</th>
@@ -182,6 +184,7 @@ render_header('الفواتير والحركات', 'documents');
         <tr class="<?= $cancelled ? 'row-cancelled' : '' ?>">
           <td class="nowrap"><a href="<?= h(url('document', ['id' => (int) $d['id']])) ?>"><?= h(doc_label($d)) ?></a></td>
           <td class="nowrap"><?= h(fmt_datetime($d['created_at'])) ?></td>
+          <td data-label="<?= h('المستخدم') ?>"><?= h($userNames[(int) $d['created_by']] ?? '') ?></td>
           <td><?= h($d['kind'] === 'transfer' ? 'من ' . $d['warehouse_name'] . ' إلى ' . $d['to_warehouse_name'] : $d['warehouse_name']) ?></td>
           <td><?= h((string) $d['party_name']) ?></td>
           <td class="num"><?= h(fmt_int((int) $d['line_count'])) ?></td>

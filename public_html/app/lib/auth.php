@@ -109,16 +109,19 @@ function current_username(): string
 function require_login(): void
 {
     if (current_user_id() > 0) {
-        // تأكد أن الحساب ما زال موجودًا وأن كلمة المرور لم تتغير بعد بدء هذه الجلسة
-        $stmt = db()->prepare('SELECT auth_version FROM users WHERE id = ?');
-        $stmt->execute([current_user_id()]);
-        $version = $stmt->fetchColumn();
-        if ($version !== false && (int) $version === (int) ($_SESSION['auth_version'] ?? -1)) {
+        // تأكد أن الحساب ما زال موجودًا ومفعلًا وأن كلمة المرور لم تتغير بعد بدء هذه الجلسة.
+        // نفس الاستعلام يقرأ الدور، فتتحدث الصلاحيات من قاعدة البيانات في كل طلب.
+        $user = session_user_row(db(), current_user_id());
+        $version = $user['auth_version'] ?? false;
+        if ($version !== false && (int) $version === (int) ($_SESSION['auth_version'] ?? -1) && user_is_active($user)) {
+            user_session_refresh(db(), $user);
             return;
         }
         $_SESSION = [];
         session_regenerate_id(true);
-        if ($version !== false) {
+        if ($user !== null && !user_is_active($user)) {
+            flash('warning', 'تم إيقاف هذا الحساب. راجع مدير النظام.');
+        } elseif ($version !== false) {
             flash('warning', 'تغيرت كلمة المرور. سجّل الدخول مرة أخرى.');
         }
     }
@@ -240,13 +243,16 @@ function attempt_login(PDO $pdo, string $username, string $password): ?string
         return sprintf('محاولات دخول كثيرة. حاول مرة أخرى بعد %s دقيقة.', fmt_int($lock));
     }
 
-    $stmt = $pdo->prepare('SELECT id, username, password_hash, auth_version FROM users WHERE username = ?');
+    // SELECT * يعمل قبل تطبيق الترقية 004 وبعدها (عمود is_active)
+    $stmt = $pdo->prepare('SELECT * FROM users WHERE username = ?');
     $stmt->execute([$username]);
     $user = $stmt->fetch();
 
+    // الحساب المعطل يأخذ نفس رسالة كلمة المرور الخاطئة (لا يكشف وجود الحساب)، والمحاولة محسوبة في الحد
     $ok = strlen($password) <= 1000
         && password_verify($password, $user['password_hash'] ?? dummy_password_hash())
-        && $user;
+        && $user
+        && user_is_active($user);
     if (!$ok) {
         return 'اسم المستخدم أو كلمة المرور غير صحيحة.';
     }
@@ -263,6 +269,8 @@ function attempt_login(PDO $pdo, string $username, string $password): ?string
         'user_id' => (int) $user['id'],
         'username' => $user['username'],
         'auth_version' => (int) $user['auth_version'],
+        'role' => user_role($user),
+        'display_name' => user_display_name($user),
         'csrf' => bin2hex(random_bytes(32)),
         'last_activity' => time(),
     ];
@@ -286,15 +294,24 @@ function verify_current_password(PDO $pdo, string $password): ?string
     return null;
 }
 
-/** يغير كلمة المرور ويرفع رقم الإصدار فتنتهي كل الجلسات الأخرى */
+/**
+ * يغير كلمة المرور ويرفع رقم الإصدار فتنتهي كل الجلسات الأخرى.
+ * التغيير وسطره في سجل المراقبة في معاملة واحدة، والجلسة تتحدث بعد نجاحها فقط.
+ */
 function change_password(PDO $pdo, int $userId, string $newPassword): void
 {
-    $pdo->prepare('UPDATE users SET password_hash = ?, auth_version = auth_version + 1 WHERE id = ?')
-        ->execute([password_hash($newPassword, PASSWORD_DEFAULT), $userId]);
-    $stmt = $pdo->prepare('SELECT auth_version FROM users WHERE id = ?');
-    $stmt->execute([$userId]);
+    $hash = password_hash($newPassword, PASSWORD_DEFAULT);
+    $version = db_transaction($pdo, function (PDO $pdo) use ($userId, $hash) {
+        $stmt = $pdo->prepare('SELECT auth_version FROM users WHERE id = ? FOR UPDATE');
+        $stmt->execute([$userId]);
+        $version = (int) $stmt->fetchColumn() + 1;
+        $pdo->prepare('UPDATE users SET password_hash = ?, auth_version = ? WHERE id = ?')->execute([$hash, $version, $userId]);
+        audit_record($pdo, 'account.password', 'تغيير كلمة المرور من صفحة «حسابي»', 'user', $userId);
+        data_version_bump($pdo);
+        return $version;
+    });
     session_regenerate_id(true);
-    $_SESSION['auth_version'] = (int) $stmt->fetchColumn();
+    $_SESSION['auth_version'] = $version;
     $_SESSION['csrf'] = bin2hex(random_bytes(32));
 }
 

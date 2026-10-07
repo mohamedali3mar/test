@@ -88,6 +88,8 @@ const NAV = [
     'documents'  => 'الفواتير والحركات',
     'types'      => 'أنواع الخشب',
     'warehouses' => 'المخازن',
+    'monitor'    => 'المراقبة',
+    'users'      => 'المستخدمون',
     'settings'   => 'الإعدادات',
 ];
 
@@ -127,10 +129,11 @@ function render_header(string $title, string $active = '', string $bodyClass = '
   <div class="container header-row">
     <a class="brand" href="<?= h(url('inventory')) ?>"><?= h($company) ?></a>
     <nav class="main-nav" aria-label="القائمة الرئيسية">
-      <?php foreach (NAV as $route => $label): ?>
+      <?php foreach (NAV as $route => $label): if (!can_open($route)) { continue; } /* المسموحة للدور فقط */ ?>
         <a href="<?= h(url($route)) ?>"<?= $route === $active ? ' aria-current="page"' : '' ?>><?= h($label) ?></a>
       <?php endforeach; ?>
     </nav>
+    <a class="btn btn-quiet header-account" href="<?= h(url('account')) ?>"<?= $active === 'account' ? ' aria-current="page"' : '' ?>><span class="visually-hidden">حسابي: </span><span class="header-account-name"><?= h((string) ($_SESSION['display_name'] ?? current_username())) ?></span></a>
     <form method="post" action="<?= h(url('logout')) ?>" class="logout-form">
       <?= csrf_field() ?>
       <button type="submit" class="btn btn-quiet">خروج</button>

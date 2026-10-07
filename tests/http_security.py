@@ -42,7 +42,9 @@ def sql(q):
 
 
 def db_checksum():
-    return sql("CHECKSUM TABLE users, settings, counters, wood_types, warehouses, items, stock, documents, document_lines")
+    # users.last_seen_at يتغير مع أي طلب (مرة كل دقيقة على الأكثر) فلا يدخل في المقارنة
+    users = sql("SELECT MD5(GROUP_CONCAT(CONCAT_WS('|', id, username, password_hash, auth_version, role, is_active, display_name) ORDER BY id)) FROM users")
+    return users + sql("CHECKSUM TABLE settings, counters, wood_types, warehouses, items, stock, documents, document_lines, audit_log")
 
 
 class NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -131,7 +133,8 @@ ADMIN = (ADMIN[0], 'New-Password-77')
 # ------------------------------------------------------------------
 section('الوصول بدون تسجيل دخول')
 anon = Client()
-for route in ['inventory', 'receive', 'sell', 'transfer', 'documents', 'document&id=1', 'print&id=1', 'types', 'warehouses', 'settings']:
+for route in ['inventory', 'receive', 'sell', 'transfer', 'documents', 'document&id=1', 'print&id=1', 'types', 'warehouses', 'settings',
+              'account', 'users', 'monitor']:
     s, h, _ = anon.get('index.php?r=' + route)
     check(f'GET {route} يحوّل إلى الدخول', s == 303 and 'r=login' in (h.get('Location') or ''), s)
 s, _, _ = anon.post('index.php?r=receive', {'csrf': 'x'})
@@ -315,9 +318,9 @@ check('الإلغاء الثاني لا يغير الرصيد', sql(f"SELECT qty
 section('تغيير كلمة المرور ينهي الجلسات الأخرى')
 s, _, _ = b.get('index.php?r=inventory')
 check('الجلسة الثانية تعمل قبل التغيير', s == 200, s)
-_, html = a.csrf('index.php?r=settings')
-s, h, _ = a.post('index.php?r=settings', {'csrf': token, 'action': 'password', 'current_password': ADMIN[1], 'new_password': 'Changed-Pass-55',
-                                          'confirm_password': 'Changed-Pass-55'})
+_, html = a.csrf('index.php?r=account')
+s, h, _ = a.post('index.php?r=account', {'csrf': token, 'action': 'password', 'current_password': ADMIN[1], 'new_password': 'Changed-Pass-55',
+                                         'confirm_password': 'Changed-Pass-55'})
 check('تغيير كلمة المرور نجح', s == 303, s)
 s, h, _ = b.get('index.php?r=inventory')
 check('الجلسة الأخرى انتهت وتحوّل للدخول', s == 303 and 'r=login' in h.get('Location', ''), s)

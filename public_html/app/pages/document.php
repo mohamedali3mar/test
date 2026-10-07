@@ -6,6 +6,7 @@ $id = (int) input($_GET, 'id');
 $errors = [];
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    require_permission('documents.cancel');
     verify_csrf();
     if (input($_POST, 'action') !== 'cancel') {
         render_simple_error('إجراء غير معروف.', 400);
@@ -30,6 +31,10 @@ if (!$d) {
 $lines = document_lines($pdo, $id);
 $kind = $d['kind'];
 $cancelled = $d['status'] === 'cancelled';
+// «بواسطة»: الاسم المعروض للمستخدم (أو اسم الدخول إذا لم يُحدد له اسم)
+$names = users_name_map($pdo);
+$createdBy = $names[(int) $d['created_by']] ?? (string) $d['created_by_name'];
+$cancelledBy = $d['cancelled_by'] !== null ? ($names[(int) $d['cancelled_by']] ?? (string) $d['cancelled_by_name']) : '';
 
 render_header(doc_label($d), 'documents');
 ?>
@@ -44,14 +49,14 @@ render_header(doc_label($d), 'documents');
 <div id="live-document" data-live>
 <?php if ($cancelled): ?>
   <div class="alert alert-warning" role="status">
-    هذا المستند ملغى منذ <?= h(fmt_datetime($d['cancelled_at'])) ?> بواسطة <?= h((string) $d['cancelled_by_name']) ?>.
+    هذا المستند ملغى منذ <?= h(fmt_datetime($d['cancelled_at'])) ?> بواسطة <?= h($cancelledBy) ?>.
     <?php if ($d['cancel_reason'] !== null): ?>السبب: <?= h($d['cancel_reason']) ?><?php endif; ?>
   </div>
 <?php endif; ?>
 
 <dl class="facts facts-wide">
   <div><dt>التاريخ</dt><dd><?= h(fmt_datetime($d['created_at'])) ?></dd></div>
-  <div><dt>سجله</dt><dd><?= h($d['created_by_name']) ?></dd></div>
+  <div><dt>بواسطة</dt><dd><?= h($createdBy) ?></dd></div>
   <?php if ($kind === 'transfer'): ?>
     <div><dt>من مخزن</dt><dd><?= h($d['warehouse_name']) ?></dd></div>
     <div><dt>إلى مخزن</dt><dd><?= h((string) $d['to_warehouse_name']) ?></dd></div>
@@ -118,7 +123,7 @@ render_header(doc_label($d), 'documents');
 <?php endif; ?>
 </div>
 
-<?php if (!$cancelled): ?>
+<?php if (!$cancelled && can('documents.cancel')): ?>
 <section class="section danger-zone" id="live-cancel" data-live aria-labelledby="cancel-title">
   <h2 id="cancel-title">إلغاء المستند</h2>
   <p>

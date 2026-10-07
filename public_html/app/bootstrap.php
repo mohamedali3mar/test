@@ -39,6 +39,8 @@ require APP_ROOT . '/lib/documents.php';
 require APP_ROOT . '/lib/stock.php';
 require APP_ROOT . '/lib/migrate.php';
 require APP_ROOT . '/lib/forms.php';
+require APP_ROOT . '/lib/audit.php';
+require APP_ROOT . '/lib/users.php';
 
 set_exception_handler(function (Throwable $e): void {
     error_log('[wood] ' . get_class($e) . ': ' . $e->getMessage() . ' in ' . $e->getFile() . ':' . $e->getLine());

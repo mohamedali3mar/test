@@ -262,7 +262,8 @@ check('المستند الملغى باقٍ في السجل بدون نموذج 
 
 /* ---------------------------------------------------------------- */
 section('إمكانية الوصول وقواعد التصميم (كمبيوتر)');
-const pages = ['inventory', 'receive', 'sell', 'transfer', 'documents', 'types', 'warehouses', 'settings', 'document&id=1', 'print&id=' + new URL(saleUrl).searchParams.get('id')];
+const pages = ['inventory', 'receive', 'sell', 'transfer', 'documents', 'types', 'warehouses', 'settings', 'document&id=1', 'print&id=' + new URL(saleUrl).searchParams.get('id'),
+  'account', 'users', 'users&edit=1', 'monitor'];
 for (const r of pages) {
   await page.goto(BASE + 'index.php?r=' + r);
   await settle(page);

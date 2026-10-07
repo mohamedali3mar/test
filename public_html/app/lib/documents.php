@@ -9,7 +9,7 @@ defined('APP_ROOT') || exit;
  *  - ترتيب الأقفال واحد دائمًا لمنع الجمود:
  *      (الإلغاء فقط) صف المستند ← صفوف items مرتبة تصاعديًا (حصري في الوارد، مشترك في غيره)
  *      ← صفوف stock مرتبة تصاعديًا (item_id, warehouse_id) ← صف عداد الترقيم ← إدراج المستند
- *      ← رفع data_version آخر شيء.
+ *      ← سطر سجل المراقبة audit_log ← رفع data_version آخر شيء.
  *  - لا قراءات غير مقفلة داخل المعاملات (تُقرأ البيانات الثابتة قبلها)، توافقًا مع MariaDB 11.6+.
  *  - الرصيد الملزم يُقرأ بعد القفل (SELECT ... FOR UPDATE)، وليس من القيمة المعروضة في الواجهة.
  *  - رمز الطلب request_token فريد، ومعه بصمة المحتوى request_hash، فإعادة الإرسال لا تكرر العملية.
@@ -340,6 +340,7 @@ function record_receipt(PDO $pdo, int $userId, array $in): array
                 'balance_before' => $before, 'balance_after' => $after,
             ]);
             set_stock($pdo, $itemId, $wid, $after, $now);
+            audit_receipt($pdo, $docId, $docNo, $v);
             data_version_bump($pdo);
             return ['id' => $docId, 'kind' => 'in', 'doc_no' => $docNo, 'duplicate' => false];
         });
@@ -558,6 +559,7 @@ function record_sale(PDO $pdo, int $userId, array $in): array
                 ]);
                 set_stock($pdo, (int) $item['id'], $wid, $after, $now);
             }
+            audit_sale($pdo, $docId, $docNo, $v, $currency);
             data_version_bump($pdo);
             return ['id' => $docId, 'kind' => 'sale', 'doc_no' => $docNo, 'duplicate' => false];
         });
@@ -675,6 +677,7 @@ function record_transfer(PDO $pdo, int $userId, array $in): array
                 set_stock($pdo, $id, $fromId, $fromAfter, $now);
                 set_stock($pdo, $id, $toId, $toAfter, $now);
             }
+            audit_transfer($pdo, $docId, $docNo, $v);
             data_version_bump($pdo);
             return ['id' => $docId, 'kind' => 'transfer', 'doc_no' => $docNo, 'duplicate' => false];
         });
@@ -765,6 +768,7 @@ function cancel_document(PDO $pdo, int $userId, int $docId, string $reasonRaw): 
         if ($stmt->rowCount() !== 1) {
             throw new RuntimeException('Cancel update affected no rows');
         }
+        audit_cancel($pdo, $doc, $reason);
         data_version_bump($pdo);
         return $doc;
     });
