@@ -31,6 +31,7 @@ require APP_ROOT . '/lib/core.php';
 require APP_ROOT . '/lib/Num.php';
 require APP_ROOT . '/lib/measure.php';
 require APP_ROOT . '/lib/format.php';
+require APP_ROOT . '/lib/xlsx.php';
 require APP_ROOT . '/lib/db.php';
 require APP_ROOT . '/lib/auth.php';
 require APP_ROOT . '/lib/view.php';
