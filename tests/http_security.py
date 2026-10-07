@@ -299,8 +299,9 @@ check('API: CORP same-origin و Cache-Control no-store', h.get('Cross-Origin-Res
       (h.get('Cross-Origin-Resource-Policy'), h.get('Cache-Control')))
 s, h, _ = anon.get('assets/css/app.css')
 check('الملفات الثابتة: nosniff مرة واحدة', len(h.get_all('X-Content-Type-Options') or []) == 1)
-assets = re.findall(r'"(assets/(?:css|js)/app\.(?:css|js)\?v=[^"]+)"', html)
-check('روابط CSS و JS في الصفحة تحمل رقم الإصدار', len(assets) == 2, assets)
+# ملف CSS عام برقم إصدار من وقت تعديل الملف؛ سكربت الواجهة يُقدم عبر r=asset للمسجلين فقط (يُختبر أدناه)
+assets = re.findall(r'"(assets/css/app\.css\?v=[^"]+)"', html)
+check('رابط CSS في الصفحة يحمل رقم الإصدار', len(assets) == 1, assets)
 for p in assets + ['assets/fonts/cairo-arabic-400-normal.woff2']:
     s, h, _ = anon.get(p)
     vals = h.get_all('Cache-Control') or []

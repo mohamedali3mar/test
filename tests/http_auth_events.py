@@ -168,7 +168,7 @@ section('التحديث التلقائي')
 v1 = a.version()
 Client().login(ADMIN[0], 'wrong-password-3')
 v2 = a.version()
-check('محاولة فاشلة ترفع رقم إصدار البيانات فتتحدث الإعدادات المفتوحة', int(v2) == int(v1) + 1, (v1, v2))
+check('محاولة فاشلة لا ترفع رقم إصدار البيانات (حتى لا تعيد الصفحات المفتوحة التحميل أثناء هجوم)', int(v2) == int(v1), (v1, v2))
 s, _, html = a.get('index.php?r=settings', headers={'X-Live': '1'})
 check('طلب التحديث التلقائي للإعدادات يعيد منطقة السجل', s == 200 and 'id="live-auth-events" data-live' in html, s)
 
@@ -176,7 +176,8 @@ section('الحظر المؤقت')
 marker = last_event_id()
 # الحظر يُسجل مرة في الدقيقة لكل عنوان؛ اختبار سابق على نفس النشر قد يكون سجل حظرًا من 127.0.0.1 للتو
 sql(f"UPDATE auth_events SET created_at = created_at - INTERVAL 2 MINUTE WHERE event = 'login_locked' AND id <= {marker}")
-t = Client('curl/8.5.0')
+# curl نفسه محظور الآن بمرشح أدوات الأتمتة، فيُستخدم متصفح آخر لتمييز الصفوف
+t = Client('Mozilla/5.0 (X11; Linux x86_64; rv:130.0) Gecko/20100101 Firefox/130.0')
 locked = []
 for i in range(7):
     s, _, html = t.login('ghost_user', f'wrong-{i}')
@@ -197,7 +198,7 @@ for label in ['محاولة دخول فاشلة', 'دخول محظور مؤقت�
     check('التسمية: ' + label, label in html)
 check('الفشل مميز بالفئة الدلالية الموجودة', '<span class="status status-empty">محاولة دخول فاشلة</span>' in html
       and '<span class="status status-empty">دخول محظور مؤقتًا</span>' in html)
-check('وصف المتصفح المختصر', 'Chrome على Windows' in html and '>curl<' in html)
+check('وصف المتصفح المختصر', 'Chrome على Windows' in html and 'Firefox على Linux' in html)
 m = re.search(r'محاولات الدخول الفاشلة <strong>([^<]+)</strong>.*?المحظورة مؤقتًا <strong>([^<]+)</strong>', html, re.S)
 check('ملخص آخر 24 ساعة: 9 فاشلة على الأقل وحظر واحد على الأقل', m is not None and arabic_int(m.group(1)) >= 9 and arabic_int(m.group(2)) >= 1,
       m.groups() if m else 'no summary')
