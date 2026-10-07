@@ -7,6 +7,8 @@ ob_start();
 require __DIR__ . '/app/bootstrap.php';
 
 header_remove('X-Powered-By');
+// فلتر برامج الأتمتة (curl وأمثاله): قبل الجلسة وقبل أي استعلام. فلتر وليس جدارًا، التفاصيل في security.php
+block_automated_clients();
 
 // روابط مثل index.php/x/y تجعل المسارات النسبية للملفات تنكسر؛ لا تُقبل
 if (!empty($_SERVER['PATH_INFO'])) {
@@ -29,6 +31,7 @@ const ROUTES = [
     'warehouses' => ['file' => 'catalog',    'public' => false, 'catalog' => 'warehouse'],
     'settings'   => ['file' => 'settings',   'public' => false],
     'api'        => ['file' => 'api',        'public' => false],
+    'asset'      => ['file' => 'asset',      'public' => false],
 ];
 
 $route = input($_GET, 'r');

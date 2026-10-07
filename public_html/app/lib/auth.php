@@ -109,6 +109,8 @@ function start_secure_session(bool $touch = true): void
         // التسجيل هنا فقط وليس في كل طلب، فلا تحتاج الطلبات العادية اتصالًا إضافيًا بقاعدة البيانات
         auth_event_db('session_expired', $expiredUser);
     }
+    // الجلسة مربوطة بمتصفحها ولها مدة قصوى من وقت الدخول (security.php)
+    enforce_session_binding();
     // التحديث التلقائي لا يمد عمر الجلسة، حتى يعمل الخروج عند الخمول مع بقاء الصفحة مفتوحة
     if ($touch || empty($_SESSION['last_activity'])) {
         $_SESSION['last_activity'] = time();
@@ -138,7 +140,7 @@ function require_login(): void
         $_SESSION = [];
         session_regenerate_id(true);
         if ($version !== false) {
-            flash('warning', 'تغيرت كلمة المرور. سجّل الدخول مرة أخرى.');
+            flash('warning', 'تغيرت بيانات الدخول (كلمة المرور أو التحقق بخطوتين). سجّل الدخول مرة أخرى.');
         }
     }
     if (is_live_request()) {
@@ -165,11 +167,11 @@ function csrf_field(): string
     return '<input type="hidden" name="csrf" value="' . h(csrf_token()) . '">';
 }
 
-/** يرفض أي طلب POST بدون رمز CSRF صحيح */
+/** يرفض أي طلب POST بدون رمز CSRF صحيح، أو صادر من موقع آخر حسب ترويسة Sec-Fetch-Site */
 function verify_csrf(): void
 {
     $sent = $_POST['csrf'] ?? '';
-    if (!is_string($sent) || empty($_SESSION['csrf']) || !hash_equals($_SESSION['csrf'], $sent)) {
+    if (is_cross_site_request() || !is_string($sent) || empty($_SESSION['csrf']) || !hash_equals($_SESSION['csrf'], $sent)) {
         render_simple_error('انتهت صلاحية النموذج أو الطلب غير صالح. ارجع للصفحة وأعد المحاولة.', 400);
     }
 }
@@ -194,6 +196,10 @@ function client_ip_key(): string
     if ($bin === false) {
         return substr($ip, 0, 45);
     }
+    // عنوان IPv4 بصيغة IPv6 (::ffff:1.2.3.4) يُعامل كعنوان IPv4 نفسه، لا كشبكة ::/64 مشتركة
+    if (strlen($bin) === 16 && str_starts_with($bin, str_repeat("\0", 10) . "\xff\xff")) {
+        return (string) inet_ntop(substr($bin, 12));
+    }
     if (strlen($bin) === 16) {
         return inet_ntop(substr($bin, 0, 8) . str_repeat("\0", 8)) . '/64';
     }
@@ -203,6 +209,11 @@ function client_ip_key(): string
 /**
  * يسجل محاولة تحقق من كلمة المرور أولًا ثم يعد المحاولات (ومنها هذه)، فلا تتجاوز الطلبات
  * المتوازية الحد. يعيد عدد الدقائق المتبقية على رفع الحظر، أو 0 إذا كانت المحاولة مسموحة.
+ *
+ * المحاولة المرفوضة بسبب الحد تُعلَّم blocked = 1 ولا تُحسب في أي عدّ (بعد الترقية 003):
+ * لم يُفحص فيها شيء، فلا داعي لعدها. بذلك لا يمد المهاجم الحظر بتكرار الطلبات، ولا يستطيع
+ * عنوان واحد أن يصل وحده إلى حد اسم المستخدم من كل العناوين فيحبس المدير بلا نهاية.
+ * حد الاسم يبقى عددًا للمحاولات الفعلية (وليس لعدد العناوين) لأنه يقيس ما يُخمَّن فعلًا.
  */
 function throttle_register(PDO $pdo, string $username): int
 {
@@ -210,6 +221,9 @@ function throttle_register(PDO $pdo, string $username): int
         ->execute([date('Y-m-d H:i:s', time() - 86400)]);
     $pdo->prepare('INSERT INTO login_attempts (ip, username, attempted_at) VALUES (?, ?, ?)')
         ->execute([client_ip_key(), $username, now()]);
+    $attemptId = (int) $pdo->lastInsertId();
+    $hasBlocked = db_has_column($pdo, 'login_attempts', 'blocked');
+    $counted = $hasBlocked ? ' AND blocked = 0' : '';
 
     $since = date('Y-m-d H:i:s', time() - LOGIN_WINDOW_MINUTES * 60);
     $ip = client_ip_key();
@@ -220,13 +234,16 @@ function throttle_register(PDO $pdo, string $username): int
     ];
     $wait = 0;
     foreach ($checks as [$cond, $values, $max]) {
-        $stmt = $pdo->prepare("SELECT COUNT(*), MIN(attempted_at) FROM login_attempts WHERE $cond AND attempted_at > ?");
+        $stmt = $pdo->prepare("SELECT COUNT(*), MIN(attempted_at) FROM login_attempts WHERE $cond$counted AND attempted_at > ?");
         $stmt->execute([...$values, $since]);
         [$count, $oldest] = $stmt->fetch(PDO::FETCH_NUM);
         if ((int) $count > $max && $oldest) {
             $unlockAt = strtotime((string) $oldest) + LOGIN_WINDOW_MINUTES * 60;
             $wait = max($wait, (int) ceil(($unlockAt - time()) / 60), 1);
         }
+    }
+    if ($wait > 0 && $hasBlocked) {
+        $pdo->prepare('UPDATE login_attempts SET blocked = 1 WHERE id = ?')->execute([$attemptId]);
     }
     return $wait;
 }
@@ -241,11 +258,29 @@ function throttle_clear(PDO $pdo, string $username): void
 function dummy_password_hash(): string
 {
     $h = app_setting('dummy_hash');
-    return str_starts_with($h, '$') ? $h : '$2y$10$X0IOxjV11qpT4H7qAHHm.uE0ZLTKFGHrOKuqOvQMsYGcop5Uk57vW';
+    if (!str_starts_with($h, '$')) {
+        $h = '$2y$10$X0IOxjV11qpT4H7qAHHm.uE0ZLTKFGHrOKuqOvQMsYGcop5Uk57vW';
+    }
+    if (!password_needs_rehash($h, PASSWORD_DEFAULT)) {
+        return $h;
+    }
+    // ارتفعت التكلفة الافتراضية (مثل PHP 8.4): تجزئة وهمية جديدة بنفس تكلفة التجزئات الحقيقية الجديدة
+    $h = password_hash(bin2hex(random_bytes(16)), PASSWORD_DEFAULT);
+    try {
+        save_setting(db(), 'dummy_hash', $h);
+        $cache = &settings_cache();
+        if ($cache !== null) {
+            $cache['dummy_hash'] = $h;
+        }
+    } catch (Throwable $e) {
+        error_log('[wood] dummy_hash not saved: ' . $e->getMessage());
+    }
+    return $h;
 }
 
 /**
- * @return string|null رسالة خطأ، أو null عند النجاح
+ * @return string|null رسالة خطأ، أو null عند صحة كلمة المرور. إذا كان التحقق بخطوتين مفعلًا للحساب
+ *   لا يكتمل الدخول بعد (current_user_id() يبقى 0) حتى يُدخل الرمز (two_factor_login).
  */
 function attempt_login(PDO $pdo, string $username, string $password): ?string
 {
@@ -277,6 +312,18 @@ function attempt_login(PDO $pdo, string $username, string $password): ?string
         $pdo->prepare('UPDATE users SET password_hash = ? WHERE id = ?')
             ->execute([password_hash($password, PASSWORD_DEFAULT), $user['id']]);
     }
+    // التحقق بخطوتين: لا يكتمل الدخول قبل الرمز، ولا تُمسح المحاولات حتى لا يُخمَّن الرمز بلا حد
+    if (two_factor_enabled($pdo, (int) $user['id'])) {
+        two_factor_begin($user, $username);
+        return null;
+    }
+    complete_login($pdo, $user, $username);
+    return null;
+}
+
+/** يكمل الدخول بعد التحقق الكامل (كلمة المرور، ثم رمز التحقق إن كان مفعلًا للحساب) */
+function complete_login(PDO $pdo, array $user, string $username): void
+{
     throttle_clear($pdo, $username);
     $pdo->prepare('UPDATE users SET last_login_at = ? WHERE id = ?')->execute([now(), $user['id']]);
 
@@ -287,9 +334,8 @@ function attempt_login(PDO $pdo, string $username, string $password): ?string
         'auth_version' => (int) $user['auth_version'],
         'csrf' => bin2hex(random_bytes(32)),
         'last_activity' => time(),
-    ];
+    ] + session_binding_values();
     auth_event($pdo, 'login_ok', (string) $user['username']);
-    return null;
 }
 
 /** يتحقق من كلمة المرور الحالية للمستخدم المسجل (مثلًا قبل تغييرها) مع نفس حدود المحاولات */

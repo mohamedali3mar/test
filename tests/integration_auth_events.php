@@ -238,7 +238,7 @@ plant_session(['flash' => [], 'last_activity' => $old]);
 start_secure_session();
 check_eq('جلسة زائر قديمة (بدون دخول) لا تُسجل', $expiredBefore, count_events($pdo, 'session_expired'));
 session_write_close();
-plant_session(['user_id' => $uid, 'username' => 'admin', 'auth_version' => 1, 'last_activity' => time() - 60]);
+plant_session(['user_id' => $uid, 'username' => 'admin', 'auth_version' => 1, 'last_activity' => time() - 60] + session_binding_values());
 start_secure_session();
 check('جلسة نشطة حديثة تبقى', current_user_id() === $uid);
 check_eq('  ولا تُسجل', $expiredBefore, count_events($pdo, 'session_expired'));
@@ -385,6 +385,7 @@ try {
 check('auth_event لا يرمي استثناء في القاعدة القديمة (مع التنظيف)', !$threw);
 seed_user($v1db, 'oldadmin', 'Old-Horse-1234');
 $v1db->exec('DELETE FROM login_attempts');
+db_column_cache_reset(); // قاعدة أخرى في نفس العملية: أعمدة الترقيات تُفحص من جديد
 check_eq('الدخول يعمل في القاعدة القديمة', null, attempt_login($v1db, 'oldadmin', 'Old-Horse-1234'));
 $applied = run_migrations($v1db);
 check_eq('التحديث طبق الترقية 2 أولًا', 2, $applied[0] ?? null);

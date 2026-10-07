@@ -40,6 +40,8 @@ require APP_ROOT . '/lib/documents.php';
 require APP_ROOT . '/lib/stock.php';
 require APP_ROOT . '/lib/migrate.php';
 require APP_ROOT . '/lib/forms.php';
+require APP_ROOT . '/lib/security.php';
+require APP_ROOT . '/lib/totp.php';
 require APP_ROOT . '/lib/accounting.php';
 
 set_exception_handler(function (Throwable $e): void {

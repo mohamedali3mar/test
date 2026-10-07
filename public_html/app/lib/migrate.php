@@ -94,5 +94,9 @@ function run_migrations(PDO $pdo): array
         $pdo->query("SELECT RELEASE_LOCK('wood_migrate')");
     }
     reset_settings_cache();
+    // أعمدة الترقيات المخزنة مؤقتًا (مثل login_attempts.blocked) قد تغيرت للتو
+    if (function_exists('db_column_cache_reset')) {
+        db_column_cache_reset();
+    }
     return $applied;
 }

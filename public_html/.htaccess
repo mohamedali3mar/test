@@ -12,6 +12,8 @@ DirectoryIndex index.php
     # منع ملفات التوثيق والنسخ الاحتياطية والأرشيفات وملفات SQL والسجلات والملفات المؤقتة للمحررات
     # (مثل backup.sql.gz و index.php.old و config.php~)
     RewriteRule (\.(md|sql|log|lock|bak|zip|ini|sh|dist|allow|gz|tgz|tar|7z|rar|old|orig|swp|tmp|backup|bkp)|~)$ - [F,L,NC]
+    # سكربتات الواجهة تُقدم للمستخدمين المسجلين فقط عبر index.php?r=asset، ولا تُفتح مباشرة
+    RewriteRule ^assets/js/(app|twofactor)\.js$ - [F,L,NC]
 </IfModule>
 
 # حماية إضافية إذا لم تعمل mod_rewrite
@@ -20,6 +22,9 @@ DirectoryIndex index.php
     Require all denied
 </FilesMatch>
 <FilesMatch "^\.(?!well-known)">
+    Require all denied
+</FilesMatch>
+<FilesMatch "^(app|twofactor)\.js$">
     Require all denied
 </FilesMatch>
 
