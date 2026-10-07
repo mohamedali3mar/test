@@ -124,6 +124,40 @@ function fmt_datetime(?string $dt): string
     return $ts === false ? $dt : digits(date('Y-m-d H:i', $ts));
 }
 
+/**
+ * وصف مختصر للمتصفح من ترويسة User-Agent، مثل «Chrome على Windows».
+ * الترتيب مهم: Edge وOpera وSamsung تحتوي كلمة Chrome، وChrome يحتوي Safari، وiPhone يحتوي Mac OS X.
+ * إذا لم يُعرف المتصفح يُعرض أول 40 حرفًا من الترويسة نفسها.
+ */
+function fmt_user_agent(string $ua): string
+{
+    if (trim($ua) === '') {
+        return 'غير معروف';
+    }
+    $find = function (array $patterns) use ($ua): string {
+        foreach ($patterns as $needle => $name) {
+            if (str_contains($ua, $needle)) {
+                return $name;
+            }
+        }
+        return '';
+    };
+    $browser = $find([
+        'Edg/' => 'Edge', 'EdgA/' => 'Edge', 'EdgiOS/' => 'Edge', 'Edge/' => 'Edge',
+        'OPR/' => 'Opera', 'Opera' => 'Opera', 'SamsungBrowser/' => 'Samsung Internet',
+        'Firefox/' => 'Firefox', 'FxiOS/' => 'Firefox', 'CriOS/' => 'Chrome', 'Chromium/' => 'Chromium', 'Chrome/' => 'Chrome',
+        'Safari/' => 'Safari', 'curl/' => 'curl', 'Wget/' => 'Wget', 'python' => 'Python', 'Python' => 'Python',
+    ]);
+    $os = $find([
+        'Windows' => 'Windows', 'Android' => 'Android', 'iPhone' => 'iPhone', 'iPad' => 'iPad',
+        'CrOS' => 'ChromeOS', 'Macintosh' => 'Mac', 'Mac OS X' => 'Mac', 'Linux' => 'Linux',
+    ]);
+    if ($browser !== '') {
+        return $os !== '' ? $browser . ' على ' . $os : $browser;
+    }
+    return mb_strlen($ua) > 40 ? mb_substr($ua, 0, 40) . '…' : $ua;
+}
+
 const DOC_KIND_LABELS = ['in' => 'وارد', 'sale' => 'بيع', 'transfer' => 'تحويل'];
 
 function kind_label(string $kind): string
