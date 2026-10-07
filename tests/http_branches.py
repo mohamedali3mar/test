@@ -209,7 +209,7 @@ check('الفاتورة المطبوعة تذكر الفرع وعنوانه وه
 s, html = a.page(f'index.php?r=document&id={tr}')
 check('تفاصيل التحويل تذكر الفرعين', 'من فرع' in html and 'إلى فرع' in html and 'فرع الإسكندرية' in html, s)
 s, html = a.page('index.php?r=documents')
-check('سجل المستندات فيه عمود الفرع وتصفية الفرع', '<th scope="col">الفرع</th>' in html and 'id="branch"' in html, s)
+check('سجل المستندات فيه عمود الفرع وتصفية الفرع', '<th scope="col" data-col="branch"><a class="sort-link"' in html and '>الفرع</a>' in html and 'id="branch"' in html, s)
 check('  التحويل بين الفرعين يظهر «من … إلى …»', 'من فرع القاهرة إلى فرع الإسكندرية' in html)
 s, html = a.page(f'index.php?r=documents&branch={alex}')
 check('تصفية سجل المستندات بفرع الإسكندرية', f'id={sale_alex}"' in html and f'id={sale_cairo}"' not in html and f'id={tr}"' in html, s)

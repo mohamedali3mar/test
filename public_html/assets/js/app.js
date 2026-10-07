@@ -51,7 +51,7 @@
     var s = normalize(raw);
     if (s === '') { return { e: 'empty' }; }
     if (/[,،٬]/.test(s)) { return { e: 'comma' }; }
-    if (/^[-−–]/.test(s)) { return { e: 'negative' }; }
+    if (/^[-\u2212\u2013]/.test(s)) { return { e: 'negative' }; }
     if (s.indexOf('/') !== -1) { return { e: 'fraction' }; }
     var m = /^(\d*)(?:\.(\d*))?$/.exec(s);
     if (!m || (m[1] === '' && (m[2] || '') === '')) { return { e: 'invalid' }; }
@@ -147,7 +147,7 @@
   function parseQuantity(raw) {
     var s = normalize(raw);
     if (s === '') { return { msg: 'أدخل عدد القطع.' }; }
-    if (/^[-−–]/.test(s)) { return { msg: 'عدد القطع لا يقبل قيمًا سالبة.' }; }
+    if (/^[-\u2212\u2013]/.test(s)) { return { msg: 'عدد القطع لا يقبل قيمًا سالبة.' }; }
     if (/[,،٬]/.test(s)) { return { msg: 'اكتب عدد القطع بدون فواصل.' }; }
     if (!/^\d+$/.test(s)) { return { msg: 'عدد القطع يجب أن يكون عددًا صحيحًا بدون كسور.' }; }
     s = s.replace(/^0+/, '');

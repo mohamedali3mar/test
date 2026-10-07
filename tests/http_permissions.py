@@ -354,7 +354,7 @@ _, _, html = a.get('index.php?r=monitor&group=users')
 for label in ['تعطيل مستخدم', 'تفعيل مستخدم', 'تعيين كلمة مرور', 'تغيير كلمة المرور', 'إضافة مستخدم']:
     check(f'السجل فيه: {label}', label in html)
 _, _, html = a.get('index.php?r=documents')
-check('سجل المستندات: عمود «المستخدم» باسم الموظف', '<th scope="col">المستخدم</th>' in html and staff_name in html)
+check('سجل المستندات: عمود «المستخدم» باسم الموظف', '<th scope="col" data-col="user">المستخدم</th>' in html and staff_name in html)
 if DB:
     check('قاعدة البيانات: كل أسطر السجل JSON صالح', sql('SELECT COUNT(*) = SUM(details IS NULL OR JSON_VALID(details)) FROM audit_log') == '1')
     check('قاعدة البيانات: عمليات الموظف منسوبة إليه', sql(f"SELECT COUNT(*) FROM audit_log a JOIN users u ON u.id = a.user_id WHERE u.username = '{staff_user}' AND a.action IN ('doc.receipt', 'doc.sale', 'doc.transfer', 'account.password')") == '4')
