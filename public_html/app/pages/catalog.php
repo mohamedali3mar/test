@@ -30,7 +30,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($action === 'create') {
             $newName = input($_POST, 'name');
             $newBranch = input($_POST, 'branch_id');
-            catalog_create($pdo, $kind, $newName, $kind === 'warehouse' ? (int) $newBranch : null);
+            catalog_create($pdo, $kind, $newName, $kind === 'warehouse' && $newBranch !== '' ? (int) $newBranch : null);
             flash('success', $kind === 'warehouse' ? 'تمت إضافة المخزن.' : 'تمت إضافة النوع.');
         } elseif ($action === 'move' && $kind === 'warehouse') {
             $branchName = warehouse_move($pdo, (int) input($_POST, 'id'), (int) input($_POST, 'branch_id'));
