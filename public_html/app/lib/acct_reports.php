@@ -988,27 +988,32 @@ function acct_fmt_cell(mixed $value, string $type): string
     }
 }
 
-/** يعرض مجموعة بيانات (أو قسمًا منها) كجدول: محاذاة حسب النوع، وتنسيق القيم، وصف الإجمالي */
-function render_dataset_table(array $dataset): void
+/**
+ * يعرض مجموعة بيانات (أو قسمًا منها) كجدول: محاذاة حسب النوع، وتنسيق القيم، وصف الإجمالي.
+ * $o (اختياري): id للجدول، و sort و query و sortable لروابط الترتيب في رؤوس الأعمدة.
+ */
+function render_dataset_table(array $dataset, array $o = []): void
 {
     $cols = $dataset['columns'];
     $cls = fn (array $c) => ($c['align'] ?? 'start') === 'end' ? ' class="num align-end"' : '';
+    $sortable = $o['sortable'] ?? [];
     ?>
 <div class="table-wrap">
-  <table class="report-table">
+  <table class="report-table"<?= isset($o['id']) ? ' id="' . h((string) $o['id']) . '"' : '' ?>>
     <caption class="visually-hidden"><?= h((string) ($dataset['title'] ?? '')) ?></caption>
     <thead>
       <tr>
-        <?php foreach ($cols as $c): ?><th scope="col"<?= $cls($c) ?>><?= h($c['label']) ?></th><?php endforeach; ?>
+        <?php foreach ($cols as $c): ?><?= sort_th((string) $c['key'], (string) $c['label'], $o['sort'] ?? null, $o['query'] ?? [],
+            isset($sortable[$c['key']]), ($c['align'] ?? 'start') === 'end' ? 'num align-end' : '') ?><?php endforeach; ?>
       </tr>
     </thead>
     <tbody>
       <?php if (!$dataset['rows']): ?>
-      <tr><td colspan="<?= count($cols) ?>" data-label="<?= h($cols[0]['label']) ?>" class="muted">لا توجد بيانات مطابقة.</td></tr>
+      <tr><td colspan="<?= count($cols) ?>" data-label="<?= h($cols[0]['label']) ?>" class="muted" data-empty-row>لا توجد بيانات مطابقة.</td></tr>
       <?php endif; ?>
       <?php foreach ($dataset['rows'] as $r): ?>
       <tr>
-        <?php foreach ($cols as $c): ?><td data-label="<?= h($c['label']) ?>"<?= $cls($c) ?>><?= h(acct_fmt_cell($r[$c['key']] ?? null, $c['type'])) ?></td><?php endforeach; ?>
+        <?php foreach ($cols as $c): ?><td data-col="<?= h((string) $c['key']) ?>" data-label="<?= h($c['label']) ?>"<?= $cls($c) ?>><?= h(acct_fmt_cell($r[$c['key']] ?? null, $c['type'])) ?></td><?php endforeach; ?>
       </tr>
       <?php endforeach; ?>
     </tbody>
@@ -1016,8 +1021,8 @@ function render_dataset_table(array $dataset): void
     <tfoot>
       <tr class="row-total">
         <?php foreach ($cols as $i => $c): ?>
-          <?php if ($i === 0): ?><th scope="row"<?= $cls($c) ?>><?= h(acct_fmt_cell($dataset['totals'][$c['key']] ?? 'الإجمالي', $c['type'])) ?></th>
-          <?php else: ?><td data-label="<?= h($c['label']) ?>"<?= $cls($c) ?>><?= h(acct_fmt_cell($dataset['totals'][$c['key']] ?? null, $c['type'])) ?></td><?php endif; ?>
+          <?php if ($i === 0): ?><th scope="row" data-col="<?= h((string) $c['key']) ?>"<?= $cls($c) ?>><?= h(acct_fmt_cell($dataset['totals'][$c['key']] ?? 'الإجمالي', $c['type'])) ?></th>
+          <?php else: ?><td data-col="<?= h((string) $c['key']) ?>" data-label="<?= h($c['label']) ?>"<?= $cls($c) ?>><?= h(acct_fmt_cell($dataset['totals'][$c['key']] ?? null, $c['type'])) ?></td><?php endif; ?>
         <?php endforeach; ?>
       </tr>
     </tfoot>

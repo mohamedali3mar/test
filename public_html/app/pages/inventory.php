@@ -2,46 +2,32 @@
 defined('APP_ROOT') || exit;
 
 $pdo = db();
-$q = clean_text(input($_GET, 'q'));
-$typeId = (int) input($_GET, 'type');
-$warehouseId = (int) input($_GET, 'warehouse');
-$hideEmpty = input($_GET, 'hide_empty') === '1';
-
-$types = catalog_all($pdo, 'type');
-// الفرع: المستخدم المقيد بفرع يرى فرعه فقط، وغيره يختار فرعًا أو كل الفروع
-$scope = allowed_branch_id($pdo);
-$branches = catalog_all($pdo, 'branch');
-$branchNames = array_column($branches, 'name', 'id');
-$branchId = $scope ?? (int) input($_GET, 'branch');
-if (!isset($branchNames[$branchId])) {
-    $branchId = $scope ?? 0;
-}
-$branchFilter = $branchId > 0 ? $branchId : null;
-$warehouses = scoped_warehouses($pdo, $branchFilter);
-$whNames = array_column($warehouses, 'name', 'id');
-if ($warehouseId > 0 && !isset($whNames[$warehouseId])) {
-    $warehouseId = 0;
-}
-$view = inventory_view($pdo, $q, $typeId, $warehouseId, $hideEmpty, $branchFilter);
+// التصفية والترتيب ونطاق الفرع في inventory_request (lib/tables.php)، ومنها ملف التصدير أيضًا
+$req = inventory_request($pdo, $_GET);
+['q' => $q, 'type' => $typeId, 'warehouse' => $warehouseId, 'hide_empty' => $hideEmpty, 'types' => $types, 'scope' => $scope,
+    'branches' => $branches, 'branch_names' => $branchNames, 'branch' => $branchId, 'branch_filter' => $branchFilter,
+    'warehouses' => $warehouses, 'wh_names' => $whNames, 'view' => $view, 'filtered' => $filtered, 'show_split' => $showSplit,
+    'sort' => $sort, 'query' => $query] = $req;
 $summary = warehouse_summary($pdo, $branchFilter);
 // عند عرض كل الفروع: ملخص لكل فرع مع مخازنه
 $branchRows = $branchFilter === null && count($branches) > 1 ? branch_summary($pdo) : [];
-$filtered = $q !== '' || $typeId > 0 || $warehouseId > 0 || $hideEmpty || ($scope === null && $branchFilter !== null);
-$showSplit = $warehouseId === 0 && count($warehouses) > 1;
+$columns = array_map(fn ($c) => $c[0], inventory_columns($showSplit));
+$th = fn (string $k, string $class = '') => sort_th($k, $columns[$k], $sort, $query, isset(INVENTORY_SORT[$k]), $class);
 
 render_header('المخزون', 'inventory');
 ?>
 <div class="page-head">
   <h1>المخزون</h1>
-  <div class="page-actions">
+  <div class="page-actions no-print">
     <a class="btn btn-primary" href="<?= h(url('receive')) ?>">إضافة وارد</a>
     <a class="btn" href="<?= h(url('sell')) ?>">فاتورة بيع</a>
     <a class="btn" href="<?= h(url('transfer')) ?>">تحويل</a>
   </div>
 </div>
 
-<form method="get" action="index.php" class="filters" role="search" aria-label="تصفية المخزون">
+<form method="get" action="index.php" class="filters no-print" role="search" aria-label="تصفية المخزون">
   <input type="hidden" name="r" value="inventory">
+  <?php if ($sort !== null): ?><input type="hidden" name="sort" value="<?= h(table_sort_param($sort)) ?>"><?php endif; ?>
   <div class="field field-wide">
     <label for="q">بحث باسم النوع</label>
     <input type="search" id="q" name="q" value="<?= h($q) ?>" maxlength="100">
@@ -70,6 +56,7 @@ render_header('المخزون', 'inventory');
   </div>
 </form>
 
+<?php render_print_heading('المخزون', $req['subtitle']); ?>
 <div id="live-inventory" data-live>
 <?php if ($branchRows): $branchTotals = branch_summary_totals($branchRows); ?>
   <section class="section" aria-labelledby="branch-summary-title">
@@ -165,35 +152,40 @@ render_header('المخزون', 'inventory');
       عدد القطع: <span class="nowrap"><?= h(fmt_int($view['qty'])) ?></span>
       <?php if ($view['empty']): ?><span class="muted">، مقاسات نافدة: <?= h(fmt_int($view['empty'])) ?></span><?php endif; ?>
     </p>
+    <?php render_table_tools([
+        'key' => 'inventory', 'table' => 'stock-table', 'columns' => $columns, 'required' => ['type'], 'print' => true,
+        'export' => ['t' => 'inventory', 'sort' => table_sort_param($sort)] + array_diff_key($query, ['r' => true]),
+        'sortable' => array_intersect_key(INVENTORY_SORT, $columns), 'sort' => $sort, 'query' => $query,
+    ]); ?>
     <div class="table-wrap table-stack">
-      <table class="inventory-table">
+      <table class="inventory-table" id="stock-table">
         <caption class="visually-hidden">أرصدة المقاسات مجمعة حسب النوع</caption>
         <thead>
           <tr>
-            <th scope="col">النوع</th>
-            <th scope="col" class="num">العرض</th>
-            <th scope="col" class="num">التخانة</th>
-            <th scope="col" class="num">الطول</th>
-            <th scope="col" class="num">العدد المتاح</th>
-            <th scope="col" class="num">حجم القطعة (م³)</th>
-            <th scope="col" class="num">الحجم المتاح (م³)</th>
-            <?php if ($showSplit): ?><th scope="col">التوزيع على المخازن</th><?php endif; ?>
-            <th scope="col">الحالة</th>
+            <?= $th('type') ?>
+            <?= $th('width', 'num') ?>
+            <?= $th('thickness', 'num') ?>
+            <?= $th('length', 'num') ?>
+            <?= $th('qty', 'num') ?>
+            <?= $th('piece_volume', 'num') ?>
+            <?= $th('volume', 'num') ?>
+            <?php if ($showSplit): ?><?= $th('split') ?><?php endif; ?>
+            <?= $th('status') ?>
           </tr>
         </thead>
         <?php foreach ($view['groups'] as $g): ?>
         <tbody>
           <?php foreach ($g['rows'] as $r): $empty = $r['qty'] === 0; ?>
           <tr class="<?= $empty ? 'row-empty' : '' ?>">
-            <td data-label="<?= h('النوع') ?>"><?= h($g['name']) ?></td>
-            <td class="num" data-label="<?= h('العرض') ?>"><?= h(fmt_dim((int) $r['width_um'], $r['width_unit'])) ?></td>
-            <td class="num" data-label="<?= h('التخانة') ?>"><?= h(fmt_dim((int) $r['thickness_um'], $r['thickness_unit'])) ?></td>
-            <td class="num" data-label="<?= h('الطول') ?>"><?= h(fmt_dim((int) $r['length_um'], $r['length_unit'])) ?></td>
-            <td class="num" data-label="<?= h('العدد المتاح') ?>"><?= h(fmt_int($r['qty'])) ?></td>
-            <td class="num" data-label="<?= h('حجم القطعة (م³)') ?>"><?= h(fmt_volume((string) $r['piece_volume_m3'])) ?></td>
-            <td class="num" data-label="<?= h('الحجم المتاح (م³)') ?>"><?= h(fmt_volume($r['volume'])) ?></td>
+            <td data-col="type" data-label="<?= h('النوع') ?>"><?= h($g['name']) ?></td>
+            <td class="num" data-col="width" data-label="<?= h('العرض') ?>"><?= h(fmt_dim((int) $r['width_um'], $r['width_unit'])) ?></td>
+            <td class="num" data-col="thickness" data-label="<?= h('التخانة') ?>"><?= h(fmt_dim((int) $r['thickness_um'], $r['thickness_unit'])) ?></td>
+            <td class="num" data-col="length" data-label="<?= h('الطول') ?>"><?= h(fmt_dim((int) $r['length_um'], $r['length_unit'])) ?></td>
+            <td class="num" data-col="qty" data-label="<?= h('العدد المتاح') ?>"><?= h(fmt_int($r['qty'])) ?></td>
+            <td class="num" data-col="piece_volume" data-label="<?= h('حجم القطعة (م³)') ?>"><?= h(fmt_volume((string) $r['piece_volume_m3'])) ?></td>
+            <td class="num" data-col="volume" data-label="<?= h('الحجم المتاح (م³)') ?>"><?= h(fmt_volume($r['volume'])) ?></td>
             <?php if ($showSplit): ?>
-              <td class="split" data-label="<?= h('التوزيع على المخازن') ?>">
+              <td class="split" data-col="split" data-label="<?= h('التوزيع على المخازن') ?>">
                 <?php $parts = [];
                 foreach ($r['by_warehouse'] as $wid => $qty) {
                     if ($qty > 0) {
@@ -203,27 +195,27 @@ render_header('المخزون', 'inventory');
                 echo $parts ? h(implode('، ', $parts)) : '<span class="muted">لا يوجد</span>'; ?>
               </td>
             <?php endif; ?>
-            <td data-label="<?= h('الحالة') ?>"><?= $empty ? '<span class="status status-empty">نفد</span>' : 'متاح' ?></td>
+            <td data-col="status" data-label="<?= h('الحالة') ?>"><?= $empty ? '<span class="status status-empty">نفد</span>' : 'متاح' ?></td>
           </tr>
           <?php endforeach; ?>
           <tr class="row-subtotal">
-            <th scope="row" colspan="4">إجمالي <?= h($g['name']) ?></th>
-            <td class="num" data-label="<?= h('العدد المتاح') ?>"><?= h(fmt_int($g['qty'])) ?></td>
-            <td></td>
-            <td class="num" data-label="<?= h('الحجم المتاح (م³)') ?>"><?= h(fmt_volume($g['volume'])) ?></td>
-            <?php if ($showSplit): ?><td></td><?php endif; ?>
-            <td data-label="<?= h('الحالة') ?>"><?= $g['empty'] ? h('مقاسات نافدة: ' . fmt_int($g['empty'])) : '' ?></td>
+            <th scope="row" colspan="4" data-span="type width thickness length">إجمالي <?= h($g['name']) ?></th>
+            <td class="num" data-col="qty" data-label="<?= h('العدد المتاح') ?>"><?= h(fmt_int($g['qty'])) ?></td>
+            <td data-col="piece_volume"></td>
+            <td class="num" data-col="volume" data-label="<?= h('الحجم المتاح (م³)') ?>"><?= h(fmt_volume($g['volume'])) ?></td>
+            <?php if ($showSplit): ?><td data-col="split"></td><?php endif; ?>
+            <td data-col="status" data-label="<?= h('الحالة') ?>"><?= $g['empty'] ? h('مقاسات نافدة: ' . fmt_int($g['empty'])) : '' ?></td>
           </tr>
         </tbody>
         <?php endforeach; ?>
         <tfoot>
           <tr class="row-total">
-            <th scope="row" colspan="4"><?= $filtered ? 'إجمالي النتائج' : 'إجمالي المخزون' ?></th>
-            <td class="num" data-label="<?= h('العدد المتاح') ?>"><?= h(fmt_int($view['qty'])) ?></td>
-            <td></td>
-            <td class="num" data-label="<?= h('الحجم المتاح (م³)') ?>"><?= h(fmt_volume($view['volume'])) ?></td>
-            <?php if ($showSplit): ?><td></td><?php endif; ?>
-            <td></td>
+            <th scope="row" colspan="4" data-span="type width thickness length"><?= $filtered ? 'إجمالي النتائج' : 'إجمالي المخزون' ?></th>
+            <td class="num" data-col="qty" data-label="<?= h('العدد المتاح') ?>"><?= h(fmt_int($view['qty'])) ?></td>
+            <td data-col="piece_volume"></td>
+            <td class="num" data-col="volume" data-label="<?= h('الحجم المتاح (م³)') ?>"><?= h(fmt_volume($view['volume'])) ?></td>
+            <?php if ($showSplit): ?><td data-col="split"></td><?php endif; ?>
+            <td data-col="status"></td>
           </tr>
         </tfoot>
       </table>

@@ -2,122 +2,38 @@
 defined('APP_ROOT') || exit;
 
 $pdo = db();
-$kind = input($_GET, 'kind');
-$status = input($_GET, 'status');
-$warehouseId = (int) input($_GET, 'warehouse');
-$typeId = (int) input($_GET, 'type');
-$q = clean_text(input($_GET, 'q'));
 $page = max(1, (int) input($_GET, 'page', '1'));
 $perPage = 50;
 
-/** تاريخ من حقل التصفية بصيغة YYYY-MM-DD، أو null إذا كان فارغًا أو غير صالح */
-function parse_date_filter(string $raw, bool &$invalid): ?DateTimeImmutable
-{
-    $raw = normalize_number_input($raw);
-    if ($raw === '') {
-        return null;
-    }
-    $dt = DateTimeImmutable::createFromFormat('!Y-m-d', $raw);
-    if (!$dt || $dt->format('Y-m-d') !== $raw) {
-        $invalid = true;
-        return null;
-    }
-    return $dt;
-}
+// التصفية والترتيب ونطاق الفرع في documents_request (lib/tables.php)، ومنها ملف التصدير أيضًا
+$req = documents_request($pdo, $_GET);
+['kind' => $kind, 'status' => $status, 'warehouse' => $warehouseId, 'type' => $typeId, 'q' => $q, 'from' => $from, 'to' => $to,
+    'date_invalid' => $dateInvalid, 'scope' => $scope, 'branches' => $branches, 'branch_names' => $branchNames, 'branch' => $branchId,
+    'warehouses' => $warehouses, 'types' => $types, 'where_sql' => $whereSql, 'params' => $params, 'sort' => $sort,
+    'filters' => $filters, 'filtered' => $filtered, 'show_branch' => $showBranch] = $req;
 
-$dateInvalid = false;
-$from = parse_date_filter(input($_GET, 'from'), $dateInvalid);
-$to = parse_date_filter(input($_GET, 'to'), $dateInvalid);
-
-// الفرع: المستخدم المقيد بفرع يرى مستندات فرعه فقط (الصادرة منه والتحويلات الواردة إليه)
-$scope = allowed_branch_id($pdo);
-$branches = catalog_all($pdo, 'branch');
-$branchNames = array_column($branches, 'name', 'id');
-$branchId = $scope ?? (int) input($_GET, 'branch');
-if (!isset($branchNames[$branchId])) {
-    $branchId = $scope ?? 0;
-}
-$warehouses = scoped_warehouses($pdo, $branchId > 0 ? $branchId : null);
-if ($warehouseId > 0 && !in_array($warehouseId, array_map('intval', array_column($warehouses, 'id')), true)) {
-    $warehouseId = 0;
-}
-
-$where = [];
-$params = [];
-if ($branchId > 0) {
-    [$cond, $condParams] = document_branch_condition($branchId);
-    $where[] = $cond;
-    array_push($params, ...$condParams);
-}
-if (isset(DOC_KIND_LABELS[$kind])) {
-    $where[] = 'd.kind = ?';
-    $params[] = $kind;
-} else {
-    $kind = '';
-}
-if ($status === 'active' || $status === 'cancelled') {
-    $where[] = 'd.status = ?';
-    $params[] = $status;
-} else {
-    $status = '';
-}
-if ($warehouseId > 0) {
-    $where[] = '(d.warehouse_id = ? OR d.to_warehouse_id = ?)';
-    array_push($params, $warehouseId, $warehouseId);
-}
-if ($typeId > 0) {
-    $where[] = 'EXISTS (SELECT 1 FROM document_lines l JOIN items i ON i.id = l.item_id WHERE l.document_id = d.id AND i.wood_type_id = ?)';
-    $params[] = $typeId;
-}
-if ($from) {
-    $where[] = 'd.doc_date >= ?';
-    $params[] = $from->format('Y-m-d 00:00:00');
-}
-if ($to) {
-    $where[] = 'd.doc_date < ?';
-    $params[] = $to->modify('+1 day')->format('Y-m-d 00:00:00');
-}
-if ($q !== '') {
-    $like = '%' . addcslashes($q, '%_\\') . '%';
-    $cond = '(d.party_name LIKE ? OR d.reference LIKE ? OR d.notes LIKE ?
-             OR EXISTS (SELECT 1 FROM document_lines l2 WHERE l2.document_id = d.id AND l2.wood_type_name LIKE ?)';
-    array_push($params, $like, $like, $like, $like);
-    $num = normalize_number_input($q);
-    if (preg_match('/^\d{1,9}\z/', $num)) {
-        $cond .= ' OR d.doc_no = ?';
-        $params[] = (int) $num;
-    }
-    $where[] = $cond . ')';
-}
-$whereSql = $where ? ' WHERE ' . implode(' AND ', $where) : '';
-
-$stmt = $pdo->prepare('SELECT COUNT(*) FROM documents d' . $whereSql);
-$stmt->execute($params);
-$total = (int) $stmt->fetchColumn();
+$total = documents_count($pdo, $req);
 // إجماليات المبيعات لكل عملة على حدة: لا تُجمع مبالغ عملات مختلفة
 $salesTotals = sales_by_currency($pdo, $whereSql, $params, $typeId);
 $pages = max(1, (int) ceil($total / $perPage));
 $page = min($page, $pages);
 
-$stmt = $pdo->prepare('SELECT d.* FROM documents d' . $whereSql . ' ORDER BY d.id DESC LIMIT ' . $perPage . ' OFFSET ' . (($page - 1) * $perPage));
+$stmt = $pdo->prepare('SELECT d.* FROM documents d' . $whereSql . ' ORDER BY ' . $req['order'] . ' LIMIT ' . $perPage . ' OFFSET ' . (($page - 1) * $perPage));
 $stmt->execute($params);
 $rows = $stmt->fetchAll();
 $userNames = users_name_map($pdo);
-
-$types = catalog_all($pdo, 'type');
-$filters = ['r' => 'documents', 'kind' => $kind, 'status' => $status, 'branch' => $scope === null && $branchId ? $branchId : '',
-    'warehouse' => $warehouseId ?: '', 'type' => $typeId ?: '',
-    'from' => $from ? $from->format('Y-m-d') : '', 'to' => $to ? $to->format('Y-m-d') : '', 'q' => $q];
-$filters = array_filter($filters, fn ($v) => $v !== '');
-$filtered = count($filters) > 1;
-$showBranch = count($branchNames) > 1;
+$columns = documents_columns($showBranch);
+$th = fn (string $k, string $class = '') => sort_th($k, $columns[$k], $sort, $filters, isset(DOCUMENTS_SORT_SQL[$k]), $class);
+// روابط الصفحات تحمل الترتيب
+$pageQuery = $filters + ($sort !== null ? ['sort' => table_sort_param($sort)] : []);
 
 render_header('الفواتير والحركات', 'documents');
 ?>
 <h1>الفواتير والحركات</h1>
 
-<form method="get" action="index.php" class="filters" role="search" aria-label="تصفية السجل">
+<form method="get" action="index.php" class="filters no-print" role="search" aria-label="تصفية السجل">
   <input type="hidden" name="r" value="documents">
+  <?php if ($sort !== null): ?><input type="hidden" name="sort" value="<?= h(table_sort_param($sort)) ?>"><?php endif; ?>
   <div class="field">
     <label for="kind">نوع المستند</label>
     <select id="kind" name="kind">
@@ -171,6 +87,7 @@ render_header('الفواتير والحركات', 'documents');
 
 <?php if ($dateInvalid): ?><div class="alert alert-warning" role="status">صيغة التاريخ غير صحيحة وتم تجاهلها. استخدم الصيغة <?= h(digits('2026-01-31')) ?>.</div><?php endif; ?>
 
+<?php render_print_heading('الفواتير والحركات', $req['subtitle']); ?>
 <div id="live-documents" data-live>
 <?php if (!$rows): ?>
   <p class="empty">
@@ -191,43 +108,48 @@ render_header('الفواتير والحركات', 'documents');
       الإجمالي: <strong><?= h(fmt_money_currency($st['amount'], $st['currency'])) ?></strong>
     </p>
   <?php endforeach; ?>
+  <?php render_table_tools([
+      'key' => 'documents', 'table' => 'documents-table', 'columns' => $columns, 'required' => ['doc'], 'print' => true,
+      'export' => ['t' => 'documents', 'sort' => table_sort_param($sort)] + array_diff_key($filters, ['r' => true]),
+      'sortable' => array_intersect_key($columns, DOCUMENTS_SORT_SQL), 'sort' => $sort, 'query' => $filters,
+  ]); ?>
   <div class="table-wrap table-stack">
-    <table class="documents-table">
+    <table class="documents-table" id="documents-table">
       <caption class="visually-hidden">المستندات من الأحدث إلى الأقدم</caption>
       <thead>
         <tr>
-          <th scope="col">المستند</th>
-          <th scope="col">التاريخ</th>
-          <th scope="col">المستخدم</th>
-          <?php if ($showBranch): ?><th scope="col">الفرع</th><?php endif; ?>
-          <th scope="col">المخزن</th>
-          <th scope="col">العميل / المورد</th>
-          <th scope="col" class="num">الأسطر</th>
-          <th scope="col" class="num">القطع</th>
-          <th scope="col" class="num">الحجم (م³)</th>
-          <th scope="col" class="num">القيمة</th>
-          <th scope="col">الحالة</th>
-          <th scope="col"><span class="visually-hidden">إجراءات</span></th>
+          <?= $th('doc') ?>
+          <?= $th('date') ?>
+          <?= $th('user') ?>
+          <?php if ($showBranch): ?><?= $th('branch') ?><?php endif; ?>
+          <?= $th('warehouse') ?>
+          <?= $th('party') ?>
+          <?= $th('lines', 'num') ?>
+          <?= $th('qty', 'num') ?>
+          <?= $th('volume', 'num') ?>
+          <?= $th('amount', 'num') ?>
+          <?= $th('status') ?>
+          <th scope="col" class="no-print"><span class="visually-hidden">إجراءات</span></th>
         </tr>
       </thead>
       <tbody>
       <?php foreach ($rows as $d): $cancelled = $d['status'] === 'cancelled'; ?>
         <tr class="<?= $cancelled ? 'row-cancelled' : '' ?>">
-          <td class="nowrap" data-label="<?= h('المستند') ?>"><a href="<?= h(url('document', ['id' => (int) $d['id']])) ?>"><?= h(doc_label($d)) ?></a></td>
-          <td class="nowrap" data-label="<?= h('التاريخ') ?>"><?= h(fmt_datetime($d['doc_date'])) ?></td>
-          <td data-label="<?= h('المستخدم') ?>"><?= h($userNames[(int) $d['created_by']] ?? '') ?></td>
+          <td class="nowrap" data-col="doc" data-label="<?= h('المستند') ?>"><a href="<?= h(url('document', ['id' => (int) $d['id']])) ?>"><?= h(doc_label($d)) ?></a></td>
+          <td class="nowrap" data-col="date" data-label="<?= h('التاريخ') ?>"><?= h(fmt_datetime($d['doc_date'])) ?></td>
+          <td data-col="user" data-label="<?= h('المستخدم') ?>"><?= h($userNames[(int) $d['created_by']] ?? '') ?></td>
           <?php if ($showBranch): ?>
-            <td data-label="الفرع"><?= h($d['kind'] === 'transfer' && (int) $d['to_branch_id'] !== (int) $d['branch_id']
+            <td data-col="branch" data-label="الفرع"><?= h($d['kind'] === 'transfer' && (int) $d['to_branch_id'] !== (int) $d['branch_id']
                 ? 'من ' . $d['branch_name'] . ' إلى ' . $d['to_branch_name'] : (string) $d['branch_name']) ?></td>
           <?php endif; ?>
-          <td data-label="<?= h('المخزن') ?>"><?= h($d['kind'] === 'transfer' ? 'من ' . $d['warehouse_name'] . ' إلى ' . $d['to_warehouse_name'] : $d['warehouse_name']) ?></td>
-          <td data-label="<?= h($d['kind'] === 'sale' ? 'العميل' : ($d['kind'] === 'in' ? 'المورد' : 'العميل / المورد')) ?>"><?= h((string) $d['party_name']) ?></td>
-          <td class="num" data-label="<?= h('الأسطر') ?>"><?= h(fmt_int((int) $d['line_count'])) ?></td>
-          <td class="num" data-label="<?= h('القطع') ?>"><?= h(fmt_int((int) $d['total_qty'])) ?></td>
-          <td class="num" data-label="<?= h('الحجم (م³)') ?>"><?= h(fmt_volume($d['total_volume_m3'])) ?></td>
-          <td class="num" data-label="<?= h('القيمة') ?>"><?= $d['kind'] === 'sale' ? h(fmt_money_currency((string) $d['total_amount'], $d['currency'])) : '' ?></td>
-          <td data-label="<?= h('الحالة') ?>"><?= $cancelled ? '<span class="status status-cancelled">ملغاة ' . h(fmt_datetime($d['cancelled_at'])) . '</span>' : 'سارية' ?></td>
-          <td class="cell-actions">
+          <td data-col="warehouse" data-label="<?= h('المخزن') ?>"><?= h($d['kind'] === 'transfer' ? 'من ' . $d['warehouse_name'] . ' إلى ' . $d['to_warehouse_name'] : $d['warehouse_name']) ?></td>
+          <td data-col="party" data-label="<?= h($d['kind'] === 'sale' ? 'العميل' : ($d['kind'] === 'in' ? 'المورد' : 'العميل / المورد')) ?>"><?= h((string) $d['party_name']) ?></td>
+          <td class="num" data-col="lines" data-label="<?= h('الأسطر') ?>"><?= h(fmt_int((int) $d['line_count'])) ?></td>
+          <td class="num" data-col="qty" data-label="<?= h('القطع') ?>"><?= h(fmt_int((int) $d['total_qty'])) ?></td>
+          <td class="num" data-col="volume" data-label="<?= h('الحجم (م³)') ?>"><?= h(fmt_volume($d['total_volume_m3'])) ?></td>
+          <td class="num" data-col="amount" data-label="<?= h('القيمة') ?>"><?= $d['kind'] === 'sale' ? h(fmt_money_currency((string) $d['total_amount'], $d['currency'])) : '' ?></td>
+          <td data-col="status" data-label="<?= h('الحالة') ?>"><?= $cancelled ? '<span class="status status-cancelled">ملغاة ' . h(fmt_datetime($d['cancelled_at'])) . '</span>' : 'سارية' ?></td>
+          <td class="cell-actions no-print">
             <div class="row-actions">
               <a href="<?= h(url('document', ['id' => (int) $d['id']])) ?>">تفاصيل</a>
               <a href="<?= h(url('print', ['id' => (int) $d['id']])) ?>">طباعة</a>
@@ -239,10 +161,10 @@ render_header('الفواتير والحركات', 'documents');
     </table>
   </div>
   <?php if ($pages > 1): ?>
-  <nav class="pager" aria-label="الصفحات">
-    <?php if ($page > 1): ?><a class="btn" href="<?= h('index.php?' . http_build_query($filters + ['page' => $page - 1])) ?>">السابق</a><?php endif; ?>
+  <nav class="pager no-print" aria-label="الصفحات">
+    <?php if ($page > 1): ?><a class="btn" href="<?= h('index.php?' . http_build_query($pageQuery + ['page' => $page - 1])) ?>">السابق</a><?php endif; ?>
     <span>صفحة <?= h(fmt_int($page)) ?> من <?= h(fmt_int($pages)) ?></span>
-    <?php if ($page < $pages): ?><a class="btn" href="<?= h('index.php?' . http_build_query($filters + ['page' => $page + 1])) ?>">التالي</a><?php endif; ?>
+    <?php if ($page < $pages): ?><a class="btn" href="<?= h('index.php?' . http_build_query($pageQuery + ['page' => $page + 1])) ?>">التالي</a><?php endif; ?>
   </nav>
   <?php endif; ?>
 <?php endif; ?>

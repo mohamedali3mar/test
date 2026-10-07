@@ -314,11 +314,12 @@
   });
 
   /* ---------- الطباعة بعد تحميل الخط ---------- */
-  document.querySelectorAll('[data-action="print"]').forEach(function (btn) {
-    btn.addEventListener('click', function () {
-      var ready = document.fonts && document.fonts.ready ? document.fonts.ready : Promise.resolve();
-      ready.then(function () { window.print(); });
-    });
+  // بالتفويض على الصفحة: يشمل أزرار الطباعة التي تضيفها أدوات الجداول أو التحديث التلقائي لاحقًا
+  document.addEventListener('click', function (e) {
+    var btn = e.target.closest ? e.target.closest('[data-action="print"]') : null;
+    if (!btn) { return; }
+    var ready = document.fonts && document.fonts.ready ? document.fonts.ready : Promise.resolve();
+    ready.then(function () { window.print(); });
   });
 
   /* ---------- نموذج الوارد ---------- */
@@ -632,7 +633,8 @@
     if (sel && !sel.isCollapsed && sel.anchorNode && region.contains(sel.anchorNode)) { return true; }
     var dirty = false;
     region.querySelectorAll('input, textarea, select').forEach(function (el) {
-      if (dirty || el.type === 'hidden') { return; }
+      // أدوات الجداول (البحث السريع والأعمدة) تحفظ حالتها وتعيد تطبيقها بعد الاستبدال (tables.js)
+      if (dirty || el.type === 'hidden' || el.closest('[data-tools-slot]')) { return; }
       if (el.type === 'checkbox' || el.type === 'radio') {
         dirty = el.checked !== el.defaultChecked;
       } else if (el.tagName === 'SELECT') {
@@ -688,6 +690,7 @@
       if (doc.body && doc.body.dataset) {
         C.configure({ digits: doc.body.dataset.digits, volDecimals: doc.body.dataset.volDecimals, volPad: doc.body.dataset.volPad });
       }
+      document.dispatchEvent(new window.CustomEvent('wood:regions-updated'));
       return complete;
     });
   }

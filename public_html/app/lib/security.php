@@ -154,6 +154,7 @@ const PROTECTED_SCRIPTS = [
     'app.js' => 'js/app.js',
     'twofactor.js' => 'js/twofactor.js',
     'payment.js' => 'js/payment.js',
+    'tables.js' => 'js/tables.js',
 ];
 
 function serve_protected_script(string $name): never

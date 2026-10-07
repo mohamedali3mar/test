@@ -494,3 +494,55 @@ input.input-ltr { direction: ltr; text-align: right; }
   .print-table td.num { white-space: nowrap; }
   .print-table-wrap { overflow: visible; }
 }
+
+/* ---------- أدوات الجداول: الترتيب والبحث السريع والأعمدة والتصدير ---------- */
+.table-tools { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px 16px; margin-bottom: 12px; }
+.table-tools-js { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px; flex: 1 1 auto; }
+.table-tools-js:empty { display: none; }
+.table-search { margin: 0; flex: 0 1 280px; min-width: 200px; }
+.table-columns { position: relative; }
+.table-columns > summary { list-style: none; }
+.table-columns > summary::-webkit-details-marker { display: none; }
+.table-columns > summary::marker { content: ""; }
+.table-columns[open] > summary { background: var(--surface-2); }
+.table-columns-panel {
+  position: absolute; inset-inline-start: 0; top: calc(100% + 4px); z-index: 20; min-width: 240px; max-height: 360px; overflow-y: auto;
+  margin: 0; padding: 12px; display: grid; gap: 4px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+}
+.table-columns-panel legend { font-size: var(--fs-14); font-weight: 600; color: var(--text-2); padding: 0; margin-bottom: 4px; float: inline-start; width: 100%; }
+.table-columns-panel .field-check { min-height: 36px; }
+.table-columns-panel input:disabled + label { color: var(--muted); }
+.table-export { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0; }
+.table-export-label { font-size: var(--fs-14); font-weight: 600; color: var(--text-2); }
+.table-export-buttons { display: flex; flex-wrap: wrap; gap: 8px; }
+.table-sort { display: none; }
+.table-search-status { flex: 1 1 100%; margin: 0; }
+.sort-link { color: inherit; text-decoration: none; }
+.sort-link:hover { color: var(--primary); text-decoration: underline; }
+th[aria-sort] .sort-link { color: var(--primary); }
+.sort-state { font-size: var(--fs-12); font-weight: 400; color: var(--muted); }
+
+@media (max-width: 720px) {
+  .table-tools { gap: 12px; }
+  .table-tools-js { flex: 1 1 100%; }
+  .table-search { flex: 1 1 100%; min-width: 0; }
+  .table-columns { flex: 1 1 auto; }
+  .table-columns > summary { width: 100%; }
+  .table-columns-panel { inset-inline-start: 0; inset-inline-end: 0; min-width: 0; }
+  .table-columns-panel .field-check { min-height: 44px; }
+  .table-tools-js > .btn { flex: 1 1 auto; }
+  /* رؤوس الأعمدة مخفية في الجداول المكدسة، فيظهر نموذج الترتيب بدلًا منها */
+  .table-sort { display: flex; flex: 1 1 100%; align-items: flex-end; gap: 8px; margin: 0; }
+  .table-sort .field { flex: 1 1 auto; margin: 0; min-width: 0; }
+  .table-export { flex: 1 1 100%; }
+  .table-export-buttons { flex: 1 1 100%; }
+  .table-export-buttons .btn { flex: 1 1 0; }
+}
+
+@media print {
+  .filters, .page-actions, .pager, .cell-actions, .table-tools { display: none !important; }
+  .print-heading { margin-bottom: 8px; }
+  .print-heading p { margin: 0 0 4px; }
+  .sort-state { display: none; }
+  .sort-link { color: #000; }
+}

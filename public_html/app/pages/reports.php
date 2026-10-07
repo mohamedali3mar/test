@@ -43,6 +43,9 @@ $def = ACCT_REPORTS[$key];
 acct_require($def['permission']);
 
 $ds = acct_report($pdo, $key, $_GET);
+$reportSortable = report_sortable($ds);
+$sort = table_sort($_GET, $reportSortable);
+$ds = dataset_sorted($ds, $sort);
 $f = $ds['filters'];
 $spec = $def['filters'];
 $has = fn (string $k) => in_array($k, $spec, true);
@@ -88,6 +91,14 @@ if ($has('dimension')) {
 if ($has('show')) {
     $enumFields['show'] = ['الحسابات', ACCT_SHOW_LABELS];
 }
+// معاملات الصفحة الحالية (التصفية المقبولة فقط) لروابط الترتيب والتصدير
+$reportQuery = ['r' => 'reports', 'report' => $key];
+foreach (['from', 'to', 'group', 'dimension', 'show', 'warehouse', 'type', 'customer', 'cash_box', 'category'] as $k) {
+    if (isset($f[$k]) && $f[$k] !== '') {
+        $reportQuery[$k] = (string) $f[$k];
+    }
+}
+$exportBase = ['t' => 'report'] + array_diff_key($reportQuery, ['r' => true]);
 $fieldNames = ['from' => 'من تاريخ', 'to' => 'إلى تاريخ'] + array_map(fn ($l) => $l[0], $selectLabels) + array_map(fn ($e) => $e[0], $enumFields);
 
 render_header($def['title'], 'reports', 'page-report');
@@ -104,6 +115,7 @@ render_header($def['title'], 'reports', 'page-report');
 <form method="get" action="index.php" class="filters no-print" role="search" aria-label="تصفية التقرير">
   <input type="hidden" name="r" value="reports">
   <input type="hidden" name="report" value="<?= h($key) ?>">
+  <?php if ($sort !== null): ?><input type="hidden" name="sort" value="<?= h(table_sort_param($sort)) ?>"><?php endif; ?>
   <?php if ($has('from')): ?>
   <div class="field">
     <label for="from">من تاريخ</label>
@@ -152,11 +164,22 @@ render_header($def['title'], 'reports', 'page-report');
       يوجد <?= h(fmt_int($ds['notes']['unvalued'])) ?> صنف له رصيد بدون تكلفة (غير مقيّم)، فقيمة المخزون أقل من الحقيقة.
     </div>
   <?php endif; ?>
-  <?php render_dataset_table($ds); ?>
+  <?php render_table_tools([
+      'key' => 'report.' . $key, 'table' => 'report-table', 'columns' => array_column($ds['columns'], 'label', 'key'),
+      'required' => [$ds['columns'][0]['key']],
+      'export' => $exportBase + ['sort' => table_sort_param($sort)],
+      'sortable' => $reportSortable, 'sort' => $sort, 'query' => $reportQuery,
+  ]); ?>
+  <?php render_dataset_table($ds, ['id' => 'report-table', 'sort' => $sort, 'query' => $reportQuery, 'sortable' => $reportSortable]); ?>
   <?php foreach ($ds['sections'] ?? [] as $i => $section): ?>
   <section class="section" aria-labelledby="report-section-<?= (int) $i ?>">
     <h2 id="report-section-<?= (int) $i ?>"><?= h($section['title']) ?></h2>
-    <?php render_dataset_table($section); ?>
+    <?php render_table_tools([
+        'key' => 'report.' . $key . '.' . ($i + 1), 'table' => 'report-table-' . ($i + 1),
+        'columns' => array_column($section['columns'], 'label', 'key'), 'required' => [$section['columns'][0]['key']],
+        'export' => $exportBase + ['part' => (string) ($i + 1)],
+    ]); ?>
+    <?php render_dataset_table($section, ['id' => 'report-table-' . ($i + 1)]); ?>
   </section>
   <?php endforeach; ?>
   <p class="hint">أُعد التقرير في <?= h(fmt_datetime($ds['generated_at'])) ?></p>

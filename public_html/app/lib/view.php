@@ -260,6 +260,9 @@ function render_footer(): void
 {
     ?>
 </main>
+<?php if (!empty($GLOBALS['PAGE_USES_TABLES'])): /* أدوات الجداول: بعد app.js لأنها تستخدم WoodCalc */ ?>
+<script src="<?= h(url('asset', ['f' => 'tables.js', 'v' => asset_version('js/tables.js')])) ?>" defer></script>
+<?php endif; ?>
 </body>
 </html>
 <?php
