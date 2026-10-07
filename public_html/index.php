@@ -33,6 +33,8 @@ const ROUTES = [
     'api'        => ['file' => 'api',        'public' => false],
     'asset'      => ['file' => 'asset',      'public' => false],
     'opening_valuation' => ['file' => 'opening_valuation', 'public' => false],
+    'reports'    => ['file' => 'reports',    'public' => false],
+    'dashboard'  => ['file' => 'dashboard',  'public' => false],
 ];
 
 $route = input($_GET, 'r');

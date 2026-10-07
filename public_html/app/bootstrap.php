@@ -44,6 +44,7 @@ require APP_ROOT . '/lib/security.php';
 require APP_ROOT . '/lib/totp.php';
 require APP_ROOT . '/lib/accounting.php';
 require APP_ROOT . '/lib/costing.php';
+require APP_ROOT . '/lib/acct_reports.php';
 
 set_exception_handler(function (Throwable $e): void {
     error_log('[wood] ' . get_class($e) . ': ' . $e->getMessage() . ' in ' . $e->getFile() . ':' . $e->getLine());

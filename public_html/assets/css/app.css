@@ -398,8 +398,20 @@ td.split { min-width: 160px; }
 }
 
 /* ---------- الطباعة ---------- */
+/* ---------- التقارير ولوحة التحكم ---------- */
+.align-end { text-align: end; }
+th.align-end, td.align-end { text-align: end; }
+.report-subtitle { color: var(--text-2); margin-bottom: 12px; }
+.report-list { list-style: none; padding: 0; margin: 0 0 24px; display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
+.report-list li { border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); padding: 12px 16px; }
+.report-list .hint { margin: 4px 0 0; }
+.print-only { display: none; }
+
 @media print {
   @page { margin: 12mm; }
+  .print-only { display: block; }
+  .report-company { font-weight: 700; margin-bottom: 4px; }
+  .page-report .section { break-inside: avoid-page; }
   body { background: #fff; color: #000; font-size: 12pt; }
   .no-print, .site-header, .skip-link, .alert, .print-toolbar { display: none !important; }
   main.container { padding: 0; max-width: none; }
