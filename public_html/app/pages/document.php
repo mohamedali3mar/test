@@ -50,7 +50,10 @@ render_header(doc_label($d), 'documents');
 <?php endif; ?>
 
 <dl class="facts facts-wide">
-  <div><dt>التاريخ</dt><dd><?= h(fmt_datetime($d['created_at'])) ?></dd></div>
+  <div><dt>التاريخ</dt><dd><?= h(fmt_datetime($d['doc_date'])) ?></dd></div>
+  <?php if (substr((string) $d['doc_date'], 0, 10) !== substr((string) $d['created_at'], 0, 10)): ?>
+    <div><dt>وقت التسجيل</dt><dd><?= h(fmt_datetime($d['created_at'])) ?></dd></div>
+  <?php endif; ?>
   <div><dt>سجله</dt><dd><?= h($d['created_by_name']) ?></dd></div>
   <?php if ($kind === 'transfer'): ?>
     <div><dt>من مخزن</dt><dd><?= h($d['warehouse_name']) ?></dd></div>
@@ -66,6 +69,21 @@ render_header(doc_label($d), 'documents');
   <div><dt>الحجم</dt><dd><?= h(fmt_volume($d['total_volume_m3'])) ?> م³</dd></div>
   <?php if ($kind === 'sale'): ?>
     <div class="fact-strong"><dt>إجمالي القيمة</dt><dd><?= h(fmt_money_currency((string) $d['total_amount'], $d['currency'])) ?></dd></div>
+  <?php endif; ?>
+  <?php if ($kind !== 'transfer' && $d['payment_type'] !== null):
+      $payTotal = money_to_piasters((string) ($kind === 'sale' ? $d['total_amount'] : $d['total_cost']));
+      $payPaid = money_to_piasters((string) $d['paid_amount']); ?>
+    <div><dt>طريقة الدفع</dt><dd><?= h(PAYMENT_TYPE_LABELS[$d['payment_type']] ?? $d['payment_type']) ?></dd></div>
+    <?php if ($kind === 'in'): ?><div><dt>قيمة الشراء</dt><dd><?= h(fmt_money_currency(piasters_to_money($payTotal))) ?></dd></div><?php endif; ?>
+    <div><dt>المدفوع</dt><dd><?= h(fmt_piasters($payPaid)) ?></dd></div>
+    <div><dt>المتبقي</dt><dd><?= h(fmt_piasters($payTotal - $payPaid)) ?></dd></div>
+    <?php if ($d['cash_box_name'] !== null): ?><div><dt>الخزنة</dt><dd><?= h($d['cash_box_name']) ?></dd></div><?php endif; ?>
+  <?php endif; ?>
+  <?php if ($kind !== 'transfer' && $d['total_cost'] !== null && acct_can('reports.profit')): $cost = money_to_piasters((string) $d['total_cost']); ?>
+    <div><dt><?= $kind === 'sale' ? 'تكلفة البضاعة المباعة' : 'قيمة الوارد بالتكلفة' ?></dt><dd><?= h(fmt_piasters($cost)) ?></dd></div>
+    <?php if ($kind === 'sale'): $profit = money_to_piasters((string) $d['total_amount']) - $cost; ?>
+      <div><dt>مجمل الربح</dt><dd><?= h(fmt_piasters($profit)) ?></dd></div>
+    <?php endif; ?>
   <?php endif; ?>
   <div><dt>ملاحظات</dt><dd class="pre"><?= $d['notes'] !== null ? h($d['notes']) : '<span class="muted">لا توجد</span>' ?></dd></div>
 </dl>

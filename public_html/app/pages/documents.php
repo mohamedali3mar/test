@@ -52,11 +52,11 @@ if ($typeId > 0) {
     $params[] = $typeId;
 }
 if ($from) {
-    $where[] = 'd.created_at >= ?';
+    $where[] = 'd.doc_date >= ?';
     $params[] = $from->format('Y-m-d 00:00:00');
 }
 if ($to) {
-    $where[] = 'd.created_at < ?';
+    $where[] = 'd.doc_date < ?';
     $params[] = $to->modify('+1 day')->format('Y-m-d 00:00:00');
 }
 if ($q !== '') {
@@ -187,7 +187,7 @@ render_header('الفواتير والحركات', 'documents');
       <?php foreach ($rows as $d): $cancelled = $d['status'] === 'cancelled'; ?>
         <tr class="<?= $cancelled ? 'row-cancelled' : '' ?>">
           <td class="nowrap" data-label="<?= h('المستند') ?>"><a href="<?= h(url('document', ['id' => (int) $d['id']])) ?>"><?= h(doc_label($d)) ?></a></td>
-          <td class="nowrap" data-label="<?= h('التاريخ') ?>"><?= h(fmt_datetime($d['created_at'])) ?></td>
+          <td class="nowrap" data-label="<?= h('التاريخ') ?>"><?= h(fmt_datetime($d['doc_date'])) ?></td>
           <td data-label="<?= h('المخزن') ?>"><?= h($d['kind'] === 'transfer' ? 'من ' . $d['warehouse_name'] . ' إلى ' . $d['to_warehouse_name'] : $d['warehouse_name']) ?></td>
           <td data-label="<?= h($d['kind'] === 'sale' ? 'العميل' : ($d['kind'] === 'in' ? 'المورد' : 'العميل / المورد')) ?>"><?= h((string) $d['party_name']) ?></td>
           <td class="num" data-label="<?= h('الأسطر') ?>"><?= h(fmt_int((int) $d['line_count'])) ?></td>

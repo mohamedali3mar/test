@@ -32,6 +32,7 @@ const ROUTES = [
     'settings'   => ['file' => 'settings',   'public' => false],
     'api'        => ['file' => 'api',        'public' => false],
     'asset'      => ['file' => 'asset',      'public' => false],
+    'opening_valuation' => ['file' => 'opening_valuation', 'public' => false],
 ];
 
 $route = input($_GET, 'r');

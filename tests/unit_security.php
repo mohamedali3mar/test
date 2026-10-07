@@ -274,7 +274,14 @@ check('ETag مطابق', etag_matches('"abc-12"', '"abc-12"'));
 check('ETag ضعيف W/ وقائمة', etag_matches('"x", W/"abc-12"', '"abc-12"'));
 check('ETag *', etag_matches('*', '"abc-12"'));
 check('ETag مختلف', !etag_matches('"abc-13"', '"abc-12"') && !etag_matches('', '"abc-12"'));
-check('القائمة البيضاء: app.js و twofactor.js فقط', array_keys(PROTECTED_SCRIPTS) === ['app.js', 'twofactor.js']);
+check('القائمة البيضاء: أسماء ثابتة بلا مسارات، وكل ملف موجود في assets/js', (function () {
+    foreach (PROTECTED_SCRIPTS as $name => $path) {
+        if (!preg_match('/^[a-z]+\.js\z/', $name) || $path !== 'js/' . $name || !is_file(dirname(APP_ROOT) . '/assets/' . $path)) {
+            return false;
+        }
+    }
+    return isset(PROTECTED_SCRIPTS['app.js'], PROTECTED_SCRIPTS['twofactor.js']);
+})());
 check('رقم النسخة يتضمن وقت تعديل الملف', asset_version('js/app.js') === APP_VERSION . '-' . filemtime(dirname(APP_ROOT) . '/assets/js/app.js'));
 check('رابط CSS يتضمن رقم النسخة بوقت التعديل', asset('css/app.css') === 'assets/css/app.css?v=' . rawurlencode(APP_VERSION . '-' . filemtime(dirname(APP_ROOT) . '/assets/css/app.css')));
 

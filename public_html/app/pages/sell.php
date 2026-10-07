@@ -4,9 +4,11 @@ defined('APP_ROOT') || exit;
 $pdo = db();
 $errors = [];
 $posted = $_SERVER['REQUEST_METHOD'] === 'POST';
+$boxes = cash_boxes_for_user($pdo);
 $form = $posted
-    ? string_inputs($_POST, ['warehouse_id', 'party_name', 'notes', 'request_token'])
-    : ['warehouse_id' => input($_GET, 'warehouse'), 'party_name' => '', 'notes' => '', 'request_token' => new_request_token()];
+    ? string_inputs($_POST, ['warehouse_id', 'party_name', 'notes', 'request_token', ...PAYMENT_FORM_FIELDS])
+    : ['warehouse_id' => input($_GET, 'warehouse'), 'party_name' => '', 'notes' => '', 'request_token' => new_request_token()]
+        + payment_form_defaults($boxes);
 $form['lines'] = $posted ? form_lines($_POST['lines'] ?? [], LINE_FIELDS_SALE) : [];
 $extraLines = 0;
 $review = null;
@@ -46,12 +48,21 @@ if ($posted) {
 if ($review) {
     render_header('مراجعة فاتورة البيع', 'sell');
     $avail = current_stock($pdo, array_map(fn ($l) => (int) $l['item']['id'], $review['lines']), (int) $review['warehouse']['id']);
+    $rp = $review['pay'];
     ?>
 <h1>مراجعة فاتورة البيع</h1>
 <p>راجع البيانات ثم اضغط «تأكيد البيع». لم يُحفظ شيء حتى الآن، والرصيد يُتحقق منه مرة أخرى لحظة التأكيد.</p>
 <dl class="facts facts-wide">
   <div><dt>المخزن</dt><dd><?= h($review['warehouse']['name']) ?></dd></div>
-  <div><dt>العميل</dt><dd><?= $review['party_name'] !== '' ? h($review['party_name']) : '<span class="muted">لم يُحدد</span>' ?></dd></div>
+  <div><dt>العميل</dt><dd><?= $review['party_name'] !== '' ? h($review['party_name']) : '<span class="muted">لم يُحدد</span>' ?><?= $rp['party'] ? '' : ' <span class="muted">(عميل نقدي بدون حساب)</span>' ?></dd></div>
+  <div><dt>طريقة الدفع</dt><dd><?= h(PAYMENT_TYPE_LABELS[$rp['payment_type']]) ?></dd></div>
+  <div><dt>المدفوع</dt><dd><?= h(fmt_piasters($rp['paid'])) ?><?= $rp['cash_box'] ? ' (' . h($rp['cash_box']['name']) . ')' : '' ?></dd></div>
+  <div><dt>المتبقي</dt><dd><?= h(fmt_piasters($rp['remaining'])) ?></dd></div>
+  <?php if ($rp['party']): $oldBal = money_to_piasters((string) $rp['party']['balance']); ?>
+    <div><dt>رصيد العميل الحالي</dt><dd><?= h(fmt_party_balance($oldBal, 'customer')) ?></dd></div>
+    <div class="fact-strong"><dt>رصيد العميل بعد الفاتورة</dt><dd><?= h(fmt_party_balance($oldBal + $rp['remaining'], 'customer')) ?></dd></div>
+  <?php endif; ?>
+  <?php if (substr($rp['doc_date'], 0, 10) !== date('Y-m-d')): ?><div><dt>تاريخ الفاتورة</dt><dd><?= h(fmt_datetime($rp['doc_date'])) ?></dd></div><?php endif; ?>
   <?php if ($review['notes'] !== ''): ?><div><dt>ملاحظات</dt><dd class="pre"><?= h($review['notes']) ?></dd></div><?php endif; ?>
 </dl>
 <div class="table-wrap table-stack">
@@ -103,6 +114,7 @@ if ($review) {
   <?php foreach (['warehouse_id', 'party_name', 'notes', 'request_token'] as $f): ?>
     <input type="hidden" name="<?= h($f) ?>" value="<?= h($form[$f]) ?>">
   <?php endforeach; ?>
+  <?= payment_hidden_fields($form) ?>
   <?php foreach (array_values($form['lines']) as $i => $line): ?>
     <?php foreach (LINE_FIELDS_SALE as $f): ?>
       <input type="hidden" name="lines[<?= (int) $i ?>][<?= h($f) ?>]" value="<?= h($line[$f]) ?>">
@@ -140,6 +152,11 @@ render_header('فاتورة بيع', 'sell');
       <div><dt>القطع</dt><dd><?= h(fmt_int((int) $done['total_qty'])) ?></dd></div>
       <div><dt>الحجم</dt><dd><?= h(fmt_volume($done['total_volume_m3'])) ?> م³</dd></div>
       <div class="fact-strong"><dt>الإجمالي</dt><dd><?= h(fmt_money_currency((string) $done['total_amount'], $done['currency'])) ?></dd></div>
+      <?php if ($done['payment_type'] !== null): $donePaid = money_to_piasters((string) $done['paid_amount']); ?>
+        <div><dt>طريقة الدفع</dt><dd><?= h(PAYMENT_TYPE_LABELS[$done['payment_type']] ?? '') ?></dd></div>
+        <div><dt>المدفوع</dt><dd><?= h(fmt_piasters($donePaid)) ?></dd></div>
+        <div><dt>المتبقي</dt><dd><?= h(fmt_piasters(money_to_piasters((string) $done['total_amount']) - $donePaid)) ?></dd></div>
+      <?php endif; ?>
     </dl>
     <p class="row-actions">
       <a class="btn btn-primary" href="<?= h(url('print', ['id' => (int) $done['id']])) ?>">طباعة الفاتورة</a>
@@ -167,13 +184,15 @@ render_header('فاتورة بيع', 'sell');
       <?= field_error($errors, 'warehouse_id') ?>
     </div>
     <div class="field">
-      <label for="party_name">اسم العميل <span class="optional">(اختياري)</span></label>
+      <label for="party_name">اسم العميل النقدي <span class="optional">(اختياري)</span></label>
       <input type="text" id="party_name" name="party_name" value="<?= h($form['party_name']) ?>" maxlength="120"<?= field_attrs($errors, 'party_name') ?>>
       <?= field_error($errors, 'party_name') ?>
     </div>
   </div>
 
   <?= render_line_editor(editor_lines($form['lines'], LINE_FIELDS_SALE, 3, $extraLines), $errors, true, $types, $stockData) ?>
+
+  <?= render_payment_fields($form, $errors, 'customer', parties_for_select($pdo, 'customer'), $boxes) ?>
 
   <div class="field">
     <label for="notes">ملاحظات <span class="optional">(اختياري)</span></label>
