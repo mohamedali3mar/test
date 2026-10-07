@@ -421,3 +421,14 @@ th.align-end, td.align-end { text-align: end; }
   thead th { background: none; color: #000; }
   a { color: #000; text-decoration: none; }
 }
+
+/* ---------- السندات المطبوعة (الوحدة ب) ---------- */
+.print-words { margin: 0 0 16px; font-weight: 600; }
+.print-signatures { display: grid; grid-template-columns: 1fr 1fr; gap: 48px; margin-top: 48px; }
+.print-signatures p { margin: 0 0 8px; }
+.sign-line { padding-top: 32px; border-bottom: 1px solid var(--border); color: var(--muted); font-size: var(--fs-14); }
+@page voucher-a5 { size: A5; margin: 8mm; }
+@media print {
+  .print-a5 .print-doc { page: voucher-a5; }
+  .print-signatures { break-inside: avoid; }
+}
