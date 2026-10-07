@@ -145,6 +145,13 @@ for p in ['app/config.php', 'app/config.sample.php', 'app/bootstrap.php', 'app/l
           'README.md', 'DESIGN_RULES.md', 'backup.sql', 'site.zip', 'app/storage/reset.allow']:
     s, _, body = anon.get(p)
     check(f'{p} -> 403', s == 403 and 'DB' not in body and 'password' not in body, s)
+for p in ['.user.ini', 'php.ini', 'assets/.user.ini', 'assets/php.ini']:
+    s, _, _ = anon.get(p)
+    check(f'ملف إعدادات PHP {p} -> 403', s == 403, s)
+for p in ['backup.sql.gz', 'site.tar.gz', 'site.tgz', 'site.7z', 'site.rar', 'index.php.old', 'index.php.orig', 'index.php.bak',
+          'app.js.tmp', 'db.backup', 'db.bkp', 'config.php~', 'index.php~', 'BACKUP.SQL.GZ']:
+    s, _, _ = anon.get(p)
+    check(f'نسخة احتياطية أو أرشيف {p} -> 403', s == 403, s)
 s, _, _ = anon.get('.well-known/acme-challenge/test-token')
 check('مسار .well-known غير محظور (لتجديد SSL)', s == 404, s)
 s, _, _ = anon.get('assets/')
@@ -176,8 +183,33 @@ for name in ['Content-Security-Policy', 'X-Frame-Options', 'X-Content-Type-Optio
 check("CSP تمنع السكربت المضمّن", "script-src 'self'" in (h.get('Content-Security-Policy') or '') and 'unsafe-inline' not in (h.get('Content-Security-Policy') or ''))
 check('لا ترويسة X-Powered-By', h.get('X-Powered-By') is None)
 check('لا سكربت مضمّن في الصفحات', re.search(r'<script(?![^>]*\bsrc=)(?![^>]*application/json)[^>]*>', html) is None)
+for name in ['Cross-Origin-Opener-Policy', 'Cross-Origin-Resource-Policy', 'X-Permitted-Cross-Domain-Policies', 'Permissions-Policy', 'Cache-Control']:
+    vals = h.get_all(name) or []
+    check(f'الصفحة: {name} موجودة مرة واحدة', len(vals) == 1, vals)
+check('الصفحة: COOP و CORP بقيمة same-origin', h.get('Cross-Origin-Opener-Policy') == 'same-origin' and h.get('Cross-Origin-Resource-Policy') == 'same-origin',
+      (h.get('Cross-Origin-Opener-Policy'), h.get('Cross-Origin-Resource-Policy')))
+check('الصفحة: X-Permitted-Cross-Domain-Policies none', h.get('X-Permitted-Cross-Domain-Policies') == 'none', h.get('X-Permitted-Cross-Domain-Policies'))
+check('الصفحة: Cache-Control لم تغيره .htaccess', h.get('Cache-Control') == 'no-store, private', h.get('Cache-Control'))
+check('على http لا تضاف upgrade-insecure-requests إلى CSP', 'upgrade-insecure-requests' not in (h.get('Content-Security-Policy') or ''))
+check('على http ملف الجلسة بدون بادئة __Host-', a.cookie() is not None and a.cookie('__Host-WOODSESSID') is None)
+s, h, _ = a.get('index.php?r=api&op=version', headers={'X-Live': '1'})
+check('API: رد JSON', s == 200 and h.get('Content-Type', '').startswith('application/json'), s)
+for name in ['X-Content-Type-Options', 'Referrer-Policy', 'Cross-Origin-Opener-Policy', 'Cross-Origin-Resource-Policy',
+             'X-Permitted-Cross-Domain-Policies', 'Cache-Control']:
+    vals = h.get_all(name) or []
+    check(f'API: {name} موجودة مرة واحدة', len(vals) == 1, vals)
+check('API: CORP same-origin و Cache-Control no-store', h.get('Cross-Origin-Resource-Policy') == 'same-origin' and h.get('Cache-Control') == 'no-store, private',
+      (h.get('Cross-Origin-Resource-Policy'), h.get('Cache-Control')))
 s, h, _ = anon.get('assets/css/app.css')
 check('الملفات الثابتة: nosniff مرة واحدة', len(h.get_all('X-Content-Type-Options') or []) == 1)
+assets = re.findall(r'"(assets/(?:css|js)/app\.(?:css|js)\?v=[^"]+)"', html)
+check('روابط CSS و JS في الصفحة تحمل رقم الإصدار', len(assets) == 2, assets)
+for p in assets + ['assets/fonts/cairo-arabic-400-normal.woff2']:
+    s, h, _ = anon.get(p)
+    vals = h.get_all('Cache-Control') or []
+    check(f'{p}: Cache-Control immutable مرة واحدة', s == 200 and vals == ['public, max-age=31536000, immutable'], (s, vals))
+s, h, _ = anon.get(assets[0] if assets else 'assets/css/app.css', headers={'Accept-Encoding': 'gzip'})
+check('CSS مضغوط gzip عند طلبه', h.get('Content-Encoding') == 'gzip', h.get('Content-Encoding'))
 
 # ------------------------------------------------------------------
 section('CSRF')

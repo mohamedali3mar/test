@@ -9,12 +9,14 @@ DirectoryIndex index.php
     RewriteRule ^app(/|$) - [F,L]
     # منع الملفات والمجلدات المخفية، مع السماح بـ .well-known لتجديد شهادة SSL
     RewriteRule (^|/)\.(?!well-known(/|$)) - [F,L]
-    # منع ملفات التوثيق والنسخ الاحتياطية وملفات SQL والسجلات
-    RewriteRule \.(md|sql|log|lock|bak|zip|ini|sh|dist|allow)$ - [F,L,NC]
+    # منع ملفات التوثيق والنسخ الاحتياطية والأرشيفات وملفات SQL والسجلات والملفات المؤقتة للمحررات
+    # (مثل backup.sql.gz و index.php.old و config.php~)
+    RewriteRule (\.(md|sql|log|lock|bak|zip|ini|sh|dist|allow|gz|tgz|tar|7z|rar|old|orig|swp|tmp|backup|bkp)|~)$ - [F,L,NC]
 </IfModule>
 
 # حماية إضافية إذا لم تعمل mod_rewrite
-<FilesMatch "\.(md|sql|log|lock|bak|zip|ini|sh|dist|allow)$">
+# ملفات إعدادات PHP مثل .user.ini و php.ini محظورة مرتين: بقاعدة الامتداد ini وبقاعدة الملفات المخفية.
+<FilesMatch "(?i)(\.(md|sql|log|lock|bak|zip|ini|sh|dist|allow|gz|tgz|tar|7z|rar|old|orig|swp|tmp|backup|bkp)|~)$">
     Require all denied
 </FilesMatch>
 <FilesMatch "^\.(?!well-known)">
@@ -22,9 +24,12 @@ DirectoryIndex index.php
 </FilesMatch>
 
 # ترويسات الأمان للصفحات يرسلها PHP. هنا للملفات الثابتة فقط حتى لا تتكرر الترويسات.
+# صفحات PHP لا تطابق هذا النمط فتبقى Cache-Control عليها no-store, private كما يرسلها PHP.
 <IfModule mod_headers.c>
     <FilesMatch "\.(css|js|woff2)$">
         Header set X-Content-Type-Options "nosniff"
+        # روابط CSS و JS تحمل ?v=APP_VERSION فيتغير الرابط مع كل إصدار، والخطوط لا تتغير
+        Header set Cache-Control "public, max-age=31536000, immutable"
     </FilesMatch>
 </IfModule>
 
@@ -32,10 +37,20 @@ DirectoryIndex index.php
     AddType font/woff2 .woff2
 </IfModule>
 
-<IfModule mod_expires.c>
-    ExpiresActive On
-    ExpiresByType font/woff2 "access plus 1 year"
-    ExpiresByType text/css "access plus 1 month"
-    ExpiresByType application/javascript "access plus 1 month"
-    ExpiresByType text/javascript "access plus 1 month"
+# بديل فقط إذا لم تتوفر mod_headers، حتى لا تُرسل Cache-Control مرتين
+<IfModule !mod_headers.c>
+    <IfModule mod_expires.c>
+        ExpiresActive On
+        ExpiresByType font/woff2 "access plus 1 year"
+        ExpiresByType text/css "access plus 1 year"
+        ExpiresByType application/javascript "access plus 1 year"
+        ExpiresByType text/javascript "access plus 1 year"
+    </IfModule>
+</IfModule>
+
+# ضغط الردود النصية. الخطوط woff2 مضغوطة أصلًا فلا تُضغط مرة أخرى.
+<IfModule mod_deflate.c>
+    <IfModule mod_filter.c>
+        AddOutputFilterByType DEFLATE text/html text/plain text/css application/javascript text/javascript application/json image/svg+xml
+    </IfModule>
 </IfModule>

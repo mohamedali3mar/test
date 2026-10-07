@@ -1,17 +1,35 @@
 <?php
 defined('APP_ROOT') || exit;
 
+/**
+ * ترويسات مشتركة بين صفحات HTML وردود JSON. تُرسل من PHP فقط (وليس من .htaccess)
+ * حتى تظهر كل ترويسة مرة واحدة، و header() يستبدل أي قيمة سابقة بنفس الاسم.
+ */
+function send_common_headers(): void
+{
+    header('X-Content-Type-Options: nosniff');
+    header('Referrer-Policy: same-origin');
+    header('Cross-Origin-Opener-Policy: same-origin');
+    header('Cross-Origin-Resource-Policy: same-origin');
+    header('X-Permitted-Cross-Domain-Policies: none');
+    header('Cache-Control: no-store, private');
+}
+
 function send_security_headers(): void
 {
     if (headers_sent()) {
         return;
     }
-    header("Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' data:; connect-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'; object-src 'none'");
-    header('X-Content-Type-Options: nosniff');
+    $csp = "default-src 'self'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' data:; connect-src 'self'; "
+        . "form-action 'self'; frame-ancestors 'none'; base-uri 'none'; object-src 'none'";
+    // على http فقط تكسر هذه التعليمة تحميل الملفات، لذلك تُضاف عند https فقط
+    if (is_https()) {
+        $csp .= '; upgrade-insecure-requests';
+    }
+    header('Content-Security-Policy: ' . $csp);
     header('X-Frame-Options: DENY');
-    header('Referrer-Policy: same-origin');
     header('Permissions-Policy: camera=(), microphone=(), geolocation=()');
-    header('Cache-Control: no-store, private');
+    send_common_headers();
     if (is_https()) {
         header('Strict-Transport-Security: max-age=31536000');
     }
@@ -36,8 +54,7 @@ function json_response(array $data, int $code = 200): never
     }
     http_response_code($code);
     header('Content-Type: application/json; charset=utf-8');
-    header('Cache-Control: no-store, private');
-    header('X-Content-Type-Options: nosniff');
+    send_common_headers();
     echo json_encode($data, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT);
     exit;
 }

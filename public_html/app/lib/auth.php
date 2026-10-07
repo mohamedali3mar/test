@@ -5,6 +5,8 @@ const LOGIN_WINDOW_MINUTES = 15;
 const LOGIN_MAX_PER_USER_IP = 5;    // نفس اسم المستخدم من نفس العنوان
 const LOGIN_MAX_PER_IP = 20;        // أي أسماء من نفس العنوان
 const LOGIN_MAX_PER_USER = 100;     // نفس الاسم من كل العناوين (هجوم موزع)، حد مرتفع حتى لا يُحبس المدير بسهولة
+// Lax وليس Strict: نموذج الدخول يرسل للصفحة نفسها، والروابط المفتوحة من خارج الموقع يجب أن تبقى داخل الجلسة
+const SESSION_COOKIE_SAMESITE = 'Lax';
 
 function is_https(): bool
 {
@@ -43,6 +45,15 @@ function is_live_request(): bool
     return ($_SERVER['HTTP_X_LIVE'] ?? '') === '1';
 }
 
+/**
+ * اسم ملف تعريف الجلسة. على https تُستخدم البادئة __Host- فيرفض المتصفح الملف إلا إذا كان Secure
+ * ومساره / وبدون Domain، فلا يستطيع نطاق فرعي أو اتصال http غير مشفر زرع معرف جلسة.
+ */
+function session_cookie_name(): string
+{
+    return is_https() ? '__Host-WOODSESSID' : 'WOODSESSID';
+}
+
 function start_secure_session(bool $touch = true): void
 {
     if (session_status() === PHP_SESSION_ACTIVE) {
@@ -52,6 +63,7 @@ function start_secure_session(bool $touch = true): void
     ini_set('session.use_only_cookies', '1');
     ini_set('session.use_trans_sid', '0');
     ini_set('session.cookie_httponly', '1');
+    ini_set('session.cookie_samesite', SESSION_COOKIE_SAMESITE);
     $idle = max(5, (int) (app_config()['session_idle_minutes'] ?? 120)) * 60;
     // مجلد جلسات خاص بالنظام، حتى لا تحذف الاستضافة الجلسات قبل انتهاء مدة الخمول
     $dir = APP_ROOT . '/storage/sessions';
@@ -61,13 +73,14 @@ function start_secure_session(bool $touch = true): void
         ini_set('session.gc_divisor', '100');
     }
     ini_set('session.gc_maxlifetime', (string) ($idle + 600));
-    session_name('WOODSESSID');
+    session_name(session_cookie_name());
     session_set_cookie_params([
         'lifetime' => 0,
         'path' => '/',
+        'domain' => '', // صريحًا، حتى لا يضيف إعداد session.cookie_domain في الاستضافة Domain فيرفض المتصفح ملف __Host-
         'secure' => is_https(),
         'httponly' => true,
-        'samesite' => 'Lax',
+        'samesite' => SESSION_COOKIE_SAMESITE,
     ]);
     session_start();
 
@@ -289,13 +302,15 @@ function logout(): void
 {
     $_SESSION = [];
     if (ini_get('session.use_cookies')) {
+        // نفس الاسم والخصائص التي ضبطتها start_secure_session، وإلا يبقى الملف القديم في المتصفح
         $p = session_get_cookie_params();
         setcookie(session_name(), '', [
             'expires' => time() - 42000,
             'path' => $p['path'],
+            'domain' => $p['domain'],
             'secure' => $p['secure'],
             'httponly' => true,
-            'samesite' => 'Lax',
+            'samesite' => SESSION_COOKIE_SAMESITE,
         ]);
     }
     session_destroy();
