@@ -1,6 +1,8 @@
 # CLAUDE.md: guide for any agent continuing this project
 
-Read this file first, then `PROGRESS_AR.md` (the live work log: what is done, what is in progress, the next steps).
+Read this file first, then `PROGRESS_AR.md` (current state and next steps) and `WORKLOG_AR.md` (step-by-step log of every session:
+what was done, why, how it was verified, the result and the commit). After every finished step: add it to `WORKLOG_AR.md`,
+update `PROGRESS_AR.md`, commit and push.
 The owner communicates in Egyptian Arabic; reply in Arabic. Code comments and UI text are Arabic.
 
 ## What this is

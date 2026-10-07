@@ -32,6 +32,7 @@
 | [TEST_REPORT.md](TEST_REPORT.md) | تقرير الفحص: ما نُفذ ونتائجه وما لم يُختبر |
 | [CHANGELOG.md](CHANGELOG.md) | سجل الإصدارات |
 | [PROGRESS_AR.md](PROGRESS_AR.md) | سجل التقدم أثناء التطوير والخطوات التالية |
+| [WORKLOG_AR.md](WORKLOG_AR.md) | سجل زمني مفصل لكل خطوة في كل جلسة عمل |
 | [CLAUDE.md](CLAUDE.md) | دليل مختصر لأي وكيل برمجي يكمل العمل: القواعد وتجهيز بيئة الاختبار |
 
 ## الهيكل
