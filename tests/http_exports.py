@@ -373,6 +373,34 @@ s, _, body = st.get(f'index.php?r=pdf&id={sale_alex}', raw=True)
 check('PDF فاتورة فرعه -> 200', s == 200 and body.startswith(b'%PDF-'), s)
 
 # ------------------------------------------------------------------
+section('مدير مقيد بفرع: أرقام الشركة كلها ممنوعة')
+badmin = 'branch_admin_' + RUN
+a.page('index.php?r=users')
+a.post('index.php?r=users', {'action': 'create', 'display_name': 'مدير الإسكندرية', 'username': badmin, 'role': 'admin',
+                             'password': staff_pass, 'password_confirm': staff_pass})
+badmin_id = sql(f"SELECT id FROM users WHERE username = '{badmin}'")
+a.page(f'index.php?r=users&edit={badmin_id}')
+a.post('index.php?r=users', {'action': 'update', 'id': badmin_id, 'display_name': 'مدير الإسكندرية', 'role': 'admin', 'branch_id': alex})
+check('المدير المقيد بفرع موجود', sql(f'SELECT CONCAT(role, ":", branch_id) FROM users WHERE id = {badmin_id}') == f'admin:{alex}')
+ba = Client()
+check('دخول المدير المقيد', ba.login(badmin, staff_pass)[0] == 303)
+_, html = ba.page('index.php?r=inventory')
+check('القائمة بدون لوحة التحكم والتقييم الافتتاحي', 'href="index.php?r=dashboard"' not in html and 'href="index.php?r=opening_valuation"' not in html
+      and 'href="index.php?r=reports"' in html)
+for route in ['dashboard', 'opening_valuation', 'reports&report=sales_period', 'reports&report=valuation', 'reports&report=cash_summary']:
+    s, body = ba.page('index.php?r=' + route)
+    check(f'{route} للمدير المقيد -> 403 برسالة واضحة', s == 403 and 'تُفتح فقط لمستخدم يرى كل الفروع' in body, s)
+s, _, body = ba.get('index.php?r=export&format=csv&t=report&report=profit')
+check('تصدير الأرباح للمدير المقيد -> 403', s == 403 and 'كل الفروع' in body, s)
+s, html = ba.page('index.php?r=reports')
+check('قائمة التقارير: أرصدة العملاء فقط من تقارير الحسابات', 'report=customer_balances' in html and 'report=sales_period' not in html
+      and 'href="index.php?r=dashboard"' not in html, s)
+s, _, _ = export(ba, 'format=csv&t=report&report=supplier_balances')
+check('تصدير أرصدة الموردين للمدير المقيد مسموح', s == 200, s)
+s, _, _ = ba.get('index.php?r=dashboard', headers={'X-Live': '1'})
+check('التحديث التلقائي للوحة التحكم للمقيد -> 403', s == 403, s)
+
+# ------------------------------------------------------------------
 section('الحماية')
 anon = Client()
 s, h, _ = anon.get('index.php?r=export&t=inventory&format=csv')

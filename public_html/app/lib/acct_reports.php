@@ -130,6 +130,13 @@ const ACCT_REPORTS = [
     ],
 ];
 
+/**
+ * تقارير بأرقام الشركة كلها (المبيعات والأرباح والتقييم والخزائن والمصروفات من كل الفروع): تُفتح فقط لمستخدم يرى
+ * كل الفروع، حتى لا يرى المقيد بفرع أرقام الفروع الأخرى. أرصدة العملاء والموردين مشتركة بين الفروع فلا تُقيد.
+ */
+const ACCT_ALL_BRANCH_REPORTS = ['sales_period', 'sales_by', 'profit', 'valuation', 'cash_summary', 'expenses'];
+const ACCT_ALL_BRANCHES_ONLY = 'هذه الصفحة تعرض أرقام الشركة كلها من كل الفروع، لذلك تُفتح فقط لمستخدم يرى كل الفروع. إذا كنت تحتاجها راجع مدير النظام.';
+
 const ACCT_GROUP_LABELS = ['day' => 'يومي', 'month' => 'شهري'];
 const ACCT_EXPENSE_GROUP_LABELS = ['category' => 'حسب التصنيف', 'month' => 'شهري', 'day' => 'يومي'];
 const ACCT_DIMENSION_LABELS = ['type' => 'نوع الخشب', 'warehouse' => 'المخزن', 'customer' => 'العميل', 'branch' => 'الفرع'];
@@ -959,10 +966,23 @@ function acct_dashboard(PDO $pdo, ?string $today = null): array
     ];
 }
 
-/** التقارير التي يملك المستخدم صلاحيتها */
+/** التقارير التي يملك المستخدم صلاحيتها، بدون تقارير الشركة كلها للمستخدم المقيد بفرع */
 function acct_reports_visible(): array
 {
-    return array_filter(ACCT_REPORTS, fn ($r) => acct_can($r['permission']));
+    $scoped = acct_branch_scope(db()) !== null;
+    return array_filter(ACCT_REPORTS, fn ($r, $k) => acct_can($r['permission']) && !($scoped && in_array($k, ACCT_ALL_BRANCH_REPORTS, true)),
+        ARRAY_FILTER_USE_BOTH);
+}
+
+/** يوقف الطلب برسالة 403 إذا كان المستخدم مقيدًا بفرع (للوحة التحكم وتقارير الشركة كلها والتقييم الافتتاحي) */
+function acct_require_all_branches(PDO $pdo): void
+{
+    if (acct_branch_scope($pdo) !== null) {
+        if (is_live_request()) {
+            json_response(['error' => 'forbidden'], 403);
+        }
+        render_simple_error(ACCT_ALL_BRANCHES_ONLY, 403);
+    }
 }
 
 /* ---------------- العرض ---------------- */

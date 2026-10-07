@@ -36,6 +36,9 @@ if ($table === 'inventory') {
         render_simple_error('التقرير المطلوب غير موجود.', 404);
     }
     acct_require(ACCT_REPORTS[$key]['permission']);
+    if (in_array($key, ACCT_ALL_BRANCH_REPORTS, true)) {
+        acct_require_all_branches($pdo);
+    }
 } else {
     render_simple_error('الجدول المطلوب غير موجود.', 404);
 }

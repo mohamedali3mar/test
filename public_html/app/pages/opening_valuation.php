@@ -5,6 +5,8 @@ defined('APP_ROOT') || exit;
 acct_require('reports.valuation');
 
 $pdo = db();
+// التقييم يغير قيمة الصنف في كل المخازن: لمستخدم يرى كل الفروع فقط
+acct_require_all_branches($pdo);
 $errors = [];
 $posted = $_SERVER['REQUEST_METHOD'] === 'POST';
 $postedItem = 0;

@@ -141,14 +141,21 @@ const NAV_GROUPS = [
     ],
 ];
 
+/** صفحات بأرقام الشركة كلها: لا تظهر في القائمة للمستخدم المقيد بفرع (والصفحة نفسها ترفضه) */
+const NAV_ALL_BRANCHES_ROUTES = ['dashboard', 'opening_valuation'];
+
 /** روابط القائمة المسموحة للمستخدم الحالي، مجمعة: [المجموعة => [[url, label, current], ...]] */
 function nav_visible_groups(string $active): array
 {
     $kind = (string) ($_GET['kind'] ?? '');
+    $scoped = function_exists('allowed_branch_id') && allowed_branch_id(db()) !== null;
     $out = [];
     foreach (NAV_GROUPS as $group => $links) {
         foreach ($links as [$route, $label, $params]) {
             if (!defined('ROUTES') || !isset(ROUTES[$route]) || (function_exists('can_open') && !can_open($route))) {
+                continue;
+            }
+            if ($scoped && in_array($route, NAV_ALL_BRANCHES_ROUTES, true)) {
                 continue;
             }
             $current = $route === $active && (!isset($params['kind']) || $params['kind'] === $kind);

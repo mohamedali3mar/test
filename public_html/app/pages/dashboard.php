@@ -3,6 +3,7 @@ defined('APP_ROOT') || exit;
 
 acct_require('dashboard');
 $pdo = db();
+acct_require_all_branches($pdo);
 $dash = acct_dashboard($pdo);
 $money = fn (string $m) => fmt_money_currency($m);
 $visible = acct_reports_visible();

@@ -18,7 +18,7 @@ if ($key === '') {
     ?>
 <div class="page-head">
   <h1>التقارير</h1>
-  <?php if (acct_can('dashboard')): ?><div class="page-actions"><a class="btn" href="<?= h(url('dashboard')) ?>">لوحة التحكم</a></div><?php endif; ?>
+  <?php if (acct_can('dashboard') && acct_branch_scope($pdo) === null): ?><div class="page-actions"><a class="btn" href="<?= h(url('dashboard')) ?>">لوحة التحكم</a></div><?php endif; ?>
 </div>
 <?php if (!$visible): ?>
   <p class="empty">لا توجد تقارير متاحة لحسابك.</p>
@@ -41,6 +41,9 @@ if (!isset(ACCT_REPORTS[$key])) {
 }
 $def = ACCT_REPORTS[$key];
 acct_require($def['permission']);
+if (in_array($key, ACCT_ALL_BRANCH_REPORTS, true)) {
+    acct_require_all_branches($pdo);
+}
 
 $ds = acct_report($pdo, $key, $_GET);
 $reportSortable = report_sortable($ds);
