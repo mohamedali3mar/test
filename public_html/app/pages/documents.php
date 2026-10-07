@@ -95,7 +95,7 @@ $stmt = $pdo->prepare('SELECT COUNT(*) FROM documents d' . $whereSql);
 $stmt->execute($params);
 $total = (int) $stmt->fetchColumn();
 // إجماليات المبيعات لكل عملة على حدة: لا تُجمع مبالغ عملات مختلفة
-$salesTotals = sales_by_currency($pdo, $whereSql, $params);
+$salesTotals = sales_by_currency($pdo, $whereSql, $params, $typeId);
 $pages = max(1, (int) ceil($total / $perPage));
 $page = min($page, $pages);
 
@@ -184,7 +184,7 @@ render_header('الفواتير والحركات', 'documents');
   </p>
   <?php foreach ($salesTotals as $st): ?>
     <p class="summary">
-      مبيعات سارية في النتائج<?= count($salesTotals) > 1 ? h(' بعملة ' . $st['currency']) : '' ?>: <?= h(fmt_int($st['count'])) ?> فاتورة،
+      مبيعات سارية في النتائج<?= $typeId > 0 ? h(' (أسطر النوع المختار فقط)') : '' ?><?= count($salesTotals) > 1 ? h(' بعملة ' . $st['currency']) : '' ?>: <?= h(fmt_int($st['count'])) ?> فاتورة،
       <strong><?= h(fmt_volume($st['volume'])) ?> م³</strong>،
       الإجمالي: <strong><?= h(fmt_money_currency($st['amount'], $st['currency'])) ?></strong>
     </p>

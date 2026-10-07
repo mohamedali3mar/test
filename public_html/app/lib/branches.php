@@ -381,15 +381,26 @@ function document_branch_condition(int $branchId): array
  * $whereSql: '' أو ' WHERE ...' على الجدول documents باسم d، و $params قيمه.
  * @return array<int,array{currency:string,count:int,volume:string,amount:string}>
  */
-function sales_by_currency(PDO $pdo, string $whereSql, array $params): array
+function sales_by_currency(PDO $pdo, string $whereSql, array $params, int $typeId = 0): array
 {
     $cond = "d.kind = 'sale' AND d.status = 'active'";
-    $stmt = $pdo->prepare(
-        'SELECT d.currency, COUNT(*) AS n, COALESCE(SUM(d.total_volume_m3), 0) AS volume, COALESCE(SUM(d.total_amount), 0) AS amount
-         FROM documents d' . ($whereSql !== '' ? $whereSql . ' AND ' . $cond : ' WHERE ' . $cond) . '
-         GROUP BY d.currency ORDER BY d.currency'
-    );
-    $stmt->execute($params);
+    $where = $whereSql !== '' ? $whereSql . ' AND ' . $cond : ' WHERE ' . $cond;
+    if ($typeId > 0) {
+        // تصفية بنوع الخشب: تُجمع أسطر هذا النوع فقط، لا الفاتورة كاملة
+        $stmt = $pdo->prepare(
+            'SELECT d.currency, COUNT(DISTINCT d.id) AS n, COALESCE(SUM(l.total_volume_m3), 0) AS volume, COALESCE(SUM(l.amount), 0) AS amount
+             FROM documents d JOIN document_lines l ON l.document_id = d.id JOIN items i ON i.id = l.item_id'
+             . $where . ' AND i.wood_type_id = ? GROUP BY d.currency ORDER BY d.currency'
+        );
+        $stmt->execute([...$params, $typeId]);
+    } else {
+        $stmt = $pdo->prepare(
+            'SELECT d.currency, COUNT(*) AS n, COALESCE(SUM(d.total_volume_m3), 0) AS volume, COALESCE(SUM(d.total_amount), 0) AS amount
+             FROM documents d' . $where . '
+             GROUP BY d.currency ORDER BY d.currency'
+        );
+        $stmt->execute($params);
+    }
     $out = [];
     foreach ($stmt as $r) {
         $out[] = ['currency' => (string) $r['currency'], 'count' => (int) $r['n'], 'volume' => (string) $r['volume'], 'amount' => (string) $r['amount']];

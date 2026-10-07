@@ -617,6 +617,11 @@
   function isBusy(region) {
     var active = document.activeElement;
     if (active && active !== body && region.contains(active)) { return true; }
+    // منطقة تعرض خطأ حفظ أو إلغاء لم يُصحح بعد: لا تُستبدل حتى لا تختفي الرسالة وما كتبه المستخدم
+    if (region.querySelector('.alert-error, [aria-invalid="true"]')) { return true; }
+    // نص محدد داخل المنطقة (للنسخ مثلًا) لا يضيع بالتحديث
+    var sel = window.getSelection ? window.getSelection() : null;
+    if (sel && !sel.isCollapsed && sel.anchorNode && region.contains(sel.anchorNode)) { return true; }
     var dirty = false;
     region.querySelectorAll('input, textarea, select').forEach(function (el) {
       if (dirty || el.type === 'hidden') { return; }
@@ -666,7 +671,9 @@
         if (!fresh) {
           region.remove();
         } else {
-          region.replaceWith(document.importNode(fresh, true));
+          var next = document.importNode(fresh, true);
+          // نفس المحتوى: لا داعي للاستبدال (يحافظ على التركيز والتحديد)
+          if (!region.isEqualNode(next)) { region.replaceWith(next); }
         }
         regionsAt[region.id] = v;
       });
