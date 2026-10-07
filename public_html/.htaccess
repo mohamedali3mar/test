@@ -5,25 +5,27 @@ DirectoryIndex index.php
 
 <IfModule mod_rewrite.c>
     RewriteEngine On
-    # منع الوصول المباشر إلى مجلد التطبيق الداخلي والملفات المخفية
+    # منع الوصول المباشر إلى مجلد التطبيق الداخلي (الإعدادات والمكتبات والسجلات والجلسات)
     RewriteRule ^app(/|$) - [F,L]
-    RewriteRule (^|/)\. - [F,L]
-    # منع ملفات التوثيق والنسخ الاحتياطية وملفات SQL
-    RewriteRule \.(md|sql|log|lock|bak|zip|ini|sh|dist)$ - [F,L,NC]
+    # منع الملفات والمجلدات المخفية، مع السماح بـ .well-known لتجديد شهادة SSL
+    RewriteRule (^|/)\.(?!well-known(/|$)) - [F,L]
+    # منع ملفات التوثيق والنسخ الاحتياطية وملفات SQL والسجلات
+    RewriteRule \.(md|sql|log|lock|bak|zip|ini|sh|dist|allow)$ - [F,L,NC]
 </IfModule>
 
 # حماية إضافية إذا لم تعمل mod_rewrite
-<FilesMatch "\.(md|sql|log|lock|bak|zip|ini|sh|dist)$">
+<FilesMatch "\.(md|sql|log|lock|bak|zip|ini|sh|dist|allow)$">
     Require all denied
 </FilesMatch>
-<FilesMatch "^\.">
+<FilesMatch "^\.(?!well-known)">
     Require all denied
 </FilesMatch>
 
+# ترويسات الأمان للصفحات يرسلها PHP. هنا للملفات الثابتة فقط حتى لا تتكرر الترويسات.
 <IfModule mod_headers.c>
-    Header always set X-Content-Type-Options "nosniff"
-    Header always set X-Frame-Options "DENY"
-    Header always set Referrer-Policy "same-origin"
+    <FilesMatch "\.(css|js|woff2)$">
+        Header set X-Content-Type-Options "nosniff"
+    </FilesMatch>
 </IfModule>
 
 <IfModule mod_mime.c>
@@ -35,4 +37,5 @@ DirectoryIndex index.php
     ExpiresByType font/woff2 "access plus 1 year"
     ExpiresByType text/css "access plus 1 month"
     ExpiresByType application/javascript "access plus 1 month"
+    ExpiresByType text/javascript "access plus 1 month"
 </IfModule>
