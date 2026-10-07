@@ -45,6 +45,17 @@ if ($posted) {
         if (!isset(VOLUME_DECIMAL_CHOICES[$values['volume_decimals']])) {
             $errors['volume_decimals'] = 'اختر دقة عرض الحجم.';
         }
+        // تاريخ الإقفال: فارغ = لا إقفال. لا يُقبل تاريخ في المستقبل حتى لا يُمنع العمل اليومي بالخطأ
+        $closing = normalize_number_input(trim(input($_POST, 'closing_date')));
+        if ($closing !== '') {
+            $cd = DateTimeImmutable::createFromFormat('!Y-m-d', $closing);
+            if (!$cd || $cd->format('Y-m-d') !== $closing) {
+                $errors['closing_date'] = 'تاريخ الإقفال غير صحيح. استخدم الصيغة سنة-شهر-يوم.';
+            } elseif ($closing >= date('Y-m-d')) {
+                $errors['closing_date'] = 'تاريخ الإقفال يجب أن يكون قبل اليوم.';
+            }
+        }
+        $values['closing_date'] = $closing;
         if (!$errors) {
             // يحفظ ويسجل في سجل المراقبة الإعدادات التي تغيرت فقط (القديم والجديد)
             settings_save_audited($pdo, $values);
@@ -137,6 +148,12 @@ render_header('الإعدادات', 'settings');
     <div class="field field-check">
       <input type="checkbox" id="volume_pad" name="volume_pad" value="1"<?= $current('volume_pad') === '1' ? ' checked' : '' ?>>
       <label for="volume_pad">إظهار الأصفار في آخر الحجم عند اختيار عدد خانات ثابت (مثل 0.150)</label>
+    </div>
+    <div class="field field-narrow">
+      <label for="closing_date">تاريخ الإقفال (اختياري)</label>
+      <input type="date" id="closing_date" name="closing_date" value="<?= h($current('closing_date')) ?>"<?= field_attrs($errors, 'closing_date', 'hint-closing') ?>>
+      <p class="hint" id="hint-closing">بعد مراجعة حسابات فترة: لا يُسجل ولا يُلغى أي مستند أو سند بتاريخ في هذا اليوم أو قبله. اتركه فارغًا لعدم الإقفال.</p>
+      <?= field_error($errors, 'closing_date') ?>
     </div>
     <div class="actions">
       <button type="submit" class="btn btn-primary">حفظ الإعدادات</button>

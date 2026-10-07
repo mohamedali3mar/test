@@ -30,7 +30,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             redirect('users');
         } elseif ($action === 'update') {
             $editId = $id;
-            $editForm = string_inputs($_POST, ['display_name', 'role']);
+            $editForm = string_inputs($_POST, ['display_name', 'role', 'branch_id']);
             $changes = user_update($pdo, current_user_id(), $id, $_POST);
             flash($changes ? 'success' : 'warning', $changes ? 'تم حفظ تعديل المستخدم.' : 'لم يتغير شيء.');
             redirect('users');
@@ -68,7 +68,8 @@ foreach ($users as $u) {
 }
 $me = current_user_id();
 if ($editUser) {
-    $editForm ??= ['display_name' => (string) $editUser['display_name'], 'role' => user_role($editUser)];
+    $editForm ??= ['display_name' => (string) $editUser['display_name'], 'role' => user_role($editUser),
+        'branch_id' => isset($editUser['branch_id']) ? (string) $editUser['branch_id'] : ''];
     $editSelf = (int) $editUser['id'] === $me;
 }
 
@@ -110,6 +111,19 @@ render_header('المستخدمون', 'users');
         <?php endif; ?>
       </div>
     </div>
+    <?php if (array_key_exists('branch_id', $editUser) && !$editSelf): $allBranches = catalog_all($pdo, 'branch'); ?>
+      <div class="field">
+        <label for="edit-branch">الفرع</label>
+        <select id="edit-branch" name="branch_id"<?= field_attrs($editErrors, 'branch_id', 'hint-edit-branch') ?>>
+          <option value="">كل الفروع</option>
+          <?php foreach ($allBranches as $b): ?>
+            <option value="<?= (int) $b['id'] ?>"<?= (string) ($editForm['branch_id'] ?? '') === (string) $b['id'] ? ' selected' : '' ?>><?= h($b['name']) ?></option>
+          <?php endforeach; ?>
+        </select>
+        <p class="hint" id="hint-edit-branch">المستخدم المقيد بفرع يرى مخازن فرعه ومستنداته فقط، ويسجل الوارد والبيع منها.</p>
+        <?= field_error($editErrors, 'branch_id') ?>
+      </div>
+    <?php endif; ?>
     <div class="actions">
       <button type="submit" class="btn btn-primary">حفظ التعديل</button>
       <a class="btn btn-quiet" href="<?= h(url('users')) ?>">إغلاق</a>

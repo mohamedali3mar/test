@@ -485,4 +485,20 @@ PHP);
 root_pdo()->exec('DROP DATABASE IF EXISTS `' . $migDb . '`');
 shell_exec('rm -rf ' . escapeshellarg($oldTree));
 
+section('تحديد فرع المستخدم من صفحة المستخدمين (user_update)');
+$pdoU = fresh_database();
+$adminU = seed_user($pdoU, 'boss', 'Boss-Pass-12345');
+$pdoU->exec("UPDATE users SET role = 'admin'");
+$staffU = user_create($pdoU, $adminU, ['display_name' => 'موظف الفرع', 'username' => 'branchstaff', 'role' => 'staff',
+    'password' => 'Staff-Pass-12345', 'password_confirm' => 'Staff-Pass-12345']);
+$brU = (int) $pdoU->query('SELECT id FROM branches ORDER BY id LIMIT 1')->fetchColumn();
+$ch = user_update($pdoU, $adminU, $staffU, ['display_name' => 'موظف الفرع', 'role' => 'staff', 'branch_id' => (string) $brU]);
+check_eq('تحديد الفرع يُحفظ', $brU, (int) $pdoU->query("SELECT branch_id FROM users WHERE id = $staffU")->fetchColumn());
+check('  ويُسجل في المراقبة', (int) $pdoU->query("SELECT COUNT(*) FROM audit_log WHERE action = 'user.branch' AND entity_id = $staffU")->fetchColumn() === 1);
+user_update($pdoU, $adminU, $staffU, ['display_name' => 'موظف الفرع', 'role' => 'staff', 'branch_id' => '']);
+check_eq('«كل الفروع» يعيد NULL', null, $pdoU->query("SELECT branch_id FROM users WHERE id = $staffU")->fetchColumn());
+expect_validation('فرع غير موجود مرفوض', fn () => user_update($pdoU, $adminU, $staffU, ['display_name' => 'موظف الفرع', 'role' => 'staff', 'branch_id' => '999']));
+expect_validation('قيمة غير رقمية مرفوضة', fn () => user_update($pdoU, $adminU, $staffU, ['display_name' => 'موظف الفرع', 'role' => 'staff', 'branch_id' => '1 OR 1=1']));
+expect_validation('المدير لا يقيد نفسه بفرع', fn () => user_update($pdoU, $adminU, $adminU, ['display_name' => 'boss', 'role' => 'admin', 'branch_id' => (string) $brU]));
+
 finish();

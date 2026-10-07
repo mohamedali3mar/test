@@ -373,13 +373,40 @@ function user_update(PDO $pdo, int $actorId, int $id, array $in): array
     if ($err = user_validate_role($role)) {
         $errors['role'] = $err;
     }
+    // الفرع: '' = كل الفروع، أو رقم فرع موجود (يُتحقق منه داخل المعاملة). غياب الحقل = بلا تغيير
+    $branchRaw = array_key_exists('branch_id', $in) ? input($in, 'branch_id') : null;
+    if ($branchRaw !== null && $branchRaw !== '' && !preg_match('/^[1-9]\d{0,9}\z/', $branchRaw)) {
+        $errors['branch_id'] = 'اختر الفرع من القائمة.';
+    }
     if ($errors) {
         throw new ValidationException($errors);
     }
-    return db_transaction($pdo, function (PDO $pdo) use ($actorId, $id, $name, $role) {
+    return db_transaction($pdo, function (PDO $pdo) use ($actorId, $id, $name, $role, $branchRaw) {
         $rows = users_lock_all($pdo);
         $u = users_target($rows, $id);
         $changes = [];
+        if ($branchRaw !== null && array_key_exists('branch_id', $u)) {
+            $newBranch = $branchRaw === '' ? null : (int) $branchRaw;
+            $branchName = 'كل الفروع';
+            if ($newBranch !== null) {
+                $b = $pdo->prepare('SELECT name FROM branches WHERE id = ? LOCK IN SHARE MODE');
+                $b->execute([$newBranch]);
+                $branchName = $b->fetchColumn();
+                if ($branchName === false) {
+                    throw new ValidationException(['branch_id' => 'الفرع غير موجود.']);
+                }
+            }
+            if ($newBranch !== null && $id === $actorId) {
+                throw new ValidationException(['branch_id' => 'لا يمكنك تقييد حسابك أنت بفرع. يفعلها مدير آخر إذا لزم.']);
+            }
+            $oldBranch = $u['branch_id'] === null ? null : (int) $u['branch_id'];
+            if ($oldBranch !== $newBranch) {
+                $pdo->prepare('UPDATE users SET branch_id = ? WHERE id = ?')->execute([$newBranch, $id]);
+                audit_record($pdo, 'user.branch', sprintf('تحديد فرع المستخدم %s: %s', $u['username'], (string) $branchName), 'user', $id,
+                    ['branch_id' => ['old' => $oldBranch, 'new' => $newBranch]]);
+                $changes['branch_id'] = ['old' => $oldBranch, 'new' => $newBranch];
+            }
+        }
         if ((string) $u['display_name'] !== $name) {
             $changes['display_name'] = ['old' => (string) $u['display_name'], 'new' => $name];
         }
@@ -395,6 +422,10 @@ function user_update(PDO $pdo, int $actorId, int $id, array $in): array
         users_assert_actor($rows, $actorId);
         if (!$changes) {
             return [];
+        }
+        if (isset($changes['branch_id']) && count($changes) === 1) {
+            data_version_bump($pdo);
+            return $changes;
         }
         $pdo->prepare('UPDATE users SET display_name = ?, role = ? WHERE id = ?')->execute([$name, $role, $id]);
         if (isset($changes['display_name'])) {
