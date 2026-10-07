@@ -114,6 +114,29 @@ html.js [data-nojs-only] { display: none; }
 .main-nav a:hover { background: var(--surface-2); color: var(--text); }
 .main-nav a[aria-current="page"] { color: var(--primary); background: var(--surface-2); }
 .logout-form { margin: 0; }
+
+/* قائمة الموبايل: details/summary تعمل بدون JavaScript. تظهر فقط على عرض 720 فأقل */
+.nav-menu { display: none; }
+.nav-menu > summary {
+  display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 12px;
+  border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface);
+  font-weight: 700; cursor: pointer; list-style: none;
+}
+.nav-menu > summary::-webkit-details-marker { display: none; }
+.nav-menu > summary::marker { content: ""; }
+.nav-menu > summary:hover, .nav-menu[open] > summary { background: var(--surface-2); }
+.nav-menu-current { color: var(--primary); font-weight: 600; }
+.nav-menu-state { margin-inline-start: auto; color: var(--muted); font-size: var(--fs-14); font-weight: 600; }
+.nav-menu-state::after { content: "فتح"; }
+.nav-menu[open] .nav-menu-state::after { content: "إغلاق"; }
+.nav-menu-links { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; padding: 8px 0 4px; }
+.nav-menu-links a {
+  display: flex; align-items: center; min-height: 44px; padding: 4px 12px; line-height: 1.3;
+  border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface);
+  color: var(--text-2); text-decoration: none; font-weight: 600;
+}
+.nav-menu-links a:hover { background: var(--surface-2); color: var(--text); }
+.nav-menu-links a[aria-current="page"] { color: var(--primary); background: var(--surface-2); }
 .live-status { margin: 12px 0 0; }
 
 /* ---------- الأزرار ---------- */
@@ -222,7 +245,8 @@ fieldset legend { padding: 0 4px; }
 .pager { display: flex; align-items: center; gap: 12px; margin-top: 16px; }
 
 /* ---------- الجداول (الجداول الكثيفة بحجم 14) ---------- */
-.table-wrap { width: 100%; overflow-x: auto; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); margin-bottom: 16px; }
+/* position: relative يبقي العناوين المخفية للقارئ الآلي داخل الإطار فلا توسع الصفحة أفقيًا */
+.table-wrap { position: relative; width: 100%; overflow-x: auto; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); margin-bottom: 16px; }
 table { width: 100%; border-collapse: collapse; font-size: var(--fs-14); }
 th, td { padding: 8px 12px; text-align: right; border-bottom: 1px solid var(--border); vertical-align: middle; }
 thead th { background: var(--surface-2); font-weight: 600; color: var(--text-2); white-space: nowrap; }
@@ -256,21 +280,117 @@ td.split { min-width: 160px; }
 .print-note { font-size: var(--fs-12); color: var(--muted); margin-top: 8px; }
 .print-notes { margin-top: 16px; }
 .print-notes .label { color: var(--muted); font-size: var(--fs-14); margin-bottom: 4px; }
+.table-scroll-hint { display: none; }
 
-/* ---------- الشاشات الصغيرة ---------- */
+/* ---------- الأجهزة اللوحية (721 إلى 1023) ---------- */
+@media (min-width: 721px) and (max-width: 1023px) {
+  /* الشعار والخروج في سطر، والقائمة كاملة في سطر واحد تحته */
+  .brand { flex: 1 1 auto; }
+  .main-nav { order: 3; flex: 1 1 100%; }
+  .main-nav a { padding: 0 8px; }
+  /* الجداول الكثيفة: عناوين أعمدة تلتف وحشو أقل حتى تتسع الأعمدة داخل الإطار */
+  thead th { white-space: normal; }
+  th, td { padding: 8px; }
+  td.split { min-width: 120px; }
+  /* سجل المستندات: التاريخ فوق الوقت والمبلغ فوق العملة بدل تمدد الأعمدة */
+  .documents-table td { white-space: normal; }
+  .documents-table td:first-child { white-space: nowrap; }
+}
+
+/* ---------- الشاشات الصغيرة (720 فأقل) ---------- */
 @media (max-width: 720px) {
   h1 { font-size: var(--fs-20); }
+  main.container { padding-top: 16px; }
+
+  /* الرأس: الشعار والخروج في سطر، وزر «القائمة» تحته بعرض الشاشة */
+  .header-row { gap: 8px; }
+  .brand { flex: 1 1 auto; min-width: 0; }
+  .main-nav { display: none; }
+  .nav-menu { display: block; order: 3; flex: 1 1 100%; }
+
+  /* اللمس: 44 بكسل لكل عنصر قابل للضغط، وخط 16 في الحقول حتى لا يكبّر iOS الصفحة */
+  .btn { min-height: 44px; }
+  input[type="text"], input[type="password"], input[type="search"], input[type="date"], select, textarea {
+    min-height: 44px; font-size: var(--fs-16);
+  }
+  .field-check { min-height: 44px; }
+  .field-check input { width: 24px; height: 24px; }
+  .field-check label { flex: 1 1 auto; padding: 8px 0; }
+  .actions .btn { flex: 1 1 auto; }
+  .row-actions { gap: 8px; }
+  .row-actions a, .empty a { display: inline-flex; align-items: center; min-height: 44px; }
+  .pager { gap: 8px; }
+
+  /* رأس الصفحة: الأزرار في صف واحد تحت العنوان (الأزرار الهادئة تبقى بعرض نصها) */
+  .page-head { gap: 12px; }
+  .page-actions { flex: 1 1 100%; }
+  .page-actions .btn:not(.btn-quiet) { flex: 1 1 auto; }
+
+  /* النماذج: الحقول المتجاورة على الكمبيوتر تتراص بنفس مسافة باقي الحقول */
+  .field-row { row-gap: 0; }
   .dims { grid-template-columns: 1fr; }
   .field-narrow { max-width: none; }
-  .header-row { gap: 8px; }
-  .main-nav { order: 3; flex-basis: 100%; }
-  .actions .btn { flex: 1 1 auto; }
-  .line-grid, .line-grid.with-price { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
-  .line-grid .field-item { grid-column: 1 / -1; }
+  fieldset { padding: 12px; }
+  .form-inline .field { flex: 1 1 100%; min-width: 0; }
+  .form-inline .btn:not(.btn-quiet) { flex: 1 1 auto; }
+  .form-inline.compact input { flex: 1 1 100%; min-width: 0; width: 100%; }
+
+  /* التصفية: حقلان في كل صف بدل حقل واحد */
+  .filters { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; padding: 12px; }
+  .filters .field { min-width: 0; }
+  .filters .field-check { min-height: 44px; }
+  .filters .field-wide, .filters .field-check, .filter-actions { grid-column: 1 / -1; }
+  .filter-actions .btn { flex: 1 1 0; }
+
+  /* محرر الأسطر: النوع والمقاس بعرض كامل، والعدد والسعر جنبًا إلى جنب */
+  .line-grid, .line-grid.with-price { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; }
+  .line-grid .field-type, .line-grid .field-item, .line-grid:not(.with-price) .field-qty { grid-column: 1 / -1; }
   .line-figures, .line-remove { grid-column: 1 / -1; }
-  .line-remove { justify-content: flex-start; }
+  .line-figures { background: var(--surface-2); border-radius: var(--radius); padding: 8px 12px; gap: 4px 16px; }
+  .line-remove { justify-content: flex-end; }
+  .line-remove .btn-quiet { border-color: var(--border); }
+  .line-actions .btn { flex: 1 1 auto; }
+
+  /* البيانات المختصرة: اسم البند ثم قيمته في نفس السطر */
+  .facts, .facts-wide { grid-template-columns: 1fr; gap: 0; }
+  .facts > div { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); gap: 12px; align-items: baseline; padding: 8px 0; }
+  .facts > div + div { border-top: 1px solid var(--border); }
+  .totals, .calc-panel, .confirm-box { padding: 12px 16px; }
+
+  /* الجداول الرئيسية: كل صف إطار مستقل، وكل خانة تسبقها اسم عمودها (data-label) */
+  .table-stack { border: 0; border-radius: 0; background: transparent; overflow: visible; }
+  .table-stack table, .table-stack tbody, .table-stack tfoot, .table-stack tr { display: block; }
+  .table-stack thead { display: none; }
+  .table-stack tr { border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); padding: 0 12px 8px; margin-bottom: 8px; }
+  .table-stack th, .table-stack td {
+    display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); gap: 12px; align-items: baseline;
+    padding: 4px 0; border-bottom: 0; text-align: right; white-space: normal; background: transparent;
+  }
+  /* الخانة الأولى عنوان الإطار، يفصلها خط عن باقي البيانات */
+  .table-stack tr > :first-child { padding: 8px 0; margin-bottom: 4px; border-bottom: 1px solid var(--border); font-weight: 600; }
+  .table-stack td:empty { display: none; }
+  .table-stack [data-label]::before { content: attr(data-label); color: var(--muted); font-size: var(--fs-14); font-weight: 400; }
+  .table-stack th:not([data-label]) { display: block; font-weight: 700; }
+  /* الروابط 44 بكسل للمس دون أن تزيد ارتفاع السطر */
+  .table-stack td a, .table-stack th a { display: inline-flex; align-items: center; min-height: 44px; margin: -8px 0; }
+  .table-stack td > .form-inline { grid-column: 1 / -1; }
+  .table-stack .cell-actions { display: block; padding: 8px 0 0; }
+  .table-stack .cell-actions a { margin: 0; }
+  .table-stack .row-actions a {
+    padding: 0 16px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface);
+    color: var(--text); text-decoration: none; font-weight: 600;
+  }
+  .table-stack .row-actions a:hover { background: var(--surface-2); }
+  .table-stack .row-actions a.danger-link { border-color: var(--error); color: var(--error); }
+  /* الإجمالي الفرعي بخلفية رمادية، والإجمالي العام بخط أكبر وأثقل */
+  .table-stack .row-subtotal { background: var(--surface-2); margin-bottom: 16px; }
+  .table-stack .row-total { background: var(--surface-2); }
+  .table-stack .row-total th, .table-stack .row-total td { font-size: var(--fs-16); }
+
   .print-doc { padding: 16px; }
   .print-total { flex-direction: column; align-items: flex-start; }
+  .table-scroll-hint { display: block; margin: 0 0 8px; }
+  .login-box { margin-top: 24px; padding: 16px; }
 }
 
 @media (prefers-reduced-motion: reduce) {

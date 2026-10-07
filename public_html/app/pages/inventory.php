@@ -31,7 +31,7 @@ render_header('المخزون', 'inventory');
 
 <form method="get" action="index.php" class="filters" role="search" aria-label="تصفية المخزون">
   <input type="hidden" name="r" value="inventory">
-  <div class="field">
+  <div class="field field-wide">
     <label for="q">بحث باسم النوع</label>
     <input type="search" id="q" name="q" value="<?= h($q) ?>" maxlength="100">
   </div>
@@ -57,7 +57,7 @@ render_header('المخزون', 'inventory');
 <?php if (count($summary) > 1): ?>
   <section class="section" aria-labelledby="wh-summary-title">
     <h2 id="wh-summary-title">ملخص المخازن</h2>
-    <div class="table-wrap">
+    <div class="table-wrap table-stack">
       <table>
         <caption class="visually-hidden">إجمالي كل مخزن</caption>
         <thead>
@@ -71,10 +71,10 @@ render_header('المخزون', 'inventory');
         <tbody>
           <?php foreach ($summary as $s): ?>
           <tr>
-            <th scope="row"><a href="<?= h(url('inventory', ['warehouse' => (int) $s['id']])) ?>"><?= h($s['name']) ?></a></th>
-            <td class="num"><?= h(fmt_int((string) $s['sizes'])) ?></td>
-            <td class="num"><?= h(fmt_int((string) $s['qty'])) ?></td>
-            <td class="num"><?= h(fmt_volume((string) $s['volume'])) ?></td>
+            <th scope="row" data-label="<?= h('المخزن') ?>"><a href="<?= h(url('inventory', ['warehouse' => (int) $s['id']])) ?>"><?= h($s['name']) ?></a></th>
+            <td class="num" data-label="<?= h('مقاسات متاحة') ?>"><?= h(fmt_int((string) $s['sizes'])) ?></td>
+            <td class="num" data-label="<?= h('القطع') ?>"><?= h(fmt_int((string) $s['qty'])) ?></td>
+            <td class="num" data-label="<?= h('الحجم (م³)') ?>"><?= h(fmt_volume((string) $s['volume'])) ?></td>
           </tr>
           <?php endforeach; ?>
         </tbody>
@@ -86,7 +86,7 @@ render_header('المخزون', 'inventory');
 <?php if (!$view['groups']): ?>
   <p class="empty">
     <?php if ($filtered): ?>
-      لا توجد نتائج مطابقة.
+      لا توجد نتائج مطابقة للتصفية. <a href="<?= h(url('inventory')) ?>">عرض كل المخزون</a>
     <?php else: ?>
       المخزون فارغ. ابدأ <a href="<?= h(url('receive')) ?>">بإضافة وارد</a>.
     <?php endif; ?>
@@ -96,11 +96,11 @@ render_header('المخزون', 'inventory');
     <h2 id="stock-title"><?= $warehouseId ? h('أرصدة ' . $whNames[$warehouseId]) : 'أرصدة كل المخازن' ?></h2>
     <p class="summary">
       <?= $filtered ? 'إجمالي النتائج المعروضة' : 'إجمالي المخزون' ?>:
-      <strong><?= h(fmt_volume($view['volume'])) ?> م³</strong>
-      في <?= h(fmt_int($view['qty'])) ?> قطعة
+      <strong class="nowrap"><?= h(fmt_volume($view['volume'])) ?> م³</strong>
+      في <span class="nowrap"><?= h(fmt_int($view['qty'])) ?> قطعة</span>
       <?php if ($view['empty']): ?><span class="muted">، مقاسات نافدة: <?= h(fmt_int($view['empty'])) ?></span><?php endif; ?>
     </p>
-    <div class="table-wrap">
+    <div class="table-wrap table-stack">
       <table class="inventory-table">
         <caption class="visually-hidden">أرصدة المقاسات مجمعة حسب النوع</caption>
         <thead>
@@ -120,15 +120,15 @@ render_header('المخزون', 'inventory');
         <tbody>
           <?php foreach ($g['rows'] as $r): $empty = $r['qty'] === 0; ?>
           <tr class="<?= $empty ? 'row-empty' : '' ?>">
-            <td><?= h($g['name']) ?></td>
-            <td class="num"><?= h(fmt_dim((int) $r['width_um'], $r['width_unit'])) ?></td>
-            <td class="num"><?= h(fmt_dim((int) $r['thickness_um'], $r['thickness_unit'])) ?></td>
-            <td class="num"><?= h(fmt_dim((int) $r['length_um'], $r['length_unit'])) ?></td>
-            <td class="num"><?= h(fmt_int($r['qty'])) ?></td>
-            <td class="num"><?= h(fmt_volume((string) $r['piece_volume_m3'])) ?></td>
-            <td class="num"><?= h(fmt_volume($r['volume'])) ?></td>
+            <td data-label="<?= h('النوع') ?>"><?= h($g['name']) ?></td>
+            <td class="num" data-label="<?= h('العرض') ?>"><?= h(fmt_dim((int) $r['width_um'], $r['width_unit'])) ?></td>
+            <td class="num" data-label="<?= h('التخانة') ?>"><?= h(fmt_dim((int) $r['thickness_um'], $r['thickness_unit'])) ?></td>
+            <td class="num" data-label="<?= h('الطول') ?>"><?= h(fmt_dim((int) $r['length_um'], $r['length_unit'])) ?></td>
+            <td class="num" data-label="<?= h('العدد المتاح') ?>"><?= h(fmt_int($r['qty'])) ?></td>
+            <td class="num" data-label="<?= h('حجم القطعة (م³)') ?>"><?= h(fmt_volume((string) $r['piece_volume_m3'])) ?></td>
+            <td class="num" data-label="<?= h('الحجم المتاح (م³)') ?>"><?= h(fmt_volume($r['volume'])) ?></td>
             <?php if ($showSplit): ?>
-              <td class="split">
+              <td class="split" data-label="<?= h('التوزيع على المخازن') ?>">
                 <?php $parts = [];
                 foreach ($r['by_warehouse'] as $wid => $qty) {
                     if ($qty > 0) {
@@ -138,25 +138,25 @@ render_header('المخزون', 'inventory');
                 echo $parts ? h(implode('، ', $parts)) : '<span class="muted">لا يوجد</span>'; ?>
               </td>
             <?php endif; ?>
-            <td><?= $empty ? '<span class="status status-empty">نفد</span>' : 'متاح' ?></td>
+            <td data-label="<?= h('الحالة') ?>"><?= $empty ? '<span class="status status-empty">نفد</span>' : 'متاح' ?></td>
           </tr>
           <?php endforeach; ?>
           <tr class="row-subtotal">
             <th scope="row" colspan="4">إجمالي <?= h($g['name']) ?></th>
-            <td class="num"><?= h(fmt_int($g['qty'])) ?></td>
+            <td class="num" data-label="<?= h('العدد المتاح') ?>"><?= h(fmt_int($g['qty'])) ?></td>
             <td></td>
-            <td class="num"><?= h(fmt_volume($g['volume'])) ?></td>
+            <td class="num" data-label="<?= h('الحجم المتاح (م³)') ?>"><?= h(fmt_volume($g['volume'])) ?></td>
             <?php if ($showSplit): ?><td></td><?php endif; ?>
-            <td><?= $g['empty'] ? h('مقاسات نافدة: ' . fmt_int($g['empty'])) : '' ?></td>
+            <td data-label="<?= h('الحالة') ?>"><?= $g['empty'] ? h('مقاسات نافدة: ' . fmt_int($g['empty'])) : '' ?></td>
           </tr>
         </tbody>
         <?php endforeach; ?>
         <tfoot>
           <tr class="row-total">
             <th scope="row" colspan="4"><?= $filtered ? 'إجمالي النتائج' : 'إجمالي المخزون' ?></th>
-            <td class="num"><?= h(fmt_int($view['qty'])) ?></td>
+            <td class="num" data-label="<?= h('العدد المتاح') ?>"><?= h(fmt_int($view['qty'])) ?></td>
             <td></td>
-            <td class="num"><?= h(fmt_volume($view['volume'])) ?></td>
+            <td class="num" data-label="<?= h('الحجم المتاح (م³)') ?>"><?= h(fmt_volume($view['volume'])) ?></td>
             <?php if ($showSplit): ?><td></td><?php endif; ?>
             <td></td>
           </tr>

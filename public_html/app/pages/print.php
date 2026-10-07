@@ -46,6 +46,7 @@ render_header(doc_print_title($kind) . ' ' . fmt_int((int) $d['doc_no']), 'docum
     <?php endif; ?>
   </dl>
 
+  <p class="hint table-scroll-hint no-print">اسحب الجدول أفقيًا لعرض كل الأعمدة.</p>
   <div class="table-wrap print-table-wrap">
     <table class="print-table">
       <caption class="visually-hidden">الأصناف</caption>

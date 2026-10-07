@@ -136,7 +136,7 @@ render_header('الفواتير والحركات', 'documents');
     <label for="to">إلى تاريخ</label>
     <input type="date" id="to" name="to" value="<?= h($to ? $to->format('Y-m-d') : '') ?>">
   </div>
-  <div class="field">
+  <div class="field field-wide">
     <label for="q">بحث</label>
     <input type="search" id="q" name="q" value="<?= h($q) ?>" maxlength="100" placeholder="رقم، عميل، مورد، مرجع، نوع">
   </div>
@@ -150,18 +150,24 @@ render_header('الفواتير والحركات', 'documents');
 
 <div id="live-documents" data-live>
 <?php if (!$rows): ?>
-  <p class="empty"><?= $filtered ? 'لا توجد مستندات مطابقة.' : 'لا توجد مستندات بعد.' ?></p>
-<?php else: ?>
-  <p class="summary">
-    <?= h(fmt_int($total)) ?> مستند.
-    <?php if ((int) $totals['sales'] > 0): ?>
-      مبيعات سارية في النتائج: <?= h(fmt_int((string) $totals['sales'])) ?> فاتورة،
-      <strong><?= h(fmt_volume((string) $totals['sales_volume'])) ?> م³</strong>،
-      بقيمة <strong><?= h(fmt_money_currency((string) $totals['sales_amount'])) ?></strong>
+  <p class="empty">
+    <?php if ($filtered): ?>
+      لا توجد مستندات مطابقة للتصفية. <a href="<?= h(url('documents')) ?>">عرض كل المستندات</a>
+    <?php else: ?>
+      لا توجد مستندات بعد. تظهر هنا فواتير البيع والوارد والتحويلات بعد حفظها. <a href="<?= h(url('receive')) ?>">إضافة وارد</a>
     <?php endif; ?>
   </p>
-  <div class="table-wrap">
-    <table>
+<?php else: ?>
+  <p class="summary">
+    <span class="nowrap"><?= h(fmt_int($total)) ?> مستند.</span>
+    <?php if ((int) $totals['sales'] > 0): ?>
+      مبيعات سارية في النتائج: <span class="nowrap"><?= h(fmt_int((string) $totals['sales'])) ?> فاتورة،</span>
+      <strong class="nowrap"><?= h(fmt_volume((string) $totals['sales_volume'])) ?> م³</strong>،
+      بقيمة <strong class="nowrap"><?= h(fmt_money_currency((string) $totals['sales_amount'])) ?></strong>
+    <?php endif; ?>
+  </p>
+  <div class="table-wrap table-stack">
+    <table class="documents-table">
       <caption class="visually-hidden">المستندات من الأحدث إلى الأقدم</caption>
       <thead>
         <tr>
@@ -180,18 +186,20 @@ render_header('الفواتير والحركات', 'documents');
       <tbody>
       <?php foreach ($rows as $d): $cancelled = $d['status'] === 'cancelled'; ?>
         <tr class="<?= $cancelled ? 'row-cancelled' : '' ?>">
-          <td class="nowrap"><a href="<?= h(url('document', ['id' => (int) $d['id']])) ?>"><?= h(doc_label($d)) ?></a></td>
-          <td class="nowrap"><?= h(fmt_datetime($d['created_at'])) ?></td>
-          <td><?= h($d['kind'] === 'transfer' ? 'من ' . $d['warehouse_name'] . ' إلى ' . $d['to_warehouse_name'] : $d['warehouse_name']) ?></td>
-          <td><?= h((string) $d['party_name']) ?></td>
-          <td class="num"><?= h(fmt_int((int) $d['line_count'])) ?></td>
-          <td class="num"><?= h(fmt_int((int) $d['total_qty'])) ?></td>
-          <td class="num"><?= h(fmt_volume($d['total_volume_m3'])) ?></td>
-          <td class="num"><?= $d['kind'] === 'sale' ? h(fmt_money_currency((string) $d['total_amount'], $d['currency'])) : '' ?></td>
-          <td><?= $cancelled ? '<span class="status status-cancelled">ملغاة ' . h(fmt_datetime($d['cancelled_at'])) . '</span>' : 'سارية' ?></td>
-          <td class="row-actions">
-            <a href="<?= h(url('document', ['id' => (int) $d['id']])) ?>">تفاصيل</a>
-            <a href="<?= h(url('print', ['id' => (int) $d['id']])) ?>">طباعة</a>
+          <td class="nowrap" data-label="<?= h('المستند') ?>"><a href="<?= h(url('document', ['id' => (int) $d['id']])) ?>"><?= h(doc_label($d)) ?></a></td>
+          <td class="nowrap" data-label="<?= h('التاريخ') ?>"><?= h(fmt_datetime($d['created_at'])) ?></td>
+          <td data-label="<?= h('المخزن') ?>"><?= h($d['kind'] === 'transfer' ? 'من ' . $d['warehouse_name'] . ' إلى ' . $d['to_warehouse_name'] : $d['warehouse_name']) ?></td>
+          <td data-label="<?= h($d['kind'] === 'sale' ? 'العميل' : ($d['kind'] === 'in' ? 'المورد' : 'العميل / المورد')) ?>"><?= h((string) $d['party_name']) ?></td>
+          <td class="num" data-label="<?= h('الأسطر') ?>"><?= h(fmt_int((int) $d['line_count'])) ?></td>
+          <td class="num" data-label="<?= h('القطع') ?>"><?= h(fmt_int((int) $d['total_qty'])) ?></td>
+          <td class="num" data-label="<?= h('الحجم (م³)') ?>"><?= h(fmt_volume($d['total_volume_m3'])) ?></td>
+          <td class="num" data-label="<?= h('القيمة') ?>"><?= $d['kind'] === 'sale' ? h(fmt_money_currency((string) $d['total_amount'], $d['currency'])) : '' ?></td>
+          <td data-label="<?= h('الحالة') ?>"><?= $cancelled ? '<span class="status status-cancelled">ملغاة ' . h(fmt_datetime($d['cancelled_at'])) . '</span>' : 'سارية' ?></td>
+          <td class="cell-actions">
+            <div class="row-actions">
+              <a href="<?= h(url('document', ['id' => (int) $d['id']])) ?>">تفاصيل</a>
+              <a href="<?= h(url('print', ['id' => (int) $d['id']])) ?>">طباعة</a>
+            </div>
           </td>
         </tr>
       <?php endforeach; ?>

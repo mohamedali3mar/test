@@ -54,7 +54,7 @@ function render_line(int|string $i, array $line, array $errors, bool $withPrice,
 <fieldset class="line" data-line>
   <legend>السطر <span data-line-no><?= h($no) ?></span></legend>
   <div class="line-grid<?= $withPrice ? ' with-price' : '' ?>">
-    <div class="field">
+    <div class="field field-type">
       <label for="<?= h($id('type')) ?>">النوع</label>
       <select id="<?= h($id('type')) ?>" name="<?= h($name('type_id')) ?>" data-line-type>
         <?= options_html($types, $line['type_id'] ?? '', 'كل الأنواع') ?>
@@ -68,21 +68,21 @@ function render_line(int|string $i, array $line, array $errors, bool $withPrice,
       <p class="hint" data-line-available></p>
       <?= $err('item_id') ?>
     </div>
-    <div class="field">
+    <div class="field field-qty">
       <label for="<?= h($id('qty')) ?>">عدد القطع</label>
       <input type="text" inputmode="numeric" autocomplete="off" maxlength="12" id="<?= h($id('qty')) ?>" name="<?= h($name('quantity')) ?>" value="<?= h($line['quantity'] ?? '') ?>" data-line-qty<?= $attrs('quantity') ?>>
       <?= $err('quantity') ?>
     </div>
     <?php if ($withPrice): ?>
-    <div class="field">
+    <div class="field field-price">
       <label for="<?= h($id('price')) ?>">سعر المتر المكعب</label>
       <input type="text" inputmode="decimal" autocomplete="off" maxlength="20" id="<?= h($id('price')) ?>" name="<?= h($name('price')) ?>" value="<?= h($line['price'] ?? '') ?>" data-line-price<?= $attrs('price') ?>>
       <?= $err('price') ?>
     </div>
     <?php endif; ?>
     <div class="line-figures" aria-live="off">
-      <span>الحجم: <strong data-line-volume>-</strong> م³</span>
-      <?php if ($withPrice): ?><span>القيمة: <strong data-line-amount>-</strong></span><?php endif; ?>
+      <span class="nowrap">الحجم: <strong data-line-volume>-</strong> م³</span>
+      <?php if ($withPrice): ?><span class="nowrap">القيمة: <strong data-line-amount>-</strong></span><?php endif; ?>
     </div>
     <div class="line-remove">
       <button type="button" class="btn btn-quiet" data-line-remove hidden>حذف السطر</button>

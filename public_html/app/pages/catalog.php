@@ -109,7 +109,7 @@ render_header($title, $route);
   <?php if (!$rows): ?>
     <p class="empty">لا توجد بيانات بعد. أضف أول <?= h($kind === 'warehouse' ? 'مخزن' : 'نوع') ?> من النموذج أعلاه.</p>
   <?php else: ?>
-  <div class="table-wrap">
+  <div class="table-wrap table-stack">
     <table>
       <caption class="visually-hidden"><?= h($title) ?></caption>
       <thead>
@@ -124,7 +124,7 @@ render_header($title, $route);
       <tbody>
       <?php foreach ($rows as $r): $rid = (int) $r['id']; ?>
         <tr>
-          <td>
+          <td data-label="<?= h('الاسم') ?>">
             <?php if ($editId === $rid): ?>
               <form method="post" action="<?= h(url($route)) ?>" class="form-inline compact">
                 <?= csrf_field() ?>
@@ -139,13 +139,15 @@ render_header($title, $route);
               <?= h($r['name']) ?>
             <?php endif; ?>
           </td>
-          <td class="num"><?= h(fmt_int((string) $r['sizes'])) ?></td>
-          <td class="num"><?= h(fmt_int((string) $r['qty'])) ?></td>
-          <td class="num"><?= h(fmt_volume((string) $r['volume'])) ?></td>
-          <td class="row-actions">
-            <a href="<?= h(url('inventory', [$kind === 'warehouse' ? 'warehouse' : 'type' => $rid])) ?>">الأرصدة</a>
-            <?php if ($editId !== $rid): ?><a href="<?= h(url($route, ['edit' => $rid])) ?>">تعديل الاسم</a><?php endif; ?>
-            <?php if ((int) $r['used'] === 0): ?><a class="danger-link" href="<?= h(url($route, ['delete' => $rid])) ?>">حذف</a><?php endif; ?>
+          <td class="num" data-label="<?= h('مقاسات متاحة') ?>"><?= h(fmt_int((string) $r['sizes'])) ?></td>
+          <td class="num" data-label="<?= h('القطع المتاحة') ?>"><?= h(fmt_int((string) $r['qty'])) ?></td>
+          <td class="num" data-label="<?= h('الحجم المتاح (م³)') ?>"><?= h(fmt_volume((string) $r['volume'])) ?></td>
+          <td class="cell-actions">
+            <div class="row-actions">
+              <a href="<?= h(url('inventory', [$kind === 'warehouse' ? 'warehouse' : 'type' => $rid])) ?>">الأرصدة</a>
+              <?php if ($editId !== $rid): ?><a href="<?= h(url($route, ['edit' => $rid])) ?>">تعديل الاسم</a><?php endif; ?>
+              <?php if ((int) $r['used'] === 0): ?><a class="danger-link" href="<?= h(url($route, ['delete' => $rid])) ?>">حذف</a><?php endif; ?>
+            </div>
           </td>
         </tr>
       <?php endforeach; ?>
