@@ -51,6 +51,7 @@ require APP_ROOT . '/lib/acct_reports.php';
 require APP_ROOT . '/lib/parties.php';
 require APP_ROOT . '/lib/cashboxes.php';
 require APP_ROOT . '/lib/vouchers.php';
+require APP_ROOT . '/lib/pdf.php'; // دوال فقط؛ مكتبة mPDF تُحمَّل عند أول طلب PDF
 
 set_exception_handler(function (Throwable $e): void {
     error_log('[wood] ' . get_class($e) . ': ' . $e->getMessage() . ' in ' . $e->getFile() . ':' . $e->getLine());
