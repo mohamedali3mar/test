@@ -91,9 +91,10 @@ if ($locked) {
         verify_csrf();
         $username = clean_text(input($_POST, 'username'));
         $password = input($_POST, 'password');
-        $stmt = $pdo->prepare('SELECT id FROM users WHERE username = ?');
+        $stmt = $pdo->prepare('SELECT id, username FROM users WHERE username = ?');
         $stmt->execute([$username]);
-        $userId = (int) $stmt->fetchColumn();
+        $found = $stmt->fetch(PDO::FETCH_ASSOC) ?: ['id' => 0, 'username' => ''];
+        $userId = (int) $found['id'];
         if (!check_install_key(input($_POST, 'install_key'))) {
             $errors['install_key'] = 'مفتاح التثبيت غير صحيح.';
         } elseif ($userId === 0) {
@@ -105,6 +106,8 @@ if ($locked) {
             $pdo->prepare('UPDATE users SET password_hash = ?, auth_version = auth_version + 1 WHERE id = ?')
                 ->execute([password_hash($password, PASSWORD_DEFAULT), $userId]);
             $pdo->prepare('DELETE FROM login_attempts WHERE username = ?')->execute([$username]);
+            // قبل تحديث قاعدة البيانات لا يوجد جدول السجل، وauth_event لا يوقف الاستعادة عندها
+            auth_event($pdo, 'password_reset', (string) $found['username']);
             @unlink(RESET_ALLOW_FILE);
             $selfDeleted = @unlink(__FILE__);
             echo '<div class="alert alert-success" role="status">تم تعيين كلمة المرور الجديدة.</div>';

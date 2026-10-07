@@ -79,6 +79,7 @@ if ($posted) {
 
 $current = fn (string $k) => $errors ? input($_POST, $k) : app_setting($k);
 $pending = pending_migrations($pdo);
+$authLog = auth_events_overview($pdo, 50);
 
 render_header('الإعدادات', 'settings');
 ?>
@@ -184,6 +185,52 @@ render_header('الإعدادات', 'settings');
       <button type="submit" class="btn">تغيير كلمة المرور</button>
     </div>
   </form>
+</section>
+
+<section class="section" aria-labelledby="auth-log-title">
+  <h2 id="auth-log-title">سجل الدخول والأمان</h2>
+  <div id="live-auth-events" data-live>
+  <?php if ($authLog === null): ?>
+    <p class="empty">يبدأ السجل بعد تحديث قاعدة البيانات من الزر في أعلى الصفحة.</p>
+  <?php elseif (!$authLog['rows']): ?>
+    <p class="empty">لا توجد أحداث مسجلة بعد.</p>
+  <?php else: ?>
+    <p class="summary">
+      خلال آخر <?= h(fmt_int(24)) ?> ساعة: محاولات الدخول الفاشلة <strong><?= h(fmt_int($authLog['failed'])) ?></strong>،
+      والمحاولات المحظورة مؤقتًا <strong><?= h(fmt_int($authLog['locked'])) ?></strong>.
+    </p>
+    <div class="table-wrap">
+      <table>
+        <caption class="visually-hidden">آخر <?= h(fmt_int(50)) ?> حدثًا في سجل الدخول والأمان من الأحدث إلى الأقدم</caption>
+        <thead>
+          <tr>
+            <th scope="col">الحدث</th>
+            <th scope="col">اسم المستخدم</th>
+            <th scope="col">العنوان (IP)</th>
+            <th scope="col">المتصفح</th>
+            <th scope="col">الوقت</th>
+          </tr>
+        </thead>
+        <tbody>
+        <?php foreach ($authLog['rows'] as $ev):
+            $failure = in_array($ev['event'], ['login_fail', 'login_locked'], true);
+            $agent = fmt_user_agent($ev['user_agent']);
+            // «Chrome على Windows» يُقرأ صحيحًا داخل RTL، أما نص الترويسة الخام فيُعزل باتجاه LTR حتى لا تنقلب أقواسه
+            $agentLtr = !preg_match('/\p{Arabic}/u', $agent); ?>
+          <tr>
+            <td class="nowrap"><?php if ($failure): ?><span class="status status-empty"><?= h(auth_event_label($ev['event'])) ?></span><?php else: ?><?= h(auth_event_label($ev['event'])) ?><?php endif; ?></td>
+            <td><bdi><?= h($ev['username']) ?></bdi></td>
+            <td class="num" dir="ltr"><?= h($ev['ip']) ?></td>
+            <td class="nowrap"<?= $ev['user_agent'] !== '' ? ' title="' . h($ev['user_agent']) . '"' : '' ?>><?= $agentLtr ? '<bdi dir="ltr">' . h($agent) . '</bdi>' : h($agent) ?></td>
+            <td class="nowrap"><?= h(fmt_datetime($ev['created_at'])) ?></td>
+          </tr>
+        <?php endforeach; ?>
+        </tbody>
+      </table>
+    </div>
+    <p class="hint">يُحتفظ بالسجل <?= h(fmt_int(AUTH_EVENTS_KEEP_DAYS)) ?> يومًا. المحاولات المتكررة أثناء الحظر من نفس العنوان تُسجل مرة واحدة كل دقيقة.</p>
+  <?php endif; ?>
+  </div>
 </section>
 
 <p class="muted">إصدار النظام <?= h(digits(APP_VERSION)) ?>، إصدار قاعدة البيانات <?= h(fmt_int(schema_version($pdo))) ?>.</p>

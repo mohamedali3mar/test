@@ -6,6 +6,22 @@ const LOGIN_MAX_PER_USER_IP = 5;    // نفس اسم المستخدم من نف�
 const LOGIN_MAX_PER_IP = 20;        // أي أسماء من نفس العنوان
 const LOGIN_MAX_PER_USER = 100;     // نفس الاسم من كل العناوين (هجوم موزع)، حد مرتفع حتى لا يُحبس المدير بسهولة
 
+const AUTH_EVENTS_KEEP_DAYS = 180;      // مدة الاحتفاظ بسجل الدخول والأمان
+const AUTH_EVENTS_PRUNE_ONE_IN = 50;    // حذف السجلات القديمة مرة كل 50 حدثًا تقريبًا (اختيار عشوائي)
+const AUTH_EVENTS_PRUNE_BATCH = 5000;   // أقصى عدد صفوف يُحذف في المرة الواحدة حتى لا يطول الطلب
+const AUTH_LOCKED_REPEAT_SECONDS = 60;  // المحاولات أثناء الحظر تُسجل مرة واحدة في الدقيقة لكل عنوان
+
+/** أحداث سجل الدخول والأمان (نفس قيم ENUM في جدول auth_events) وتسمياتها العربية */
+const AUTH_EVENT_LABELS = [
+    'login_ok'         => 'دخول ناجح',
+    'login_fail'       => 'محاولة دخول فاشلة',
+    'login_locked'     => 'دخول محظور مؤقتًا',
+    'logout'           => 'تسجيل خروج',
+    'password_changed' => 'تغيير كلمة المرور',
+    'password_reset'   => 'استعادة كلمة المرور',
+    'session_expired'  => 'انتهاء الجلسة',
+];
+
 function is_https(): bool
 {
     return (!empty($_SERVER['HTTPS']) && strtolower((string) $_SERVER['HTTPS']) !== 'off')
@@ -73,9 +89,12 @@ function start_secure_session(bool $touch = true): void
 
     $last = (int) ($_SESSION['last_activity'] ?? 0);
     if (!empty($_SESSION['user_id']) && $last > 0 && time() - $last > $idle) {
+        $expiredUser = (string) ($_SESSION['username'] ?? '');
         $_SESSION = [];
         session_regenerate_id(true);
         $_SESSION['flash'][] = ['type' => 'warning', 'text' => 'انتهت الجلسة بسبب عدم النشاط. سجّل الدخول مرة أخرى.'];
+        // التسجيل هنا فقط وليس في كل طلب، فلا تحتاج الطلبات العادية اتصالًا إضافيًا بقاعدة البيانات
+        auth_event_db('session_expired', $expiredUser);
     }
     // التحديث التلقائي لا يمد عمر الجلسة، حتى يعمل الخروج عند الخمول مع بقاء الصفحة مفتوحة
     if ($touch || empty($_SESSION['last_activity'])) {
@@ -224,6 +243,7 @@ function attempt_login(PDO $pdo, string $username, string $password): ?string
 
     $lock = throttle_register($pdo, $username);
     if ($lock > 0) {
+        auth_event($pdo, 'login_locked', $username);
         return sprintf('محاولات دخول كثيرة. حاول مرة أخرى بعد %s دقيقة.', fmt_int($lock));
     }
 
@@ -235,6 +255,8 @@ function attempt_login(PDO $pdo, string $username, string $password): ?string
         && password_verify($password, $user['password_hash'] ?? dummy_password_hash())
         && $user;
     if (!$ok) {
+        // يُسجل الاسم كما كُتب، سواء كان مستخدمًا موجودًا أم لا
+        auth_event($pdo, 'login_fail', $username);
         return 'اسم المستخدم أو كلمة المرور غير صحيحة.';
     }
 
@@ -253,6 +275,7 @@ function attempt_login(PDO $pdo, string $username, string $password): ?string
         'csrf' => bin2hex(random_bytes(32)),
         'last_activity' => time(),
     ];
+    auth_event($pdo, 'login_ok', (string) $user['username']);
     return null;
 }
 
@@ -278,11 +301,13 @@ function change_password(PDO $pdo, int $userId, string $newPassword): void
 {
     $pdo->prepare('UPDATE users SET password_hash = ?, auth_version = auth_version + 1 WHERE id = ?')
         ->execute([password_hash($newPassword, PASSWORD_DEFAULT), $userId]);
-    $stmt = $pdo->prepare('SELECT auth_version FROM users WHERE id = ?');
+    $stmt = $pdo->prepare('SELECT username, auth_version FROM users WHERE id = ?');
     $stmt->execute([$userId]);
+    $user = $stmt->fetch(PDO::FETCH_ASSOC);
     session_regenerate_id(true);
-    $_SESSION['auth_version'] = (int) $stmt->fetchColumn();
+    $_SESSION['auth_version'] = (int) ($user['auth_version'] ?? 0);
     $_SESSION['csrf'] = bin2hex(random_bytes(32));
+    auth_event($pdo, 'password_changed', (string) ($user['username'] ?? ''));
 }
 
 function logout(): void
@@ -326,4 +351,100 @@ function validate_username(string $raw): array
         return [null, 'اسم المستخدم من 3 إلى 60 حرفًا، حروف وأرقام و _ . - فقط، بدون مسافات.'];
     }
     return [$u, null];
+}
+
+/* ===================== سجل الدخول والأمان ===================== */
+
+function auth_event_label(string $event): string
+{
+    return AUTH_EVENT_LABELS[$event] ?? $event;
+}
+
+/**
+ * يسجل حدثًا في سجل الدخول والأمان مع العنوان والمتصفح، ويرفع رقم إصدار البيانات حتى يظهر
+ * الحدث في صفحة الإعدادات المفتوحة تلقائيًا. لا يوقف العملية الأصلية أبدًا: أي فشل (مثل غياب
+ * الجدول قبل تحديث قاعدة البيانات) يُكتب في سجل الأخطاء فقط.
+ * $pruneOneIn: حذف السجلات القديمة باحتمال 1 من N بعد التسجيل (القيمة 1 تحذف دائمًا).
+ */
+function auth_event(PDO $pdo, string $event, string $username, int $pruneOneIn = AUTH_EVENTS_PRUNE_ONE_IN): void
+{
+    try {
+        if (!isset(AUTH_EVENT_LABELS[$event])) {
+            throw new InvalidArgumentException('unknown event');
+        }
+        $username = mb_substr(clean_text($username), 0, 60);
+        $ip = client_ip_key();
+        $agent = $_SERVER['HTTP_USER_AGENT'] ?? '';
+        $agent = mb_substr(clean_text(is_string($agent) ? $agent : ''), 0, 255);
+
+        // المهاجم قد يكرر الطلب آلاف المرات أثناء الحظر؛ تسجيل كل طلب يضخم الجدول ويخفي باقي الأحداث.
+        // المفتاح هو العنوان وحده (وليس الاسم) حتى لا يتجاوز المهاجم الحد بتغيير الاسم في كل طلب
+        if ($event === 'login_locked') {
+            $stmt = $pdo->prepare('SELECT 1 FROM auth_events WHERE event = ? AND created_at > ? AND ip = ? LIMIT 1');
+            $stmt->execute([$event, date('Y-m-d H:i:s', time() - AUTH_LOCKED_REPEAT_SECONDS), $ip]);
+            if ($stmt->fetchColumn() !== false) {
+                return;
+            }
+        }
+
+        $pdo->prepare('INSERT INTO auth_events (event, username, ip, user_agent, created_at) VALUES (?, ?, ?, ?, ?)')
+            ->execute([$event, $username, $ip, $agent, now()]);
+        data_version_bump($pdo);
+
+        if ($pruneOneIn <= 1 || random_int(1, $pruneOneIn) === 1) {
+            auth_events_prune($pdo);
+        }
+    } catch (Throwable $e) {
+        error_log('[wood] auth_event(' . $event . ') ' . get_class($e) . ': ' . $e->getMessage());
+    }
+}
+
+/**
+ * مثل auth_event لكنه يفتح اتصال النظام بنفسه، فلا يمنع تعذرُ الاتصال بقاعدة البيانات
+ * تسجيلَ الخروج أو إنهاء الجلسة المنتهية.
+ */
+function auth_event_db(string $event, string $username): void
+{
+    try {
+        $pdo = db();
+    } catch (Throwable $e) {
+        error_log('[wood] auth_event(' . $event . ') ' . get_class($e) . ': ' . $e->getMessage());
+        return;
+    }
+    auth_event($pdo, $event, $username);
+}
+
+/** يحذف أحداث السجل الأقدم من مدة الاحتفاظ (دفعة واحدة محدودة). يعيد عدد الصفوف المحذوفة. */
+function auth_events_prune(PDO $pdo, int $keepDays = AUTH_EVENTS_KEEP_DAYS): int
+{
+    $stmt = $pdo->prepare('DELETE FROM auth_events WHERE created_at < ? LIMIT ' . AUTH_EVENTS_PRUNE_BATCH);
+    $stmt->execute([date('Y-m-d H:i:s', time() - $keepDays * 86400)]);
+    return $stmt->rowCount();
+}
+
+/**
+ * آخر أحداث السجل (الأحدث أولًا) وعدد المحاولات الفاشلة والمحظورة خلال آخر 24 ساعة.
+ * يعيد null إذا لم يُنشأ الجدول بعد (تحديث قاعدة البيانات لم يُطبق).
+ * @return array{rows: list<array<string,mixed>>, failed: int, locked: int}|null
+ */
+function auth_events_overview(PDO $pdo, int $limit = 50): ?array
+{
+    try {
+        $rows = $pdo->query('SELECT event, username, ip, user_agent, created_at FROM auth_events
+            ORDER BY created_at DESC, id DESC LIMIT ' . max(1, $limit))->fetchAll(PDO::FETCH_ASSOC);
+        $stmt = $pdo->prepare("SELECT event, COUNT(*) FROM auth_events
+            WHERE event IN ('login_fail', 'login_locked') AND created_at > ? GROUP BY event");
+        $stmt->execute([date('Y-m-d H:i:s', time() - 86400)]);
+        $counts = $stmt->fetchAll(PDO::FETCH_KEY_PAIR);
+    } catch (PDOException $e) {
+        if (($e->errorInfo[1] ?? null) === 1146) { // الجدول غير موجود
+            return null;
+        }
+        throw $e;
+    }
+    return [
+        'rows' => $rows,
+        'failed' => (int) ($counts['login_fail'] ?? 0),
+        'locked' => (int) ($counts['login_locked'] ?? 0),
+    ];
 }
