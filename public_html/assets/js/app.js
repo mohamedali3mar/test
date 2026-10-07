@@ -177,11 +177,38 @@
   /* قيمة السطر بالقروش: حجم الكمية (ميكرومتر³) × السعر بالقروش ÷ 10^18، تقريب النصف لأعلى */
   function amountPiasters(totalUm3, pricePiasters) { return halfUp(totalUm3 * pricePiasters, SCALE); }
 
+  /* ---------- توقيت التحديث التلقائي (منطق نقي بلا متصفح، يُختبر في tests/live_timing.cjs) ---------- */
+  var LIVE = {
+    fastMs: 2000,         // المستخدم نشط: فحص كل ثانيتين
+    slowMs: 10000,        // بعد خمول طويل: فحص كل 10 ثوانٍ
+    idleAfterMs: 600000,  // الخمول: 10 دقائق بلا مؤشر ولا لوحة مفاتيح ولا تمرير ولا لمس
+    retryMs: 2000,        // أول انتظار بعد إخفاق، ويتضاعف مع كل إخفاق متتالٍ
+    retryMaxMs: 30000     // أقصى انتظار بين المحاولات
+  };
+
+  /*
+   * مهلة الفحص التالي بالمللي ثانية، أو null إذا لا يجب الفحص الآن.
+   *   state.hidden   التبويب مخفي: لا فحص حتى يظهر (null)
+   *   state.idleFor  المدة منذ آخر نشاط للمستخدم
+   *   state.failures عدد الإخفاقات المتتالية: 2 ثم 4 ثم 8 ثم 16 ثم 30 ثانية حدًا أقصى،
+   *                  ولا تقل المهلة عن مهلة الخمول حتى لا يزيد الضغط على الخادم وقت الخمول
+   */
+  function liveDelay(state) {
+    state = state || {};
+    if (state.hidden) { return null; }
+    var base = Number(state.idleFor) > LIVE.idleAfterMs ? LIVE.slowMs : LIVE.fastMs;
+    var failures = Math.floor(Number(state.failures) || 0);
+    if (failures <= 0) { return base; }
+    var retry = Math.min(LIVE.retryMaxMs, LIVE.retryMs * Math.pow(2, Math.min(failures, 16) - 1));
+    return Math.max(base, retry);
+  }
+
   return {
     UNITS: UNITS, DIMENSIONS: DIMENSIONS, configure: configure, normalize: normalize, parseDecimal: parseDecimal,
     parseDimension: parseDimension, parseQuantity: parseQuantity, parsePrice: parsePrice, amountPiasters: amountPiasters,
     digits: digits, group: group, toDecimal: toDecimal, trimDecimal: trimDecimal, halfUp: halfUp,
-    fmtInt: fmtInt, fmtVolume: fmtVolume, fmtMoney: fmtMoney, fmtMeters: fmtMeters
+    fmtInt: fmtInt, fmtVolume: fmtVolume, fmtMoney: fmtMoney, fmtMeters: fmtMeters,
+    LIVE: LIVE, liveDelay: liveDelay
   };
 });
 
@@ -357,6 +384,8 @@
 
     section.querySelectorAll('[data-nojs-only]').forEach(function (el) { el.remove(); });
     var addBtn = section.querySelector('[data-line-add]');
+    var addText = addBtn.textContent;
+    var MAX_LINES = 50; // مثل MAX_LINES في app/lib/documents.php: الخادم يرفض المستند إذا زادت الأسطر
     addBtn.hidden = false;
 
     var rebuildOptions = function (line) {
@@ -390,11 +419,16 @@
     };
 
     var renumber = function () {
-      list.querySelectorAll('[data-line]').forEach(function (line, i) {
+      var lines = list.querySelectorAll('[data-line]');
+      lines.forEach(function (line, i) {
         setText(line.querySelector('[data-line-no]'), C.fmtInt(i + 1));
         var rm = line.querySelector('[data-line-remove]');
         if (rm) { rm.hidden = false; }
       });
+      // عند الحد الأقصى يتعطل زر الإضافة ويشرح نصه السبب، ويعود عند حذف سطر
+      var full = lines.length >= MAX_LINES;
+      addBtn.disabled = full;
+      setText(addBtn, full ? 'الحد الأقصى ' + C.fmtInt(MAX_LINES) + ' سطرًا في المستند الواحد' : addText);
     };
 
     refreshDocForm = function () {
@@ -474,6 +508,7 @@
     };
 
     addBtn.addEventListener('click', function () {
+      if (list.querySelectorAll('[data-line]').length >= MAX_LINES) { return; }
       var frag = template.content.cloneNode(true);
       var i = String(nextIndex++);
       frag.querySelectorAll('[id], [name], [for]').forEach(function (el) {
@@ -503,22 +538,50 @@
       refreshDocForm();
       addBtn.focus();
     });
+    /* Enter في حقل سطر لا يرسل النموذج (الزر الافتراضي المخفي كان يحفظ التحويل فورًا)،
+       بل ينقل التركيز إلى الحقل التالي. الملاحظات وأزرار الحفظ الصريحة لا تتأثر */
+    docForm.addEventListener('keydown', function (e) {
+      var el = e.target;
+      if (e.key !== 'Enter' || e.isComposing || el.tagName !== 'INPUT' || !el.closest('[data-line]')) { return; }
+      if (/^(submit|button|reset|image|checkbox|radio|file)$/.test(el.type)) { return; }
+      e.preventDefault();
+      var fields = Array.prototype.filter.call(docForm.elements, function (f) {
+        return /^(INPUT|SELECT|TEXTAREA)$/.test(f.tagName) && f.type !== 'hidden' && !f.disabled && f.getClientRects().length > 0;
+      });
+      var next = fields[fields.indexOf(el) + 1];
+      if (next) { next.focus(); }
+    });
     docForm.addEventListener('input', debounce(refreshDocForm, 120));
     docForm.addEventListener('change', refreshDocForm);
     renumber();
     refreshDocForm();
   }
 
-  /* ---------- التحديث التلقائي ---------- */
+  /* ---------- التحديث التلقائي ----------
+   * لا يوجد دفع من الخادم (WebSockets) على الاستضافة المشتركة، فالصفحة تسأل عن رقم إصدار البيانات
+   * بطلب خفيف جدًا، وتجلب المحتوى فقط عندما يتغير الرقم:
+   *  - كل ثانيتين والمستخدم نشط، وكل 10 ثوانٍ بعد 10 دقائق بلا نشاط، ولا شيء والتبويب مخفي.
+   *  - فورًا (طلب واحد مهما تزامنت الأحداث) عند ظهور التبويب، والتركيز على النافذة، وعودة الاتصال،
+   *    وأول نشاط بعد الخمول، وعندما يعلن تبويب آخر في نفس المتصفح عن إصدار جديد (BroadcastChannel).
+   *  - بعد الإخفاق تتباعد المحاولات حتى 30 ثانية (WoodCalc.liveDelay)، ولا يبدأ طلب قبل انتهاء السابق.
+   *  - لا يُعتبر الإصدار مقروءًا إلا بعد تحديث المناطق الحية والأرصدة كليهما بنجاح كامل.
+   */
   if (body.dataset.liveVersion === undefined || !window.fetch || !window.DOMParser) { return; }
-  var version = body.dataset.liveVersion;
+  var version = body.dataset.liveVersion; // الإصدار المعروض فعلًا في الصفحة
+  var known = version;                    // أحدث إصدار عرفه هذا التبويب (بفحصه أو من تبويب آخر)
   var apiUrl = body.dataset.api;
   var statusBox = document.getElementById('live-status');
-  var INTERVAL = 5000;
+  var SOON_MS = 100;        // نافذة تجميع الأحداث المتزامنة (الظهور مع التركيز مثلًا) في طلب واحد
+  var TIMEOUT_MS = 20000;   // طلب معلق يُلغى ويُحسب إخفاقًا، حتى لا يوقف التحديث
   var failures = 0;
   var stopped = false;
   var running = false;
+  var again = false;        // طُلب فحص فوري أثناء طلب جارٍ: يُفحص مرة أخرى بعده مباشرة
   var timer = null;
+  var lastActivity = Date.now();
+  var regionsAt = {};       // الإصدار الذي حُدّثت إليه كل منطقة حية (بمعرّفها)
+  var stockAt = null;       // الإصدار الذي حُدّثت إليه بيانات الأرصدة
+  var channel = null;
 
   function setStatus(text, loginLink) {
     if (!statusBox) { return; }
@@ -534,92 +597,163 @@
     statusBox.hidden = false;
   }
 
-  /* منطقة فيها تركيز أو إدخال لم يُحفظ لا تُستبدل حتى لا يضيع ما يكتبه المستخدم */
+  /* القائمة تغيرت عن اختيارها الافتراضي: الخيار المحدد بـ selected في الصفحة (الأخير إن تعدد)،
+     وإلا فأول خيار غير معطل، كما يختار المتصفح في القائمة المنسدلة العادية */
+  function selectChanged(sel) {
+    var opts = Array.prototype.slice.call(sel.options);
+    if (sel.multiple) {
+      return opts.some(function (o) { return o.selected !== o.defaultSelected; });
+    }
+    var def = -1;
+    opts.forEach(function (o, i) { if (o.defaultSelected) { def = i; } });
+    if (def === -1 && sel.size <= 1) {
+      def = opts.findIndex(function (o) { return !o.disabled; });
+    }
+    return sel.selectedIndex !== def;
+  }
+
+  /* منطقة فيها تركيز (على أي عنصر: حقل أو رابط أو زر) أو إدخال لم يُحفظ لا تُستبدل،
+     حتى لا يضيع ما يكتبه المستخدم ولا يفقد مستخدم لوحة المفاتيح موضعه */
   function isBusy(region) {
     var active = document.activeElement;
-    if (active && region.contains(active) && /^(INPUT|SELECT|TEXTAREA)$/.test(active.tagName)) { return true; }
+    if (active && active !== body && region.contains(active)) { return true; }
     var dirty = false;
     region.querySelectorAll('input, textarea, select').forEach(function (el) {
-      if (el.type === 'hidden') { return; }
+      if (dirty || el.type === 'hidden') { return; }
       if (el.type === 'checkbox' || el.type === 'radio') {
-        if (el.checked !== el.defaultChecked) { dirty = true; }
+        dirty = el.checked !== el.defaultChecked;
       } else if (el.tagName === 'SELECT') {
-        Array.prototype.forEach.call(el.options, function (o) { if (o.selected !== o.defaultSelected) { dirty = true; } });
-      } else if (el.value !== el.defaultValue) {
-        dirty = true;
+        dirty = selectChanged(el);
+      } else {
+        dirty = el.value !== el.defaultValue;
       }
     });
     return dirty;
   }
 
-  function getJson(url) {
-    return fetch(url, { headers: { 'X-Live': '1' }, credentials: 'same-origin', cache: 'no-store' }).then(function (res) {
-      if (res.status === 401) { throw new Error('auth'); }
-      if (!res.ok) { throw new Error('http'); }
-      return res.json();
-    });
-  }
-
-  /* يحدّث المناطق الحية من نسخة جديدة من نفس الصفحة. يعيد false إذا تأجل تحديث منطقة */
-  function refreshRegions() {
-    var regions = document.querySelectorAll('[data-live][id]');
-    if (!regions.length) { return Promise.resolve(true); }
-    return fetch(window.location.href, { headers: { 'X-Live': '1' }, credentials: 'same-origin', cache: 'no-store' })
+  /* طلب تحديث: X-Live حتى لا يمدد الجلسة ولا يستهلك رسائل التنبيه، ويُلغى إذا تأخر */
+  function liveFetch(url, type) {
+    var ctrl = window.AbortController ? new AbortController() : null;
+    var t = ctrl ? setTimeout(function () { ctrl.abort(); }, TIMEOUT_MS) : null;
+    var opts = { headers: { 'X-Live': '1' }, credentials: 'same-origin', cache: 'no-store' };
+    if (ctrl) { opts.signal = ctrl.signal; }
+    return fetch(url, opts)
       .then(function (res) {
         if (res.status === 401) { throw new Error('auth'); }
         if (!res.ok) { throw new Error('http'); }
-        return res.text();
+        return type === 'json' ? res.json() : res.text();
       })
-      .then(function (html) {
-        var doc = new DOMParser().parseFromString(html, 'text/html');
-        var complete = true;
-        regions.forEach(function (region) {
-          var fresh = doc.getElementById(region.id);
-          if (isBusy(region)) { complete = false; return; }
-          if (!fresh) {
-            region.remove();
-          } else {
-            region.replaceWith(document.importNode(fresh, true));
-          }
-        });
-        if (doc.body && doc.body.dataset) {
-          C.configure({ digits: doc.body.dataset.digits, volDecimals: doc.body.dataset.volDecimals, volPad: doc.body.dataset.volPad });
-        }
-        return complete;
-      });
+      .then(function (data) { clearTimeout(t); return data; }, function (err) { clearTimeout(t); throw err; });
   }
 
-  function refreshStock() {
-    if (!stockEl) { return Promise.resolve(true); }
-    return getJson(apiUrl + '&op=stock').then(function (data) {
+  /*
+   * يحدّث المناطق الحية إلى الإصدار v من نسخة جديدة من نفس الصفحة. يعيد false إذا تأجلت منطقة.
+   * تُتذكر المناطق المحدّثة إلى v، فالمؤجلة وحدها تبقى معلقة. ما دام الإصدار لم يتغير وكل المعلقة
+   * مشغولة، يكتفي كل فحص بإعادة فحص الانشغال محليًا ولا تُجلب الصفحة، ثم تُجلب مرة واحدة عند تحررها.
+   */
+  function refreshRegions(v) {
+    var regions = Array.prototype.filter.call(document.querySelectorAll('[data-live][id]'), function (r) {
+      return regionsAt[r.id] !== v;
+    });
+    if (!regions.length) { return Promise.resolve(true); }
+    if (regions.every(isBusy)) { return Promise.resolve(false); }
+    return liveFetch(window.location.href, 'text').then(function (html) {
+      var doc = new DOMParser().parseFromString(html, 'text/html');
+      var complete = true;
+      regions.forEach(function (region) {
+        if (isBusy(region)) { complete = false; return; }
+        var fresh = doc.getElementById(region.id);
+        if (!fresh) {
+          region.remove();
+        } else {
+          region.replaceWith(document.importNode(fresh, true));
+        }
+        regionsAt[region.id] = v;
+      });
+      if (doc.body && doc.body.dataset) {
+        C.configure({ digits: doc.body.dataset.digits, volDecimals: doc.body.dataset.volDecimals, volPad: doc.body.dataset.volPad });
+      }
+      return complete;
+    });
+  }
+
+  function refreshStock(v) {
+    if (!stockEl || stockAt === v) { return Promise.resolve(true); }
+    return liveFetch(apiUrl + '&op=stock', 'json').then(function (data) {
       setStock(data.items);
       refreshReceive();
       refreshDocForm();
+      stockAt = v;
       return true;
     });
   }
 
-  function schedule() {
+  /* ---------- الإعلان بين تبويبات نفس المتصفح ----------
+   * كل تبويب يعلن الإصدار الذي يراه أول مرة فقط (known)، ولا يعيد إعلان ما سمعه، فلا تتبادل التبويبات
+   * الرسائل بلا نهاية. الرسالة لا تحدّث الصفحة مباشرة، بل تطلب فحصًا فوريًا من الخادم. */
+  function announce(v) {
+    if (!channel) { return; }
+    try { channel.postMessage({ v: v }); } catch { /* تجاهل: الفحص الدوري يكفي */ }
+  }
+  function onMessage(e) {
+    var v = e.data && (typeof e.data.v === 'string' || typeof e.data.v === 'number') ? String(e.data.v) : null;
+    if (v === null || v === version || v === known) { return; }
+    known = v;
+    checkSoon();
+  }
+  function openChannel() {
+    if (channel || !window.BroadcastChannel) { return; }
+    try {
+      channel = new BroadcastChannel('wood-live');
+      channel.onmessage = onMessage;
+    } catch {
+      channel = null;
+    }
+  }
+  function closeChannel() {
+    if (!channel) { return; }
+    try { channel.close(); } catch { /* تجاهل */ }
+    channel = null;
+  }
+
+  /* ---------- الجدولة ---------- */
+  function schedule(ms) {
     clearTimeout(timer);
-    if (!stopped) { timer = setTimeout(tick, INTERVAL); }
+    timer = null;
+    if (stopped) { return; }
+    var delay = ms !== undefined ? ms : C.liveDelay({ hidden: document.hidden, failures: failures, idleFor: Date.now() - lastActivity });
+    if (delay !== null) { timer = setTimeout(tick, delay); }
+  }
+
+  /* فحص فوري: الأحداث المتقاربة تُجمع في طلب واحد، وأثناء طلب جارٍ يُفحص مرة أخرى بعده */
+  function checkSoon() {
+    if (stopped) { return; }
+    if (running) { again = true; return; }
+    schedule(SOON_MS);
   }
 
   function tick() {
-    if (stopped || running) { return; }
-    if (document.hidden) { schedule(); return; }
+    timer = null;
+    if (stopped || running || document.hidden) { return; }
     running = true;
-    getJson(apiUrl + '&op=version')
+    again = false;
+    liveFetch(apiUrl + '&op=version', 'json')
       .then(function (data) {
-        failures = 0;
-        setStatus('');
-        if (data.v === version) { return; }
-        return Promise.all([refreshRegions(), refreshStock()]).then(function (results) {
-          if (results[0] && results[1]) { version = data.v; }
+        if (!data || (typeof data.v !== 'string' && typeof data.v !== 'number')) { throw new Error('http'); }
+        var v = String(data.v);
+        if (v === version) { known = v; return; }
+        if (v !== known) { known = v; announce(v); }
+        return Promise.all([refreshRegions(v), refreshStock(v)]).then(function (results) {
+          if (results[0] && results[1]) { version = v; }
         });
       })
-      .catch(function (err) {
+      .then(function () {
+        failures = 0;
+        setStatus('');
+      }, function (err) {
         if (err && err.message === 'auth') {
           stopped = true;
+          closeChannel();
           setStatus('انتهت الجلسة، وتوقف التحديث التلقائي.', true);
           return;
         }
@@ -628,12 +762,43 @@
       })
       .then(function () {
         running = false;
-        schedule();
+        schedule(again ? SOON_MS : undefined);
       });
   }
 
-  document.addEventListener('visibilitychange', function () {
-    if (!document.hidden) { clearTimeout(timer); tick(); }
+  /* نشاط المستخدم: يعيد الفحص السريع، وأول نشاط بعد الخمول يفحص فورًا */
+  function noteActivity() {
+    var wasIdle = Date.now() - lastActivity > C.LIVE.idleAfterMs;
+    lastActivity = Date.now();
+    if (wasIdle) { checkSoon(); }
+  }
+  ['pointerdown', 'pointermove', 'keydown', 'wheel', 'touchstart', 'scroll'].forEach(function (type) {
+    document.addEventListener(type, noteActivity, { capture: true, passive: true });
   });
+
+  function wake() {
+    lastActivity = Date.now();
+    checkSoon();
+  }
+  document.addEventListener('visibilitychange', function () {
+    if (document.hidden) {
+      clearTimeout(timer);
+      timer = null;
+      return;
+    }
+    wake();
+  });
+  window.addEventListener('focus', wake);
+  window.addEventListener('online', checkSoon);
+  // صفحة عائدة من ذاكرة الرجوع (bfcache): القناة أُغلقت عند المغادرة حتى لا تمنع التخزين
+  window.addEventListener('pagehide', closeChannel);
+  window.addEventListener('pageshow', function (e) {
+    if (!e.persisted || stopped) { return; }
+    openChannel();
+    wake();
+  });
+
+  openChannel();
+  announce(version); // صفحة جديدة (بعد حفظ مثلًا): التبويبات الأخرى تفحص فورًا
   schedule();
 })();
