@@ -248,7 +248,7 @@ for p in ['app/config.php', 'app/config.sample.php', 'app/bootstrap.php', 'app/l
 for p in ['.user.ini', 'php.ini', 'assets/.user.ini', 'assets/php.ini']:
     s, _, _ = anon.get(p)
     check(f'ملف إعدادات PHP {p} -> 403', s == 403, s)
-for p in ['backup.sql.gz', 'site.tar.gz', 'site.tgz', 'site.7z', 'site.rar', 'index.php.old', 'index.php.orig', 'index.php.bak',
+for p in ['backup.sql.gz', 'backup.sql.bz2', 'backup.sql.xz', 'backup.sql.zst', 'site.tar.gz', 'site.tgz', 'site.7z', 'site.rar', 'index.php.old', 'index.php.orig', 'index.php.bak',
           'app.js.tmp', 'db.backup', 'db.bkp', 'config.php~', 'index.php~', 'BACKUP.SQL.GZ']:
     s, _, _ = anon.get(p)
     check(f'نسخة احتياطية أو أرشيف {p} -> 403', s == 403, s)

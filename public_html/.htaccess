@@ -10,15 +10,15 @@ DirectoryIndex index.php
     # منع الملفات والمجلدات المخفية، مع السماح بـ .well-known لتجديد شهادة SSL
     RewriteRule (^|/)\.(?!well-known(/|$)) - [F,L]
     # منع ملفات التوثيق والنسخ الاحتياطية والأرشيفات وملفات SQL والسجلات والملفات المؤقتة للمحررات
-    # (مثل backup.sql.gz و index.php.old و config.php~)
-    RewriteRule (\.(md|sql|log|lock|bak|zip|ini|sh|dist|allow|gz|tgz|tar|7z|rar|old|orig|swp|tmp|backup|bkp)|~)$ - [F,L,NC]
+    # (مثل backup.sql.gz و backup.sql.bz2 و index.php.old و config.php~)
+    RewriteRule (\.(md|sql|log|lock|bak|zip|ini|sh|dist|allow|gz|tgz|bz2|xz|zst|tar|7z|rar|old|orig|swp|tmp|backup|bkp)|~)$ - [F,L,NC]
     # سكربتات الواجهة تُقدم للمستخدمين المسجلين فقط عبر index.php?r=asset، ولا تُفتح مباشرة
     RewriteRule ^assets/js/[^/]+\.js$ - [F,L,NC]
 </IfModule>
 
 # حماية إضافية إذا لم تعمل mod_rewrite
 # ملفات إعدادات PHP مثل .user.ini و php.ini محظورة مرتين: بقاعدة الامتداد ini وبقاعدة الملفات المخفية.
-<FilesMatch "(?i)(\.(md|sql|log|lock|bak|zip|ini|sh|dist|allow|gz|tgz|tar|7z|rar|old|orig|swp|tmp|backup|bkp)|~)$">
+<FilesMatch "(?i)(\.(md|sql|log|lock|bak|zip|ini|sh|dist|allow|gz|tgz|bz2|xz|zst|tar|7z|rar|old|orig|swp|tmp|backup|bkp)|~)$">
     Require all denied
 </FilesMatch>
 <FilesMatch "^\.(?!well-known)">

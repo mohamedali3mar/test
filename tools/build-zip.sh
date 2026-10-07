@@ -36,6 +36,16 @@ for must in .htaccess app/.htaccess app/storage/.htaccess app/storage/sessions/.
             assets/fonts/cairo-arabic-400-normal.woff2 assets/fonts/OFL.txt app/storage/logs/index.php robots.txt; do
   grep -qx "$must" <<<"$LIST" || fail "missing $must"
 done
+# ما لا يعمل النظام بدونه: مكتبة PDF وخطوطها، وكل ترقيات قاعدة البيانات الموجودة في المصدر
+for must in app/vendor/autoload.php app/vendor/mpdf/mpdf/src/Mpdf.php app/fonts/Cairo-Regular.ttf app/fonts/Cairo-Bold.ttf \
+            app/vendor/mpdf/mpdf/ttfonts/DejaVuSans.ttf app/vendor/mpdf/mpdf/ttfonts/DejaVuSans-Bold.ttf \
+            app/storage/pdf-cache/.htaccess app/storage/pdf-cache/index.php app/storage/sessions/index.php \
+            app/lib/tables.php app/lib/exports.php app/pages/export.php app/pages/pdf.php assets/js/tables.js; do
+  grep -qx "$must" <<<"$LIST" || fail "missing $must"
+done
+for f in "$ROOT"/public_html/app/migrations/*.sql; do
+  grep -qx "app/migrations/$(basename "$f")" <<<"$LIST" || fail "missing app/migrations/$(basename "$f")"
+done
 for mustnot in 'app/config.php' 'installed.lock' 'reset.allow' '\.log$' 'sess_'; do
   if grep -qE "$mustnot" <<<"$LIST"; then fail "must not contain $mustnot"; fi
 done

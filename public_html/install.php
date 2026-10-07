@@ -46,6 +46,7 @@ function install_key_problem(string $key): ?string
 function check_install_key(string $sent): bool
 {
     $key = (string) (app_config()['install_key'] ?? '');
+    $sent = trim($sent); // مسافة أو سطر جديد زائد عند نسخ المفتاح من ملف الإعدادات
     if ($key === '' || install_key_problem($key) !== null || !hash_equals($key, $sent)) {
         sleep(2); // إبطاء محاولات التخمين
         return false;
@@ -135,7 +136,7 @@ if ($locked) {
     }
     ?>
 <h2>استعادة كلمة مرور المدير</h2>
-<p>هذا الوضع يعمل لأن الملف app/storage/reset.allow موجود. يُطلب مفتاح التثبيت من ملف الإعدادات. الاستعادة توقف أيضًا التحقق بخطوتين للحساب، ويمكن تفعيله من جديد من الإعدادات.</p>
+<p>هذا الوضع يعمل لأن الملف app/storage/reset.allow موجود. يُطلب مفتاح التثبيت من ملف الإعدادات. الاستعادة توقف أيضًا التحقق بخطوتين للحساب، ويمكن تفعيله من جديد من صفحة «حسابي» (اسمك أعلى الصفحة).</p>
 <?= errors_summary($errors) ?>
 <form method="post" action="install.php" class="form" autocomplete="off">
   <?= csrf_field() ?>
