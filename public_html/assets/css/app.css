@@ -289,3 +289,12 @@ td.split { min-width: 160px; }
   thead th { background: none; color: #000; }
   a { color: #000; text-decoration: none; }
 }
+
+/* ---------- الفروع ---------- */
+.panel { background: var(--surface-2); border-radius: var(--radius); padding: 16px; margin-bottom: 24px; }
+.panel h2 { font-size: var(--fs-16); margin-bottom: 8px; }
+.row-child th { padding-inline-start: 32px; font-weight: 400; }
+.print-branch { font-size: var(--fs-16); font-weight: 600; margin: 4px 0 0; }
+.print-branch-contact { display: flex; flex-wrap: wrap; gap: 4px 24px; font-size: var(--fs-14); color: var(--text-2); margin: 4px 0 8px; }
+input.input-ltr { direction: ltr; text-align: right; }
+.actions-nowrap { flex-wrap: nowrap; white-space: nowrap; }

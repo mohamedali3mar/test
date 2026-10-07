@@ -26,6 +26,7 @@ const ROUTES = [
     'document'   => ['file' => 'document',   'public' => false],
     'print'      => ['file' => 'print',      'public' => false],
     'types'      => ['file' => 'catalog',    'public' => false, 'catalog' => 'type'],
+    'branches'   => ['file' => 'branches',   'public' => false],
     'warehouses' => ['file' => 'catalog',    'public' => false, 'catalog' => 'warehouse'],
     'settings'   => ['file' => 'settings',   'public' => false],
     'api'        => ['file' => 'api',        'public' => false],

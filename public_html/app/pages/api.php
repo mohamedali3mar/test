@@ -4,7 +4,7 @@ defined('APP_ROOT') || exit;
 /*
  * واجهة القراءة للتحديث التلقائي (GET فقط، لا تغير أي بيانات):
  *  op=version  رقم إصدار البيانات الحالي (طلب خفيف كل بضع ثوانٍ)
- *  op=stock    أرصدة كل الأصناف في كل المخازن (للنماذج المفتوحة)
+ *  op=stock    أرصدة كل الأصناف في مخازن نطاق المستخدم (للنماذج المفتوحة)
  */
 
 if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
@@ -19,7 +19,7 @@ switch (input($_GET, 'op')) {
     case 'version':
         json_response(['v' => data_version($pdo)]);
     case 'stock':
-        json_response(['v' => data_version($pdo), 'items' => stock_payload($pdo)]);
+        json_response(['v' => data_version($pdo), 'items' => stock_payload($pdo, allowed_branch_id($pdo))]);
     default:
         json_response(['error' => 'op'], 400);
 }

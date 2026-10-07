@@ -23,13 +23,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-$d = find_document($pdo, $id);
+// مستند خارج فرع المستخدم يُعامل كأنه غير موجود
+$d = find_document_scoped($pdo, $id);
 if (!$d) {
     render_simple_error('المستند غير موجود.', 404);
 }
 $lines = document_lines($pdo, $id);
 $kind = $d['kind'];
 $cancelled = $d['status'] === 'cancelled';
+$canCancel = document_cancellable($d, allowed_branch_id($pdo));
+$interBranch = $kind === 'transfer' && $d['to_branch_id'] !== null && (int) $d['to_branch_id'] !== (int) $d['branch_id'];
 
 render_header(doc_label($d), 'documents');
 ?>
@@ -52,6 +55,12 @@ render_header(doc_label($d), 'documents');
 <dl class="facts facts-wide">
   <div><dt>التاريخ</dt><dd><?= h(fmt_datetime($d['created_at'])) ?></dd></div>
   <div><dt>سجله</dt><dd><?= h($d['created_by_name']) ?></dd></div>
+  <?php if ($interBranch): ?>
+    <div><dt>من فرع</dt><dd><?= h((string) $d['branch_name']) ?></dd></div>
+    <div><dt>إلى فرع</dt><dd><?= h((string) $d['to_branch_name']) ?></dd></div>
+  <?php else: ?>
+    <div><dt>الفرع</dt><dd><?= h((string) $d['branch_name']) ?></dd></div>
+  <?php endif; ?>
   <?php if ($kind === 'transfer'): ?>
     <div><dt>من مخزن</dt><dd><?= h($d['warehouse_name']) ?></dd></div>
     <div><dt>إلى مخزن</dt><dd><?= h((string) $d['to_warehouse_name']) ?></dd></div>
@@ -118,7 +127,12 @@ render_header(doc_label($d), 'documents');
 <?php endif; ?>
 </div>
 
-<?php if (!$cancelled): ?>
+<?php if (!$cancelled && !$canCancel): ?>
+<section class="section danger-zone" id="live-cancel" data-live aria-label="إلغاء المستند">
+  <?= errors_summary($errors) ?>
+  <p class="muted">إلغاء هذا المستند متاح فقط لمستخدم يرى فرعَي التحويل.</p>
+</section>
+<?php elseif (!$cancelled): ?>
 <section class="section danger-zone" id="live-cancel" data-live aria-labelledby="cancel-title">
   <h2 id="cancel-title">إلغاء المستند</h2>
   <p>

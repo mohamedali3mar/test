@@ -3,10 +3,14 @@ defined('APP_ROOT') || exit;
 
 $pdo = db();
 $id = (int) input($_GET, 'id');
-$d = find_document($pdo, $id);
+// مستند خارج فرع المستخدم يُعامل كأنه غير موجود
+$d = find_document_scoped($pdo, $id);
 if (!$d) {
     render_simple_error('المستند غير موجود.', 404);
 }
+// اسم الفرع من المستند كما سُجل وقتها، والعنوان والهاتف الحاليان للفرع
+$branch = $d['branch_id'] !== null ? branch_find($pdo, (int) $d['branch_id']) : null;
+$interBranch = $d['kind'] === 'transfer' && $d['to_branch_id'] !== null && (int) $d['to_branch_id'] !== (int) $d['branch_id'];
 $lines = document_lines($pdo, $id);
 $kind = $d['kind'];
 $cancelled = $d['status'] === 'cancelled';
@@ -23,6 +27,15 @@ render_header(doc_print_title($kind) . ' ' . fmt_int((int) $d['doc_no']), 'docum
 <article class="print-doc" id="live-print" data-live aria-label="<?= h(doc_print_title($kind)) ?>">
   <header class="print-head">
     <p class="print-company"><?= h(app_setting('company_name')) ?></p>
+    <?php if ($d['branch_name'] !== null): ?>
+      <p class="print-branch">فرع: <?= h($d['branch_name']) ?></p>
+      <?php if ($branch && ($branch['address'] !== '' || $branch['phone'] !== '')): ?>
+        <p class="print-branch-contact">
+          <?php if ($branch['address'] !== ''): ?><span>العنوان: <?= h($branch['address']) ?></span><?php endif; ?>
+          <?php if ($branch['phone'] !== ''): ?><span>الهاتف: <bdo dir="ltr"><?= h(fmt_phone($branch['phone'])) ?></bdo></span><?php endif; ?>
+        </p>
+      <?php endif; ?>
+    <?php endif; ?>
     <h1><?= h(doc_print_title($kind)) ?></h1>
     <?php if ($cancelled): ?>
       <p class="print-cancelled">ملغاة بتاريخ <?= h(fmt_datetime($d['cancelled_at'])) ?></p>
@@ -35,6 +48,7 @@ render_header(doc_print_title($kind) . ' ' . fmt_int((int) $d['doc_no']), 'docum
     <?php if ($kind === 'transfer'): ?>
       <div><dt>من مخزن</dt><dd><?= h($d['warehouse_name']) ?></dd></div>
       <div><dt>إلى مخزن</dt><dd><?= h((string) $d['to_warehouse_name']) ?></dd></div>
+      <?php if ($interBranch): ?><div><dt>إلى فرع</dt><dd><?= h((string) $d['to_branch_name']) ?></dd></div><?php endif; ?>
     <?php else: ?>
       <div><dt>المخزن</dt><dd><?= h($d['warehouse_name']) ?></dd></div>
     <?php endif; ?>

@@ -2,8 +2,9 @@
 defined('APP_ROOT') || exit;
 
 /*
- * البيانات الأساسية: أنواع الخشب والمخازن. نفس القواعد للاثنين:
+ * البيانات الأساسية: أنواع الخشب والمخازن والفروع. نفس القواعد للجميع:
  * أسماء بلا تكرار (حسب name_key)، وتعديل الاسم، وحذف فقط عند عدم الاستخدام.
+ * الفروع لها حقول إضافية (العنوان والهاتف) وقواعدها في branches.php، وكل مخزن يتبع فرعًا.
  */
 
 const CATALOGS = [
@@ -18,6 +19,12 @@ const CATALOGS = [
         'noun' => 'المخزن',
         'exists' => 'يوجد مخزن بنفس الاسم.',
         'missing' => 'المخزن غير موجود.',
+    ],
+    'branch' => [
+        'table' => 'branches',
+        'noun' => 'الفرع',
+        'exists' => 'يوجد فرع بنفس الاسم.',
+        'missing' => 'الفرع غير موجود.',
     ],
 ];
 
@@ -64,14 +71,26 @@ function catalog_all(PDO $pdo, string $kind): array
     return $pdo->query("SELECT id, name FROM {$table} ORDER BY name, id")->fetchAll();
 }
 
-function catalog_create(PDO $pdo, string $kind, string $raw): int
+/** $branchId للمخازن فقط: فرع المخزن الجديد (null = أول فرع، للاستدعاءات التي لا تحدد فرعًا) */
+function catalog_create(PDO $pdo, string $kind, string $raw, ?int $branchId = null): int
 {
+    if ($kind === 'branch') {
+        return branch_create($pdo, ['name' => $raw]);
+    }
     $def = catalog_def($kind);
+    if ($kind === 'warehouse') {
+        require_all_branches($pdo);
+    }
     [$name, $key] = catalog_validate_name($kind, $raw);
     try {
-        return db_transaction($pdo, function (PDO $pdo) use ($def, $name, $key) {
-            $pdo->prepare("INSERT INTO {$def['table']} (name, name_key, created_at) VALUES (?, ?, ?)")
-                ->execute([$name, $key, now()]);
+        return db_transaction($pdo, function (PDO $pdo) use ($kind, $def, $name, $key, $branchId) {
+            if ($kind === 'warehouse') {
+                $pdo->prepare('INSERT INTO warehouses (name, name_key, branch_id, created_at) VALUES (?, ?, ?, ?)')
+                    ->execute([$name, $key, lock_branch_for_new_warehouse($pdo, $branchId), now()]);
+            } else {
+                $pdo->prepare("INSERT INTO {$def['table']} (name, name_key, created_at) VALUES (?, ?, ?)")
+                    ->execute([$name, $key, now()]);
+            }
             $id = (int) $pdo->lastInsertId();
             data_version_bump($pdo);
             return $id;
@@ -87,6 +106,9 @@ function catalog_create(PDO $pdo, string $kind, string $raw): int
 function catalog_rename(PDO $pdo, string $kind, int $id, string $raw): void
 {
     $def = catalog_def($kind);
+    if ($kind !== 'type') {
+        require_all_branches($pdo);
+    }
     [$name, $key] = catalog_validate_name($kind, $raw);
     try {
         db_transaction($pdo, function (PDO $pdo) use ($def, $id, $name, $key) {
@@ -109,7 +131,14 @@ function catalog_rename(PDO $pdo, string $kind, int $id, string $raw): void
 /** الحذف مسموح فقط إذا لم يُستخدم الاسم في أي صنف أو رصيد أو مستند */
 function catalog_delete(PDO $pdo, string $kind, int $id): void
 {
+    if ($kind === 'branch') {
+        branch_delete($pdo, $id);
+        return;
+    }
     $def = catalog_def($kind);
+    if ($kind === 'warehouse') {
+        require_all_branches($pdo);
+    }
     try {
         db_transaction($pdo, function (PDO $pdo) use ($kind, $def, $id) {
             $stmt = $pdo->prepare("SELECT id FROM {$def['table']} WHERE id = ? FOR UPDATE");

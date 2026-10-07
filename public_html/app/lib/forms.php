@@ -137,5 +137,5 @@ function warehouse_select(string $name, string $id, array $warehouses, string $s
     }
     return '<select id="' . h($id) . '" name="' . h($name) . '" required' . field_attrs($errors, $name)
         . ($remember ? ' data-remember="' . h($name) . '"' . ($selected !== '' ? ' data-posted="1"' : '') : '') . '>'
-        . options_html($warehouses, $selected, $placeholder) . '</select>';
+        . warehouse_options($warehouses, $selected, $placeholder) . '</select>';
 }

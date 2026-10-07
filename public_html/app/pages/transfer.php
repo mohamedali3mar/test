@@ -31,10 +31,13 @@ if ($posted) {
     $form['request_token'] = refresh_token_if_needed($form, $errors);
 }
 
-$warehouses = catalog_all($pdo, 'warehouse');
+// المصدر من مخازن فرع المستخدم فقط، والمستلم أي مخزن في أي فرع
+$scope = allowed_branch_id($pdo);
+$warehouses = scoped_warehouses($pdo, $scope);
+$destinations = scoped_warehouses($pdo, null);
 $types = catalog_all($pdo, 'type');
-$stockData = stock_payload($pdo);
-$done = (int) input($_GET, 'done') > 0 ? find_document($pdo, (int) input($_GET, 'done')) : null;
+$stockData = stock_payload($pdo, $scope);
+$done = (int) input($_GET, 'done') > 0 ? find_document_scoped($pdo, (int) input($_GET, 'done')) : null;
 if ($done && $done['kind'] !== 'transfer') {
     $done = null;
 }
@@ -60,7 +63,9 @@ render_header('تحويل بين المخازن', 'transfer');
   </section>
 <?php endif; ?>
 
-<?php if (count($warehouses) < 2): ?>
+<?php if (!$warehouses && $scope !== null): ?>
+  <p class="empty">لا توجد مخازن في فرعك للتحويل منها. اطلب من المدير إضافة مخزن للفرع.</p>
+<?php elseif (count($destinations) < 2): ?>
   <p class="empty">التحويل يحتاج مخزنين على الأقل. <a href="<?= h(url('warehouses')) ?>">أضف مخزنًا</a>.</p>
 <?php else: ?>
 
@@ -80,7 +85,7 @@ render_header('تحويل بين المخازن', 'transfer');
     <div class="field">
       <label for="to_warehouse_id">إلى مخزن</label>
       <select id="to_warehouse_id" name="to_warehouse_id" required<?= field_attrs($errors, 'to_warehouse_id') ?>>
-        <?= options_html($warehouses, $form['to_warehouse_id'], 'اختر المخزن') ?>
+        <?= warehouse_options($destinations, $form['to_warehouse_id'], 'اختر المخزن') ?>
       </select>
       <?= field_error($errors, 'to_warehouse_id') ?>
     </div>

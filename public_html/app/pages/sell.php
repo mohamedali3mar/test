@@ -117,11 +117,12 @@ if ($review) {
 }
 
 /* ---------- نموذج الفاتورة ---------- */
-$warehouses = catalog_all($pdo, 'warehouse');
+$scope = allowed_branch_id($pdo);
+$warehouses = scoped_warehouses($pdo, $scope);
 $types = catalog_all($pdo, 'type');
-$stockData = stock_payload($pdo);
+$stockData = stock_payload($pdo, $scope);
 $hasStock = (bool) array_filter($stockData, fn ($it) => array_sum((array) $it['stock']) > 0);
-$done = (int) input($_GET, 'done') > 0 ? find_document($pdo, (int) input($_GET, 'done')) : null;
+$done = (int) input($_GET, 'done') > 0 ? find_document_scoped($pdo, (int) input($_GET, 'done')) : null;
 if ($done && $done['kind'] !== 'sale') {
     $done = null;
 }

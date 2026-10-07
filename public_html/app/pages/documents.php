@@ -29,8 +29,26 @@ $dateInvalid = false;
 $from = parse_date_filter(input($_GET, 'from'), $dateInvalid);
 $to = parse_date_filter(input($_GET, 'to'), $dateInvalid);
 
+// الفرع: المستخدم المقيد بفرع يرى مستندات فرعه فقط (الصادرة منه والتحويلات الواردة إليه)
+$scope = allowed_branch_id($pdo);
+$branches = catalog_all($pdo, 'branch');
+$branchNames = array_column($branches, 'name', 'id');
+$branchId = $scope ?? (int) input($_GET, 'branch');
+if (!isset($branchNames[$branchId])) {
+    $branchId = $scope ?? 0;
+}
+$warehouses = scoped_warehouses($pdo, $branchId > 0 ? $branchId : null);
+if ($warehouseId > 0 && !in_array($warehouseId, array_map('intval', array_column($warehouses, 'id')), true)) {
+    $warehouseId = 0;
+}
+
 $where = [];
 $params = [];
+if ($branchId > 0) {
+    [$cond, $condParams] = document_branch_condition($branchId);
+    $where[] = $cond;
+    array_push($params, ...$condParams);
+}
 if (isset(DOC_KIND_LABELS[$kind])) {
     $where[] = 'd.kind = ?';
     $params[] = $kind;
@@ -73,16 +91,11 @@ if ($q !== '') {
 }
 $whereSql = $where ? ' WHERE ' . implode(' AND ', $where) : '';
 
-$stmt = $pdo->prepare(
-    "SELECT COUNT(*) AS n,
-            COALESCE(SUM(CASE WHEN d.kind = 'sale' AND d.status = 'active' THEN 1 ELSE 0 END), 0) AS sales,
-            COALESCE(SUM(CASE WHEN d.kind = 'sale' AND d.status = 'active' THEN d.total_volume_m3 ELSE 0 END), 0) AS sales_volume,
-            COALESCE(SUM(CASE WHEN d.kind = 'sale' AND d.status = 'active' THEN d.total_amount ELSE 0 END), 0) AS sales_amount
-     FROM documents d" . $whereSql
-);
+$stmt = $pdo->prepare('SELECT COUNT(*) FROM documents d' . $whereSql);
 $stmt->execute($params);
-$totals = $stmt->fetch();
-$total = (int) $totals['n'];
+$total = (int) $stmt->fetchColumn();
+// إجماليات المبيعات لكل عملة على حدة: لا تُجمع مبالغ عملات مختلفة
+$salesTotals = sales_by_currency($pdo, $whereSql, $params);
 $pages = max(1, (int) ceil($total / $perPage));
 $page = min($page, $pages);
 
@@ -90,12 +103,13 @@ $stmt = $pdo->prepare('SELECT d.* FROM documents d' . $whereSql . ' ORDER BY d.i
 $stmt->execute($params);
 $rows = $stmt->fetchAll();
 
-$warehouses = catalog_all($pdo, 'warehouse');
 $types = catalog_all($pdo, 'type');
-$filters = ['r' => 'documents', 'kind' => $kind, 'status' => $status, 'warehouse' => $warehouseId ?: '', 'type' => $typeId ?: '',
+$filters = ['r' => 'documents', 'kind' => $kind, 'status' => $status, 'branch' => $scope === null && $branchId ? $branchId : '',
+    'warehouse' => $warehouseId ?: '', 'type' => $typeId ?: '',
     'from' => $from ? $from->format('Y-m-d') : '', 'to' => $to ? $to->format('Y-m-d') : '', 'q' => $q];
 $filters = array_filter($filters, fn ($v) => $v !== '');
 $filtered = count($filters) > 1;
+$showBranch = count($branchNames) > 1;
 
 render_header('الفواتير والحركات', 'documents');
 ?>
@@ -120,9 +134,15 @@ render_header('الفواتير والحركات', 'documents');
       <option value="cancelled"<?= $status === 'cancelled' ? ' selected' : '' ?>>ملغاة</option>
     </select>
   </div>
+  <?php if ($scope === null && $showBranch): ?>
+  <div class="field">
+    <label for="branch">الفرع</label>
+    <select id="branch" name="branch"><?= options_html($branches, $branchId ? (string) $branchId : '', 'كل الفروع') ?></select>
+  </div>
+  <?php endif; ?>
   <div class="field">
     <label for="warehouse">المخزن</label>
-    <select id="warehouse" name="warehouse"><?= options_html($warehouses, $warehouseId ? (string) $warehouseId : '', 'كل المخازن') ?></select>
+    <select id="warehouse" name="warehouse"><?= warehouse_options($warehouses, $warehouseId ? (string) $warehouseId : '', 'كل المخازن') ?></select>
   </div>
   <div class="field">
     <label for="type">نوع الخشب</label>
@@ -153,13 +173,15 @@ render_header('الفواتير والحركات', 'documents');
   <p class="empty"><?= $filtered ? 'لا توجد مستندات مطابقة.' : 'لا توجد مستندات بعد.' ?></p>
 <?php else: ?>
   <p class="summary">
-    <?= h(fmt_int($total)) ?> مستند.
-    <?php if ((int) $totals['sales'] > 0): ?>
-      مبيعات سارية في النتائج: <?= h(fmt_int((string) $totals['sales'])) ?> فاتورة،
-      <strong><?= h(fmt_volume((string) $totals['sales_volume'])) ?> م³</strong>،
-      بقيمة <strong><?= h(fmt_money_currency((string) $totals['sales_amount'])) ?></strong>
-    <?php endif; ?>
+    <?= h(fmt_int($total)) ?> مستند<?= $branchId > 0 ? h(' في الفرع: ' . $branchNames[$branchId]) : '' ?>.
   </p>
+  <?php foreach ($salesTotals as $st): ?>
+    <p class="summary">
+      مبيعات سارية في النتائج<?= count($salesTotals) > 1 ? h(' بعملة ' . $st['currency']) : '' ?>: <?= h(fmt_int($st['count'])) ?> فاتورة،
+      <strong><?= h(fmt_volume($st['volume'])) ?> م³</strong>،
+      الإجمالي: <strong><?= h(fmt_money_currency($st['amount'], $st['currency'])) ?></strong>
+    </p>
+  <?php endforeach; ?>
   <div class="table-wrap">
     <table>
       <caption class="visually-hidden">المستندات من الأحدث إلى الأقدم</caption>
@@ -167,6 +189,7 @@ render_header('الفواتير والحركات', 'documents');
         <tr>
           <th scope="col">المستند</th>
           <th scope="col">التاريخ</th>
+          <?php if ($showBranch): ?><th scope="col">الفرع</th><?php endif; ?>
           <th scope="col">المخزن</th>
           <th scope="col">العميل / المورد</th>
           <th scope="col" class="num">الأسطر</th>
@@ -180,16 +203,20 @@ render_header('الفواتير والحركات', 'documents');
       <tbody>
       <?php foreach ($rows as $d): $cancelled = $d['status'] === 'cancelled'; ?>
         <tr class="<?= $cancelled ? 'row-cancelled' : '' ?>">
-          <td class="nowrap"><a href="<?= h(url('document', ['id' => (int) $d['id']])) ?>"><?= h(doc_label($d)) ?></a></td>
-          <td class="nowrap"><?= h(fmt_datetime($d['created_at'])) ?></td>
-          <td><?= h($d['kind'] === 'transfer' ? 'من ' . $d['warehouse_name'] . ' إلى ' . $d['to_warehouse_name'] : $d['warehouse_name']) ?></td>
-          <td><?= h((string) $d['party_name']) ?></td>
-          <td class="num"><?= h(fmt_int((int) $d['line_count'])) ?></td>
-          <td class="num"><?= h(fmt_int((int) $d['total_qty'])) ?></td>
-          <td class="num"><?= h(fmt_volume($d['total_volume_m3'])) ?></td>
-          <td class="num"><?= $d['kind'] === 'sale' ? h(fmt_money_currency((string) $d['total_amount'], $d['currency'])) : '' ?></td>
-          <td><?= $cancelled ? '<span class="status status-cancelled">ملغاة ' . h(fmt_datetime($d['cancelled_at'])) . '</span>' : 'سارية' ?></td>
-          <td class="row-actions">
+          <td class="nowrap" data-label="المستند"><a href="<?= h(url('document', ['id' => (int) $d['id']])) ?>"><?= h(doc_label($d)) ?></a></td>
+          <td class="nowrap" data-label="التاريخ"><?= h(fmt_datetime($d['created_at'])) ?></td>
+          <?php if ($showBranch): ?>
+            <td data-label="الفرع"><?= h($d['kind'] === 'transfer' && (int) $d['to_branch_id'] !== (int) $d['branch_id']
+                ? 'من ' . $d['branch_name'] . ' إلى ' . $d['to_branch_name'] : (string) $d['branch_name']) ?></td>
+          <?php endif; ?>
+          <td data-label="المخزن"><?= h($d['kind'] === 'transfer' ? 'من ' . $d['warehouse_name'] . ' إلى ' . $d['to_warehouse_name'] : $d['warehouse_name']) ?></td>
+          <td data-label="<?= h('العميل / المورد') ?>"><?= h((string) $d['party_name']) ?></td>
+          <td class="num" data-label="الأسطر"><?= h(fmt_int((int) $d['line_count'])) ?></td>
+          <td class="num" data-label="القطع"><?= h(fmt_int((int) $d['total_qty'])) ?></td>
+          <td class="num" data-label="<?= h('الحجم (م³)') ?>"><?= h(fmt_volume($d['total_volume_m3'])) ?></td>
+          <td class="num" data-label="القيمة"><?= $d['kind'] === 'sale' ? h(fmt_money_currency((string) $d['total_amount'], $d['currency'])) : '' ?></td>
+          <td data-label="الحالة"><?= $cancelled ? '<span class="status status-cancelled">ملغاة ' . h(fmt_datetime($d['cancelled_at'])) . '</span>' : 'سارية' ?></td>
+          <td class="row-actions" data-label="إجراءات">
             <a href="<?= h(url('document', ['id' => (int) $d['id']])) ?>">تفاصيل</a>
             <a href="<?= h(url('print', ['id' => (int) $d['id']])) ?>">طباعة</a>
           </td>
