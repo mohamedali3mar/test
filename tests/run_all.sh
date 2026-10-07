@@ -25,6 +25,7 @@ run eslint /opt/node22/bin/eslint --no-config-lookup -c "$ROOT/tests/eslint.conf
 run integration php "$ROOT/tests/integration.php"
 run integration-auth php "$ROOT/tests/integration_auth_events.php"
 run accounting-foundation php "$ROOT/tests/accounting_foundation.php"
+run xlsx php "$ROOT/tests/xlsx.php"
 run deploy-http "$ROOT/tests/deploy.sh" "$ZIP"
 run http python3 -I "$ROOT/tests/http_security.py"
 run http-auth python3 -I "$ROOT/tests/http_auth_events.py"
