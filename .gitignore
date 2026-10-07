@@ -8,3 +8,6 @@ public_html/app/storage/sessions/sess_*
 tests/output/
 node_modules/
 dist/
+
+# نسخ العمل المؤقتة للوكلاء
+.claude/
