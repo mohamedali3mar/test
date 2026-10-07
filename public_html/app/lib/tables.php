@@ -593,7 +593,11 @@ function documents_export_columns(bool $showBranch): array
 function documents_export_rows(PDO $pdo, array $req): Generator
 {
     $names = users_name_map($pdo);
-    $stmt = $pdo->prepare('SELECT d.* FROM documents d' . $req['where_sql'] . ' ORDER BY ' . $req['order']);
+    // الأعمدة اللازمة فقط (بدون الملاحظات وغيرها): ذاكرة أقل لملف بخمسين ألف صف
+    $stmt = $pdo->prepare('SELECT d.id, d.kind, d.doc_no, d.doc_date, d.created_by, d.branch_id, d.branch_name, d.to_branch_id, d.to_branch_name,
+            d.warehouse_name, d.to_warehouse_name, d.party_name, d.line_count, d.total_qty, d.total_volume_m3, d.total_amount, d.currency,
+            d.status, d.cancelled_at
+        FROM documents d' . $req['where_sql'] . ' ORDER BY ' . $req['order']);
     $stmt->execute($req['params']);
     foreach ($stmt as $d) {
         $transfer = $d['kind'] === 'transfer';

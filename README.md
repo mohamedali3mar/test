@@ -31,7 +31,8 @@
 | [DESIGN_RULES.md](DESIGN_RULES.md) | قواعد التصميم الملزمة لأي تعديل لاحق |
 | [TEST_REPORT.md](TEST_REPORT.md) | تقرير الفحص: ما نُفذ ونتائجه وما لم يُختبر |
 | [CHANGELOG.md](CHANGELOG.md) | سجل الإصدارات |
-| [PROGRESS_AR.md](PROGRESS_AR.md) | سجل التقدم أثناء التطوير |
+| [PROGRESS_AR.md](PROGRESS_AR.md) | سجل التقدم أثناء التطوير والخطوات التالية |
+| [CLAUDE.md](CLAUDE.md) | دليل مختصر لأي وكيل برمجي يكمل العمل: القواعد وتجهيز بيئة الاختبار |
 
 ## الهيكل
 
@@ -54,7 +55,7 @@ tests/                       ← الاختبارات (لا تُرفع)
 tools/                       ← بناء ملف الرفع
 ```
 
-أهم ملفات `app/lib`: `documents.php` (المستندات والإلغاء)، و`accounting.php` (المبالغ والدفاتر وتاريخ الإقفال)، و`costing.php` (المتوسط المرجح)، و`parties.php` و`cashboxes.php` و`vouchers.php` (الحسابات)، و`acct_reports.php` (التقارير المحاسبية)، و`auth.php` و`security.php` و`totp.php` (الدخول والحماية)، و`xlsx.php` (Excel وCSV).
+أهم ملفات `app/lib`: `documents.php` (المستندات والإلغاء)، و`accounting.php` (المبالغ والدفاتر وتاريخ الإقفال)، و`costing.php` (المتوسط المرجح)، و`parties.php` و`cashboxes.php` و`vouchers.php` (الحسابات)، و`acct_reports.php` (التقارير المحاسبية)، و`tables.php` و`exports.php` (أدوات الجداول والترتيب والتصدير)، و`pdf.php` (ملفات PDF)، و`auth.php` و`security.php` و`totp.php` (الدخول والحماية)، و`xlsx.php` (Excel وCSV).
 
 ## قرارات تقنية أساسية
 
@@ -90,10 +91,13 @@ tests/run_all.sh         # كل الاختبارات بالترتيب، على �
 | `php tests/xlsx.php` | ملفات Excel وCSV |
 | `python3 -I tests/http_security.py` | الحماية عبر HTTP على خادم حقيقي |
 | `python3 -I tests/http_auth_events.py` | أحداث الدخول عبر HTTP |
+| `python3 -I tests/http_permissions.py` | صلاحيات المدير والموظف عبر HTTP |
+| `python3 -I tests/http_branches.py` | الفروع ونطاقها عبر HTTP |
+| `python3 -I tests/http_exports.py` | التصدير (Excel وCSV وPDF) والترتيب والأعمدة والحدود والمراقبة، وPDF الفاتورة |
 | `node tests/e2e.mjs` | المتصفح الكامل (Playwright) |
-| `node tests/ui_responsive.mjs` | الواجهة على مقاسات الهاتف والتابلت والكمبيوتر |
+| `node tests/ui_responsive.mjs` | الواجهة على 7 مقاسات (بعد e2e على نفس الموقع) |
 
-اختبارات الوحدات المدمجة الآن تضيف ملفاتها إلى `run_all.sh`: المستخدمون والمراقبة (`integration_users_audit.php` و`http_permissions.py`)، والفروع (`integration_branches.php` و`http_branches.py`)، وملفات PDF (`pdf_fixtures.php`).
+اختبارات HTTP والمتصفح تحتاج `tests/deploy.sh [ملف ZIP]` قبلها (قاعدة `wood_e2e` جديدة). اختبار المتصفح يحتاج `LANG=C.UTF-8` (مضبوط في `run_all.sh`)، وإلا يسمي Chromium ملفات التحميل العربية «download».
 
 المتطلبات:
 - MariaDB محلي، ومستخدم `wood_app`.
