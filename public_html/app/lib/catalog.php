@@ -124,7 +124,8 @@ function catalog_delete(PDO $pdo, string $kind, int $id): void
                     throw new ValidationException(['name' => 'لا يمكن حذف نوع سُجل له وارد. يمكنك تعديل اسمه.']);
                 }
             } else {
-                $count = (int) $pdo->query('SELECT COUNT(*) FROM warehouses')->fetchColumn();
+                // قفل كل صفوف المخازن قبل العد: حذفان متزامنان لمخزنين لا يتركان النظام بلا مخازن
+                $count = count($pdo->query('SELECT id FROM warehouses ORDER BY id FOR UPDATE')->fetchAll());
                 if ($count <= 1) {
                     throw new ValidationException(['name' => 'يجب أن يبقى مخزن واحد على الأقل.']);
                 }

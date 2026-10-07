@@ -49,6 +49,20 @@ function split_sql(string $sql): array
     return $out;
 }
 
+/** عدد أوامر الترقية $version التي نُفذت قبل توقف سابق (0 إذا لم تبدأ) */
+function migration_progress(PDO $pdo, int $version): int
+{
+    try {
+        $v = (string) $pdo->query("SELECT value FROM settings WHERE name = 'schema_progress'")->fetchColumn();
+    } catch (PDOException $e) {
+        return 0; // جدول الإعدادات غير موجود بعد (أول ترقية)
+    }
+    if (preg_match('/^(\d+):(\d+)\z/', $v, $m) && (int) $m[1] === $version) {
+        return (int) $m[2];
+    }
+    return 0;
+}
+
 /** يطبق الترقيات المعلقة بالترتيب. @return int[] أرقام الترقيات المطبقة */
 function run_migrations(PDO $pdo): array
 {
@@ -58,10 +72,22 @@ function run_migrations(PDO $pdo): array
     $applied = [];
     try {
         foreach (pending_migrations($pdo) as $version => $file) {
-            foreach (split_sql((string) file_get_contents($file)) as $stmt) {
+            // أوامر تغيير الجداول تُحفظ فورًا ولا تتراجع؛ لذلك يُسجل التقدم بعد كل أمر،
+            // فإذا توقفت ترقية في منتصفها تكمل من الأمر التالي بدل أن تفشل عند أمر نُفذ سابقًا
+            $done = migration_progress($pdo, $version);
+            foreach (split_sql((string) file_get_contents($file)) as $i => $stmt) {
+                if ($i < $done) {
+                    continue;
+                }
                 $pdo->exec($stmt);
+                try {
+                    save_setting($pdo, 'schema_progress', $version . ':' . ($i + 1));
+                } catch (PDOException $e) {
+                    // في الترقية الأولى لا يوجد جدول الإعدادات بعد؛ أوامرها كلها آمنة لإعادة التنفيذ
+                }
             }
             save_setting($pdo, 'schema_version', (string) $version);
+            save_setting($pdo, 'schema_progress', '');
             $applied[] = $version;
         }
     } finally {

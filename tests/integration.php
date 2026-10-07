@@ -339,6 +339,72 @@ foreach ($procs as $k => $p) {
 check_eq('إلغاء واحد فقط نجح', 1, $ok);
 check_eq('الكمية عادت مرة واحدة', 7, stock_qty($pdo, $c10, $wh1));
 
+section('إعادة إرسال فاتورة محفوظة بعد نفاد الرصيد (ملاحظة المراجعة M1)');
+$pdo->prepare('UPDATE stock SET qty_on_hand = 7 WHERE item_id = ? AND warehouse_id = ?')->execute([$c10, $wh1]);
+$in = sale_input($wh1, [[$c10, 7, '100']]);
+$first = record_sale($pdo, $uid, $in);
+check_eq('البيع الأول خصم كل الرصيد', 0, stock_qty($pdo, $c10, $wh1));
+$again = record_sale($pdo, $uid, $in);
+check('إعادة الإرسال تعيد «محفوظة سابقًا» وليس خطأ رصيد', $again['duplicate'] === true && $again['id'] === $first['id']);
+$pdo->prepare('UPDATE stock SET qty_on_hand = 7 WHERE item_id = ? AND warehouse_id = ?')->execute([$c10, $wh1]);
+$token = new_request_token();
+$root = root_pdo();
+$root->beginTransaction();
+$root->prepare('SELECT qty_on_hand FROM stock WHERE item_id = ? AND warehouse_id = ? FOR UPDATE')->execute([$c10, $wh1]);
+$procs = [];
+$pipes = [];
+for ($k = 0; $k < 2; $k++) {
+    $procs[] = proc_open([PHP_BINARY, __DIR__ . '/worker.php', 'sale', (string) $wh1, (string) $c10, '7', '100', $token], [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes[$k]);
+}
+for ($t = 0; $t < 100; $t++) {
+    usleep(100000);
+    if ((int) $root->query("SELECT COUNT(*) FROM information_schema.INNODB_TRX WHERE trx_state = 'LOCK WAIT'")->fetchColumn() === 2) {
+        break;
+    }
+}
+$root->commit();
+$res = [];
+foreach ($procs as $k => $p) {
+    $res[] = json_decode(trim(stream_get_contents($pipes[$k][1])), true);
+    proc_close($p);
+}
+check('طلبان متزامنان بنفس الرمز والرصيد يكفي واحدًا فقط: الاثنان يعيدان نفس الفاتورة',
+    ($res[0]['ok'] ?? false) && ($res[1]['ok'] ?? false) && $res[0]['id'] === $res[1]['id'], json_encode($res, JSON_UNESCAPED_UNICODE));
+check_eq('  الخصم مرة واحدة', 0, stock_qty($pdo, $c10, $wh1));
+
+section('حذفان متزامنان لمخزنين لا يتركان النظام بلا مخازن (L2)');
+$tmpA = catalog_create($pdo, 'warehouse', 'مخزن مؤقت أ');
+$tmpB = catalog_create($pdo, 'warehouse', 'مخزن مؤقت ب');
+$count = (int) $pdo->query('SELECT COUNT(*) FROM warehouses')->fetchColumn();
+check('يوجد أكثر من مخزن قبل الحذف', $count >= 3);
+catalog_delete($pdo, 'warehouse', $tmpA);
+catalog_delete($pdo, 'warehouse', $tmpB);
+check_eq('الحذف الآمن يعمل', $count - 2, (int) $pdo->query('SELECT COUNT(*) FROM warehouses')->fetchColumn());
+
+section('ترقية قاعدة البيانات تكمل من حيث توقفت (L9)');
+$migFile = APP_ROOT . '/migrations/999_test_resume.sql';
+file_put_contents($migFile, "CREATE TABLE t_resume_a (id INT) ENGINE=InnoDB;\nINSERT INTO t_resume_missing (id) VALUES (1);\nCREATE TABLE t_resume_b (id INT) ENGINE=InnoDB;\n");
+try {
+    $failed = false;
+    try {
+        run_migrations($pdo);
+    } catch (PDOException $e) {
+        $failed = true;
+    }
+    check('الترقية التجريبية فشلت في الأمر الثاني كما هو مقصود', $failed);
+    check_eq('  التقدم المسجل: أمر واحد', 1, migration_progress($pdo, 999));
+    root_pdo()->exec('CREATE TABLE t_resume_missing (id INT) ENGINE=InnoDB');
+    $applied = run_migrations($pdo);
+    check('إعادة التشغيل أكملت من الأمر الثاني (الأول لم يُكرر)', $applied === [999]);
+    check_eq('  رقم إصدار القاعدة 999', 999, schema_version($pdo));
+} finally {
+    @unlink($migFile);
+    $r = root_pdo();
+    $r->exec('DROP TABLE IF EXISTS t_resume_a, t_resume_b, t_resume_missing');
+    save_setting($pdo, 'schema_version', '1');
+    reset_settings_cache();
+}
+
 section('التحديث التلقائي: رقم إصدار البيانات');
 $v1 = data_version($pdo);
 record_receipt($pdo, $uid, receipt_input($wh1, $zan, '3', 'cm', '3', 'cm', '3', 'm', '1'));

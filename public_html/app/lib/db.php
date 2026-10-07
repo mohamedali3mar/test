@@ -25,6 +25,13 @@ function db(): PDO
     ]);
     $pdo->exec("SET SESSION sql_mode = 'STRICT_ALL_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION'");
     $pdo->exec('SET SESSION TRANSACTION ISOLATION LEVEL REPEATABLE READ');
+    // MariaDB 11.6.2+ يفعّل innodb_snapshot_isolation افتراضيًا، فيرفض تعديل صف تغير بعد بداية قراءة
+    // المعاملة (خطأ 1020). النظام يعتمد على الأقفال الصريحة، فيُعطَّل لهذه الجلسة إن كان موجودًا.
+    try {
+        $pdo->exec('SET SESSION innodb_snapshot_isolation = OFF');
+    } catch (PDOException $e) {
+        // المتغير غير موجود في MySQL وإصدارات MariaDB الأقدم: لا شيء مطلوب
+    }
     return $pdo;
 }
 
@@ -47,7 +54,8 @@ function db_transaction(PDO $pdo, callable $fn)
                 $pdo->rollBack();
             }
             $code = $e instanceof PDOException ? ($e->errorInfo[1] ?? null) : null;
-            if (($code === 1213 || $code === 1205) && $attempts < 3) {
+            // 1213 جمود، 1205 انتهاء مهلة القفل، 1020 تعارض لقطة القراءة (MariaDB 11.6+)
+            if (in_array($code, [1213, 1205, 1020], true) && $attempts < 3) {
                 usleep(50000 * $attempts);
                 continue;
             }

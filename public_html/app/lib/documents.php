@@ -7,8 +7,10 @@ defined('APP_ROOT') || exit;
  * قواعد ثابتة في كل العمليات:
  *  - كل عملية معاملة واحدة: الرصيد والمستند وأسطره والترقيم إما تُحفظ معًا أو لا يُحفظ شيء.
  *  - ترتيب الأقفال واحد دائمًا لمنع الجمود:
- *      (الإلغاء فقط) صف المستند ← صفوف stock مرتبة تصاعديًا (item_id, warehouse_id)
- *      ← صف عداد الترقيم ← إدراج المستند ← رفع data_version آخر شيء.
+ *      (الإلغاء فقط) صف المستند ← صفوف items مرتبة تصاعديًا (حصري في الوارد، مشترك في غيره)
+ *      ← صفوف stock مرتبة تصاعديًا (item_id, warehouse_id) ← صف عداد الترقيم ← إدراج المستند
+ *      ← رفع data_version آخر شيء.
+ *  - لا قراءات غير مقفلة داخل المعاملات (تُقرأ البيانات الثابتة قبلها)، توافقًا مع MariaDB 11.6+.
  *  - الرصيد الملزم يُقرأ بعد القفل (SELECT ... FOR UPDATE)، وليس من القيمة المعروضة في الواجهة.
  *  - رمز الطلب request_token فريد، ومعه بصمة المحتوى request_hash، فإعادة الإرسال لا تكرر العملية.
  */
@@ -109,6 +111,23 @@ function current_stock(PDO $pdo, array $itemIds, int $warehouseId): array
         $out[(int) $row['item_id']] = (int) $row['qty_on_hand'];
     }
     return $out;
+}
+
+/**
+ * قفل مشترك على صفوف الأصناف بترتيب تصاعدي قبل أي قفل على الأرصدة.
+ * الوارد يقفل صف الصنف (قفل حصري) ثم رصيده، وإدراج الأسطر يحتاج قفلًا مشتركًا على الصنف عبر المفتاح
+ * الأجنبي؛ أخذ هذا القفل أولًا يجعل الترتيب واحدًا في كل العمليات: الأصناف ثم الأرصدة، فلا يحدث جمود.
+ */
+function lock_items_shared(PDO $pdo, array $itemIds): void
+{
+    $ids = array_values(array_unique(array_map('intval', $itemIds)));
+    if (!$ids) {
+        return;
+    }
+    sort($ids);
+    $stmt = $pdo->prepare('SELECT id FROM items WHERE id IN (' . implode(',', array_fill(0, count($ids), '?')) . ') ORDER BY id LOCK IN SHARE MODE');
+    $stmt->execute($ids);
+    $stmt->fetchAll();
 }
 
 /**
@@ -341,15 +360,21 @@ function form_lines(mixed $raw, array $fields): array
     if (!is_array($raw)) {
         return $out;
     }
+    $read = 0;
     foreach ($raw as $row) {
-        if (count($out) >= MAX_LINES + 10) {
+        // حد أقصى للأسطر المقروءة من الطلب (حماية)، ثم تُستبعد الأسطر الفارغة تمامًا قبل حد الخمسين،
+        // ويُحتفظ بسطر زائد واحد فقط ليظهر خطأ «الحد الأقصى» بدل حذف أسطر مملوءة بصمت
+        if (++$read > 1000 || count($out) > MAX_LINES) {
             break;
         }
         $line = [];
         foreach ($fields as $f) {
             $line[$f] = is_array($row) && is_string($row[$f] ?? null) ? $row[$f] : '';
         }
-        $out[] = $line;
+        $blank = trim($line['item_id'] ?? '') === '' && trim($line['quantity'] ?? '') === '' && trim($line['price'] ?? '') === '';
+        if (!$blank) {
+            $out[] = $line;
+        }
     }
     return $out;
 }
@@ -482,14 +507,24 @@ function validate_sale(PDO $pdo, array $in, bool $checkStock = true): array
 
 function record_sale(PDO $pdo, int $userId, array $in): array
 {
-    $v = validate_sale($pdo, $in, true);
+    // التحقق من المدخلات أولًا بدون الرصيد، ثم فحص التكرار: إعادة إرسال فاتورة محفوظة تعيدها
+    // حتى لو صار الرصيد الآن أقل (بدل رسالة «الكمية أكبر من المتاح» المضللة)
+    $v = validate_sale($pdo, $in, false);
     if ($dup = existing_request($pdo, $v['request_token'], 'sale', $v['hash'])) {
         return $dup;
     }
     $wid = (int) $v['warehouse']['id'];
+    $itemIds = array_map(fn ($l) => (int) $l['item']['id'], $v['lines']);
+    // فحص مبدئي بدون قفل: يرفض المقاسات غير الموجودة في المخزن قبل أي قفل (لا أقفال فجوات)
+    if ($stockErrors = stock_errors($v['lines'], current_stock($pdo, $itemIds, $wid))) {
+        throw new ValidationException($stockErrors);
+    }
+    // تُقرأ قبل المعاملة حتى لا تُفتح قراءة غير مقفلة داخلها (توافق MariaDB 11.6+)
+    $currency = app_setting('currency');
     try {
-        return db_transaction($pdo, function (PDO $pdo) use ($v, $wid, $userId) {
-            $pairs = array_map(fn ($l) => [(int) $l['item']['id'], $wid], $v['lines']);
+        return db_transaction($pdo, function (PDO $pdo) use ($v, $wid, $userId, $itemIds, $currency) {
+            lock_items_shared($pdo, $itemIds);
+            $pairs = array_map(fn ($id) => [$id, $wid], $itemIds);
             $bal = lock_stock_rows($pdo, $pairs, false);
             $available = [];
             foreach ($v['lines'] as $l) {
@@ -506,7 +541,7 @@ function record_sale(PDO $pdo, int $userId, array $in): array
                 'warehouse_id' => $wid, 'warehouse_name' => $v['warehouse']['name'],
                 'party_name' => $v['party_name'] ?: null, 'notes' => $v['notes'] ?: null,
                 'line_count' => count($v['lines']), 'total_qty' => $v['total_qty'], 'total_volume_m3' => $v['total_m3'],
-                'total_amount' => $v['total_amount'], 'currency' => app_setting('currency'),
+                'total_amount' => $v['total_amount'], 'currency' => $currency,
                 'request_token' => $v['request_token'], 'request_hash' => $v['hash'],
                 'created_at' => $now, 'created_by' => $userId,
             ]);
@@ -526,6 +561,12 @@ function record_sale(PDO $pdo, int $userId, array $in): array
             data_version_bump($pdo);
             return ['id' => $docId, 'kind' => 'sale', 'doc_no' => $docNo, 'duplicate' => false];
         });
+    } catch (ValidationException $e) {
+        // طلب مكرر وصل متزامنًا ووجد الرصيد قد نفد بسبب الطلب الأول نفسه
+        if ($dup = existing_request($pdo, $v['request_token'], 'sale', $v['hash'])) {
+            return $dup;
+        }
+        throw $e;
     } catch (PDOException $e) {
         return translate_db_error($e, $pdo, $v['request_token'], 'sale', $v['hash']);
     }
@@ -576,14 +617,19 @@ function validate_transfer(PDO $pdo, array $in, bool $checkStock = true): array
 
 function record_transfer(PDO $pdo, int $userId, array $in): array
 {
-    $v = validate_transfer($pdo, $in, true);
+    $v = validate_transfer($pdo, $in, false);
     if ($dup = existing_request($pdo, $v['request_token'], 'transfer', $v['hash'])) {
         return $dup;
     }
     $fromId = (int) $v['from']['id'];
     $toId = (int) $v['to']['id'];
+    $itemIds = array_map(fn ($l) => (int) $l['item']['id'], $v['lines']);
+    if ($stockErrors = stock_errors($v['lines'], current_stock($pdo, $itemIds, $fromId))) {
+        throw new ValidationException($stockErrors);
+    }
     try {
-        return db_transaction($pdo, function (PDO $pdo) use ($v, $fromId, $toId, $userId) {
+        return db_transaction($pdo, function (PDO $pdo) use ($v, $fromId, $toId, $userId, $itemIds) {
+            lock_items_shared($pdo, $itemIds);
             $pairs = [];
             foreach ($v['lines'] as $l) {
                 $pairs[] = [(int) $l['item']['id'], $fromId];
@@ -632,6 +678,11 @@ function record_transfer(PDO $pdo, int $userId, array $in): array
             data_version_bump($pdo);
             return ['id' => $docId, 'kind' => 'transfer', 'doc_no' => $docNo, 'duplicate' => false];
         });
+    } catch (ValidationException $e) {
+        if ($dup = existing_request($pdo, $v['request_token'], 'transfer', $v['hash'])) {
+            return $dup;
+        }
+        throw $e;
     } catch (PDOException $e) {
         return translate_db_error($e, $pdo, $v['request_token'], 'transfer', $v['hash']);
     }
@@ -649,7 +700,9 @@ function cancel_document(PDO $pdo, int $userId, int $docId, string $reasonRaw): 
     if (mb_strlen($reason) > 255) {
         throw new ValidationException(['reason' => 'سبب الإلغاء أطول من المسموح (255 حرفًا).']);
     }
-    return db_transaction($pdo, function (PDO $pdo) use ($userId, $docId, $reason) {
+    // أسطر المستند لا تتغير أبدًا بعد الحفظ، فتُقرأ قبل المعاملة (لا قراءة غير مقفلة داخلها)
+    $lines = document_lines($pdo, $docId);
+    return db_transaction($pdo, function (PDO $pdo) use ($userId, $docId, $reason, $lines) {
         $stmt = $pdo->prepare('SELECT * FROM documents WHERE id = ? FOR UPDATE');
         $stmt->execute([$docId]);
         $doc = $stmt->fetch();
@@ -659,7 +712,7 @@ function cancel_document(PDO $pdo, int $userId, int $docId, string $reasonRaw): 
         if ($doc['status'] !== 'active') {
             throw new ValidationException(['document' => 'هذا المستند ملغى بالفعل.']);
         }
-        $lines = document_lines($pdo, $docId);
+        lock_items_shared($pdo, array_map(fn ($l) => (int) $l['item_id'], $lines));
 
         $deltas = [];
         $add = function (array $l, int $wh, string $whName, int $delta) use (&$deltas) {
