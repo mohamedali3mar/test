@@ -279,8 +279,10 @@ function payment_fields(PDO $pdo, array $in, string $partyKind, array &$errors):
     foreach (cash_boxes_for_user($pdo) as $b) {
         $boxes[(int) $b['id']] = $b;
     }
-    if (array_key_exists('cash_box_id', $in)) {
-        $rawBox = is_string($in['cash_box_id']) || is_int($in['cash_box_id']) ? trim((string) $in['cash_box_id']) : '';
+    $rawBoxIn = is_string($in['cash_box_id'] ?? null) || is_int($in['cash_box_id'] ?? null) ? trim((string) $in['cash_box_id']) : '';
+    // غير مرسل أو فارغ = أول خزنة متاحة (القائمة في النموذج تختارها افتراضيًا)
+    if ($rawBoxIn !== '') {
+        $rawBox = $rawBoxIn;
         $box = ctype_digit($rawBox) ? ($boxes[(int) $rawBox] ?? null) : null;
         $boxError = $rawBox === '' ? 'اختر الخزنة.' : 'الخزنة غير موجودة أو موقوفة. اختر من القائمة.';
     } else {

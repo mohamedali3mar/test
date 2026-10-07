@@ -186,7 +186,7 @@ section('الفاتورة المطبوعة');
 await page.click('a:has-text("طباعة الفاتورة")');
 const printText = await page.locator('.print-doc').textContent();
 check('الفاتورة تحتوي الشركة والرقم والعميل والقيمة', printText.includes('شركة النيل للأخشاب') && printText.includes('فاتورة بيع')
-  && printText.includes('مؤسسة البناء الحديث') && printText.includes(AMOUNT_3000) && printText.includes('١٠ سم'));
+  && printText.includes('مؤسسة البناء الحديث') && printText.includes(AMOUNT_3000) && printText.includes('١٠\u00a0سم'));
 await page.emulateMedia({ media: 'print' });
 const hidden = await page.evaluate(() => ['.site-header', '.print-toolbar'].map((s) => getComputedStyle(document.querySelector(s)).display));
 check('القوائم والأزرار مخفية عند الطباعة', hidden.every((d) => d === 'none'), JSON.stringify(hidden));
