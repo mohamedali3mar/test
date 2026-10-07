@@ -479,3 +479,11 @@ th.align-end, td.align-end { text-align: end; }
 .print-branch-contact { display: flex; flex-wrap: wrap; gap: 4px 24px; font-size: var(--fs-14); color: var(--text-2); margin: 4px 0 8px; }
 input.input-ltr { direction: ltr; text-align: right; }
 .actions-nowrap { flex-wrap: nowrap; white-space: nowrap; }
+
+/* الفاتورة على A4: الجدول يلتف ويصغر قليلًا حتى لا يُقص عمود المبالغ على حافة الصفحة (فاتورة عدة أسطر بمقاسات طويلة) */
+@media print {
+  .print-table { width: 100%; table-layout: auto; font-size: 10pt; }
+  .print-table th, .print-table td { white-space: normal; padding: 4px; overflow-wrap: anywhere; }
+  .print-table td.num { white-space: nowrap; }
+  .print-table-wrap { overflow: visible; }
+}

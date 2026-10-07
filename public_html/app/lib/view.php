@@ -178,7 +178,7 @@ function render_header(string $title, string $active = '', string $bodyClass = '
     $version = '';
     if ($loggedIn) {
         try {
-            $version = data_version(db());
+            $version = (string) ($GLOBALS['PAGE_DATA_VERSION'] ?? data_version(db()));
         } catch (Throwable $e) {
             $version = '';
         }

@@ -30,10 +30,37 @@ function schema_version(PDO $pdo): int
     }
 }
 
+/**
+ * أرقام الترقيات المطبقة. كل ترقية تُسجل في settings باسم migration_NNN عند اكتمالها، فلا تُتخطى
+ * ترقية برقم أصغر وصلت في إصدار لاحق. القواعد الأقدم من هذا التسجيل تُعتبر مطبقة حتى schema_version.
+ * @return array<int,true>
+ */
+function applied_migrations(PDO $pdo): array
+{
+    try {
+        $rows = $pdo->query("SELECT name FROM settings WHERE name LIKE 'migration\\_%'")->fetchAll(PDO::FETCH_COLUMN);
+    } catch (PDOException $e) {
+        return []; // جدول الإعدادات غير موجود بعد: لا شيء مطبق
+    }
+    $out = [];
+    foreach ($rows as $n) {
+        if (preg_match('/^migration_(\d+)\z/', (string) $n, $m)) {
+            $out[(int) $m[1]] = true;
+        }
+    }
+    if (!$out) {
+        // قاعدة من قبل التسجيل لكل ترقية: كل ما حتى schema_version مطبق
+        for ($v = 1, $max = schema_version($pdo); $v <= $max; $v++) {
+            $out[$v] = true;
+        }
+    }
+    return $out;
+}
+
 function pending_migrations(PDO $pdo): array
 {
-    $current = schema_version($pdo);
-    return array_filter(migration_files(), fn ($v) => $v > $current, ARRAY_FILTER_USE_KEY);
+    $applied = applied_migrations($pdo);
+    return array_filter(migration_files(), fn ($v) => !isset($applied[$v]), ARRAY_FILTER_USE_KEY);
 }
 
 /** يقسم ملف SQL إلى أوامر (الملفات مكتوبة بحيث ينتهي كل أمر بفاصلة منقوطة آخر السطر) */
@@ -86,7 +113,12 @@ function run_migrations(PDO $pdo): array
                     // في الترقية الأولى لا يوجد جدول الإعدادات بعد؛ أوامرها كلها آمنة لإعادة التنفيذ
                 }
             }
-            save_setting($pdo, 'schema_version', (string) $version);
+            // تسجيل كل الترقيات المطبقة سابقًا (أول مرة فقط) ثم هذه الترقية، ثم أعلى رقم للعرض
+            foreach (array_keys(applied_migrations($pdo)) as $prev) {
+                save_setting($pdo, 'migration_' . str_pad((string) $prev, 3, '0', STR_PAD_LEFT), '1');
+            }
+            save_setting($pdo, 'migration_' . str_pad((string) $version, 3, '0', STR_PAD_LEFT), '1');
+            save_setting($pdo, 'schema_version', (string) max($version, schema_version($pdo)));
             save_setting($pdo, 'schema_progress', '');
             $applied[] = $version;
         }

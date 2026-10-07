@@ -267,7 +267,10 @@ function payment_fields(PDO $pdo, array $in, string $partyKind, array &$errors):
             $party = null;
         }
     }
-    $type = array_key_exists('payment_type', $in) ? (is_string($in['payment_type']) ? $in['payment_type'] : '') : 'cash';
+    $type = is_string($in['payment_type'] ?? null) ? $in['payment_type'] : '';
+    if ($type === '') {
+        $type = 'cash'; // غير مرسل أو فارغ = نقدي (الاختيار الافتراضي في النموذج)
+    }
     if (!isset(PAYMENT_TYPE_LABELS[$type])) {
         $errors['payment_type'] = 'اختر طريقة الدفع.';
         $type = 'cash';

@@ -64,7 +64,8 @@ class Client:
     def __init__(self, ua=None):
         self.jar = http.cookiejar.CookieJar()
         self.opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(self.jar), NoRedirect())
-        self.ua = ua
+        # متصفح حقيقي: مرشح أدوات الأتمتة يرفض User-Agent الافتراضي لـ Python
+        self.ua = ua or 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36'
 
     def req(self, path, data=None, headers=None, method=None):
         body = urllib.parse.urlencode(data, doseq=True).encode() if data is not None else None

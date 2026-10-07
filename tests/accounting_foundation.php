@@ -86,4 +86,11 @@ reset_settings_cache();
 section('المستندات القديمة');
 check_eq('doc_date = created_at للمستند المسجل', $pdo->query("SELECT created_at FROM documents WHERE id = $docId")->fetchColumn(), $pdo->query("SELECT doc_date FROM documents WHERE id = $docId")->fetchColumn());
 
+section('الترقيات: كل ترقية تُسجل وحدها');
+check_eq('كل ملفات الترقيات مسجلة كمطبقة', array_keys(migration_files()), array_keys(applied_migrations($pdo)));
+$pdo->exec("DELETE FROM settings WHERE name = 'migration_003'");
+check_eq('ترقية برقم أصغر غير مسجلة تبقى معلقة رغم أن الإصدار أعلى منها', [3], array_keys(pending_migrations($pdo)));
+$pdo->exec("INSERT INTO settings (name, value) VALUES ('migration_003', '1')");
+check_eq('بعد تسجيلها لا شيء معلق', [], pending_migrations($pdo));
+
 finish();
