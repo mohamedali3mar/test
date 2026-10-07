@@ -35,7 +35,10 @@ const VIEWPORTS = [
   { width: 1366, height: 768 },
   { width: 1920, height: 1080 },
 ];
-const NAV_LABELS = ['المخزون', 'إضافة وارد', 'فاتورة بيع', 'تحويل', 'الفواتير والحركات', 'أنواع الخشب', 'المخازن', 'الإعدادات'];
+const NAV_LABELS = ['المخزون', 'إضافة وارد', 'فاتورة بيع', 'تحويل بين المخازن', 'الفواتير والحركات', 'أنواع الخشب', 'المخازن', 'الإعدادات',
+  'العملاء', 'الموردون', 'السندات', 'الخزائن', 'لوحة التحكم', 'التقارير', 'المراقبة', 'المستخدمون'];
+// القائمة على الكمبيوتر مجمعة (details/summary): المجموعات ظاهرة، والروابط داخلها تظهر عند الفتح
+const NAV_GROUP_LABELS = ['المخزون', 'المبيعات', 'الحسابات', 'التقارير', 'الإدارة'];
 
 let pass = 0;
 const fails = [];
@@ -90,7 +93,7 @@ const PAGES = [
   { name: 'receive', route: 'receive', nav: 'إضافة وارد' },
   { name: 'sell', route: 'sell', nav: 'فاتورة بيع' },
   { name: 'sell-review', route: 'sell', nav: 'فاتورة بيع', review: true },
-  { name: 'transfer', route: 'transfer', nav: 'تحويل' },
+  { name: 'transfer', route: 'transfer', nav: 'تحويل بين المخازن' },
   { name: 'documents', route: 'documents', nav: 'الفواتير والحركات' },
   { name: 'document', route: 'document&id=' + docId, nav: 'الفواتير والحركات' },
   { name: 'print', route: 'print&id=' + docId, nav: 'الفواتير والحركات' },
@@ -98,12 +101,15 @@ const PAGES = [
   { name: 'types-edit', route: 'types&edit=FIRST', nav: 'أنواع الخشب' },
   { name: 'warehouses', route: 'warehouses', nav: 'المخازن' },
   { name: 'settings', route: 'settings', nav: 'الإعدادات' },
+  { name: 'reports-sales', route: 'reports&report=sales_period', nav: 'التقارير' },
+  { name: 'reports-cash', route: 'reports&report=cash_summary', nav: 'التقارير' },
+  { name: 'dashboard', route: 'dashboard', nav: 'لوحة التحكم' },
   // حالات عدم وجود نتائج
   { name: 'inventory-empty', route: 'inventory&q=zzzz-no-match', nav: 'المخزون' },
   { name: 'documents-empty', route: 'documents&q=zzzz-no-match', nav: 'الفواتير والحركات' },
   // صناديق التأكيد بعد الحفظ (عرض فقط، لا يُحفظ شيء)
   ...Object.entries(doneIds).filter(([, id]) => id).map(([r, id]) => (
-    { name: r + '-done', route: `${r}&done=${id}`, nav: { receive: 'إضافة وارد', sell: 'فاتورة بيع', transfer: 'تحويل' }[r] })),
+    { name: r + '-done', route: `${r}&done=${id}`, nav: { receive: 'إضافة وارد', sell: 'فاتورة بيع', transfer: 'تحويل بين المخازن' }[r] })),
 ];
 
 /* ---------- الفحص داخل الصفحة ---------- */
@@ -168,7 +174,7 @@ function audit({ vw, mobileMax }) {
     const sel = 'button, input, select, textarea, summary, .row-actions a, .main-nav a, .nav-menu a, .table-stack td a, .table-stack th a, .pager a, .empty a';
     for (const el of document.querySelectorAll(sel)) {
       if (!shown(el) || el.type === 'hidden') { continue; }
-      const box = (el.type === 'checkbox' || el.type === 'radio') ? (el.closest('.field-check') || el) : el;
+      const box = (el.type === 'checkbox' || el.type === 'radio') ? (el.closest('.field-check') || el.closest('label') || el) : el;
       const r = box.getBoundingClientRect();
       if (Math.round(r.height) < 44) { out.push(`touch target ${Math.round(r.height)}px: ${desc(el)}`); }
       if (/^(INPUT|SELECT|TEXTAREA)$/.test(el.tagName) && el.type !== 'checkbox' && el.type !== 'radio' && parseFloat(getComputedStyle(el).fontSize) < 16) {
@@ -240,7 +246,10 @@ async function checkMenu(page, vp, pageDef, shot) {
     return {
       details: vis(details), summary: summary ? summary.textContent.replace(/\s+/g, ' ').trim() : '',
       open: details ? details.open : false,
-      deskLinks: deskNav ? [...deskNav.querySelectorAll('a')].filter(vis).map((a) => a.textContent.trim()) : [],
+      deskLinks: deskNav ? [...deskNav.querySelectorAll('a')].map((a) => a.textContent.trim()) : [],
+      deskGroups: deskNav ? [...deskNav.querySelectorAll('details.nav-group > summary')].filter(vis).map((x) => x.textContent.trim()) : [],
+      deskCurrent: deskNav ? [...deskNav.querySelectorAll('a[aria-current="page"]')].map((a) => a.textContent.trim()) : [],
+      deskVisibleLinks: deskNav ? [...deskNav.querySelectorAll('a')].filter(vis).length : 0,
       menuLinks: details ? [...details.querySelectorAll('a')].filter(vis).map((a) => a.textContent.trim()) : [],
       current: [...document.querySelectorAll('.site-header a[aria-current="page"]')].filter(vis).map((a) => a.textContent.trim()),
       logout: vis(logout),
@@ -250,14 +259,15 @@ async function checkMenu(page, vp, pageDef, shot) {
   const tag = `${vp.width} ${pageDef.name}`;
   check(`${tag}: logout reachable`, state.logout || mobile);
   if (!mobile) {
-    check(`${tag}: horizontal nav with all links`, NAV_LABELS.every((l) => state.deskLinks.includes(l)), state.deskLinks.join(','));
+    check(`${tag}: horizontal nav groups visible`, NAV_GROUP_LABELS.every((l) => state.deskGroups.includes(l)), state.deskGroups.join(','));
+    check(`${tag}: nav groups hold all links (collapsed)`, NAV_LABELS.every((l) => state.deskLinks.includes(l)) && state.deskVisibleLinks === 0, state.deskLinks.join(','));
     check(`${tag}: menu toggle hidden on desktop`, !state.details);
-    check(`${tag}: current page marked`, state.current.length === 1 && state.current[0] === pageDef.nav, state.current.join(','));
+    check(`${tag}: current page marked`, state.deskCurrent.length === 1 && state.deskCurrent[0] === pageDef.nav, state.deskCurrent.join(','));
     return;
   }
   check(`${tag}: menu toggle visible`, state.details && !state.open);
   check(`${tag}: toggle names القائمة and the current page`, state.summary.includes('القائمة') && state.summary.includes(pageDef.nav), state.summary);
-  check(`${tag}: links collapsed before opening`, state.deskLinks.length === 0 && state.menuLinks.length === 0, state.deskLinks.concat(state.menuLinks).join(','));
+  check(`${tag}: links collapsed before opening`, state.deskVisibleLinks === 0 && state.menuLinks.length === 0, state.menuLinks.join(','));
   check(`${tag}: logout visible`, state.logout);
   if (!state.details) { return; }
   await page.click('.site-header details.nav-menu > summary');

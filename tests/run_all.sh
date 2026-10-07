@@ -49,4 +49,6 @@ run deploy-http-exports "$ROOT/tests/deploy.sh" "$ZIP"
 run http-exports python3 -I "$ROOT/tests/http_exports.py"
 run deploy-e2e "$ROOT/tests/deploy.sh" "$ZIP"
 run e2e node "$ROOT/tests/e2e.mjs"
+# على نفس الموقع بعد e2e (يحتاج بيانات): كل الصفحات على 7 مقاسات
+run ui-responsive node "$ROOT/tests/ui_responsive.mjs"
 exit $status
