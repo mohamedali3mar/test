@@ -18,6 +18,7 @@ if (!is_file(__DIR__ . '/app/config.php')) {
 ob_start();
 require __DIR__ . '/app/bootstrap.php';
 header_remove('X-Powered-By');
+block_automated_clients();
 enforce_https();
 start_secure_session();
 
@@ -104,10 +105,12 @@ if ($locked) {
         if (!$errors) {
             $pdo->prepare('UPDATE users SET password_hash = ?, auth_version = auth_version + 1 WHERE id = ?')
                 ->execute([password_hash($password, PASSWORD_DEFAULT), $userId]);
+            // الاستعادة توقف التحقق بخطوتين أيضًا (مثلًا عند ضياع الهاتف)
+            two_factor_disable($pdo, $userId);
             $pdo->prepare('DELETE FROM login_attempts WHERE username = ?')->execute([$username]);
             @unlink(RESET_ALLOW_FILE);
             $selfDeleted = @unlink(__FILE__);
-            echo '<div class="alert alert-success" role="status">تم تعيين كلمة المرور الجديدة.</div>';
+            echo '<div class="alert alert-success" role="status">تم تعيين كلمة المرور الجديدة، وأُوقف التحقق بخطوتين لهذا الحساب إن كان مفعلًا.</div>';
             echo '<p>' . ($selfDeleted ? 'تم حذف ملف install.php تلقائيًا.' : '<strong>مهم:</strong> احذف الملف install.php من الاستضافة الآن.')
                 . (is_file(RESET_ALLOW_FILE) ? ' احذف أيضًا الملف app/storage/reset.allow.' : '') . '</p>';
             echo '<p><a class="btn btn-primary" href="index.php">تسجيل الدخول</a></p>';
@@ -116,7 +119,7 @@ if ($locked) {
     }
     ?>
 <h2>استعادة كلمة مرور المدير</h2>
-<p>هذا الوضع يعمل لأن الملف app/storage/reset.allow موجود. يُطلب مفتاح التثبيت من ملف الإعدادات.</p>
+<p>هذا الوضع يعمل لأن الملف app/storage/reset.allow موجود. يُطلب مفتاح التثبيت من ملف الإعدادات. الاستعادة توقف أيضًا التحقق بخطوتين للحساب، ويمكن تفعيله من جديد من الإعدادات.</p>
 <?= errors_summary($errors) ?>
 <form method="post" action="install.php" class="form" autocomplete="off">
   <?= csrf_field() ?>

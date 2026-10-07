@@ -60,7 +60,14 @@ function take_flashes(): array
 
 function asset(string $path): string
 {
-    return 'assets/' . $path . '?v=' . rawurlencode(APP_VERSION);
+    return 'assets/' . $path . '?v=' . rawurlencode(asset_version($path));
+}
+
+/** رقم نسخة الملف في الرابط: إصدار النظام ووقت تعديل الملف، فلا يبقى المتصفح على نسخة قديمة بعد أي نشر */
+function asset_version(string $path): string
+{
+    $mtime = @filemtime(dirname(APP_ROOT) . '/assets/' . $path);
+    return APP_VERSION . ($mtime ? '-' . $mtime : '');
 }
 
 const NAV = [
@@ -96,7 +103,9 @@ function render_header(string $title, string $active = '', string $bodyClass = '
 <title><?= h($title) ?> | <?= h($company) ?></title>
 <link rel="preload" href="assets/fonts/cairo-arabic-400-normal.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="<?= h(asset('css/app.css')) ?>">
-<script src="<?= h(asset('js/app.js')) ?>" defer></script>
+<?php if ($loggedIn): /* السكربت للمستخدمين المسجلين فقط (index.php?r=asset)، وصفحتا الدخول والتثبيت لا تحتاجانه */ ?>
+<script src="<?= h(url('asset', ['f' => 'app.js', 'v' => asset_version('js/app.js')])) ?>" defer></script>
+<?php endif; ?>
 </head>
 <body class="<?= h($bodyClass) ?>"
   data-digits="<?= h(app_setting('digits')) ?>"

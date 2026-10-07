@@ -11,6 +11,8 @@ DirectoryIndex index.php
     RewriteRule (^|/)\.(?!well-known(/|$)) - [F,L]
     # منع ملفات التوثيق والنسخ الاحتياطية وملفات SQL والسجلات
     RewriteRule \.(md|sql|log|lock|bak|zip|ini|sh|dist|allow)$ - [F,L,NC]
+    # سكربتات الواجهة تُقدم للمستخدمين المسجلين فقط عبر index.php?r=asset، ولا تُفتح مباشرة
+    RewriteRule ^assets/js/(app|twofactor)\.js$ - [F,L,NC]
 </IfModule>
 
 # حماية إضافية إذا لم تعمل mod_rewrite
@@ -18,6 +20,9 @@ DirectoryIndex index.php
     Require all denied
 </FilesMatch>
 <FilesMatch "^\.(?!well-known)">
+    Require all denied
+</FilesMatch>
+<FilesMatch "^(app|twofactor)\.js$">
     Require all denied
 </FilesMatch>
 
