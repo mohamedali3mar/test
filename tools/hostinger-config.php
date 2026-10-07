@@ -3,7 +3,7 @@ declare(strict_types=1);
 
 /*
  * يولد app/config.php لحزمة Hostinger من config.sample.php نفسه:
- *  - مفتاح تثبيت عشوائي جديد (32 حرفًا) في كل مرة.
+ *  - مفتاح تثبيت عشوائي جديد (32 حرفًا) في كل مرة، إلا إذا مُرر WOOD_INSTALL_KEY (مفتاح حزمة مرفوعة بالفعل).
  *  - بيانات القاعدة وعنوان الموقع من متغيرات البيئة إن وُجدت (WOOD_DB_NAME، WOOD_DB_USER، WOOD_DB_PASS، WOOD_BASE_URL)،
  *    وإلا تبقى فارغة ليكتبها صاحب الموقع.
  * القيم تُكتب بـ var_export فتبقى صحيحة مهما كانت الرموز فيها (مثل & أو ' أو \).
@@ -24,7 +24,13 @@ $set = function (string $pattern, string $value) use (&$s): void {
         exit(1);
     }
 };
-$set("/('install_key' => )'',/", bin2hex(random_bytes(16)));
+// WOOD_INSTALL_KEY يعيد استخدام مفتاح حزمة سُلمت ورُفعت بالفعل (إعادة البناء بدونه تولد مفتاحًا جديدًا لا يطابق الموقع)
+$key = getenv('WOOD_INSTALL_KEY');
+if (is_string($key) && $key !== '' && !preg_match('/^[A-Za-z0-9]{16,128}\z/', $key)) {
+    fwrite(STDERR, "WOOD_INSTALL_KEY must be 16-128 letters and digits\n");
+    exit(1);
+}
+$set("/('install_key' => )'',/", is_string($key) && $key !== '' ? $key : bin2hex(random_bytes(16)));
 $fields = ['name' => 'WOOD_DB_NAME', 'user' => 'WOOD_DB_USER', 'password' => 'WOOD_DB_PASS'];
 foreach ($fields as $key => $env) {
     $v = getenv($env);
