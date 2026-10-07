@@ -42,6 +42,8 @@ require APP_ROOT . '/lib/migrate.php';
 require APP_ROOT . '/lib/forms.php';
 require APP_ROOT . '/lib/security.php';
 require APP_ROOT . '/lib/totp.php';
+require APP_ROOT . '/lib/audit.php';
+require APP_ROOT . '/lib/users.php';
 require APP_ROOT . '/lib/accounting.php';
 require APP_ROOT . '/lib/costing.php';
 require APP_ROOT . '/lib/acct_reports.php';

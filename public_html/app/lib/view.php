@@ -95,8 +95,79 @@ const NAV = [
     'documents'  => 'الفواتير والحركات',
     'types'      => 'أنواع الخشب',
     'warehouses' => 'المخازن',
+    'monitor'    => 'المراقبة',
+    'users'      => 'المستخدمون',
     'settings'   => 'الإعدادات',
 ];
+
+/**
+ * القائمة الرئيسية في مجموعات. كل رابط: [المسار، التسمية، معاملات إضافية].
+ * يظهر الرابط فقط إذا كان المسار موجودًا ومسموحًا لدور المستخدم (can_open).
+ */
+const NAV_GROUPS = [
+    'المخزون' => [
+        ['inventory', 'المخزون', []],
+        ['receive', 'إضافة وارد', []],
+        ['transfer', 'تحويل بين المخازن', []],
+        ['types', 'أنواع الخشب', []],
+        ['warehouses', 'المخازن', []],
+        ['branches', 'الفروع', []],
+        ['opening_valuation', 'تقييم المخزون الافتتاحي', []],
+    ],
+    'المبيعات' => [
+        ['sell', 'فاتورة بيع', []],
+        ['documents', 'الفواتير والحركات', []],
+        ['parties', 'العملاء', ['kind' => 'customer']],
+        ['collect', 'سند قبض', []],
+    ],
+    'الحسابات' => [
+        ['parties', 'الموردون', ['kind' => 'supplier']],
+        ['pay', 'سند صرف', []],
+        ['expense', 'مصروف', []],
+        ['cash_transfer', 'تحويل نقدية', []],
+        ['vouchers', 'السندات', []],
+        ['cash_boxes', 'الخزائن', []],
+        ['expense_categories', 'تصنيفات المصروفات', []],
+    ],
+    'التقارير' => [
+        ['dashboard', 'لوحة التحكم', []],
+        ['reports', 'التقارير', []],
+    ],
+    'الإدارة' => [
+        ['monitor', 'المراقبة', []],
+        ['users', 'المستخدمون', []],
+        ['settings', 'الإعدادات', []],
+    ],
+];
+
+/** روابط القائمة المسموحة للمستخدم الحالي، مجمعة: [المجموعة => [[url, label, current], ...]] */
+function nav_visible_groups(string $active): array
+{
+    $kind = (string) ($_GET['kind'] ?? '');
+    $out = [];
+    foreach (NAV_GROUPS as $group => $links) {
+        foreach ($links as [$route, $label, $params]) {
+            if (!defined('ROUTES') || !isset(ROUTES[$route]) || (function_exists('can_open') && !can_open($route))) {
+                continue;
+            }
+            $current = $route === $active && (!isset($params['kind']) || $params['kind'] === $kind);
+            $out[$group][] = [url($route, $params), $label, $current];
+        }
+    }
+    return $out;
+}
+
+function nav_current_label(array $groups): string
+{
+    foreach ($groups as $links) {
+        foreach ($links as [, $label, $current]) {
+            if ($current) {
+                return $label;
+            }
+        }
+    }
+    return '';
+}
 
 function render_header(string $title, string $active = '', string $bodyClass = ''): void
 {
@@ -135,27 +206,39 @@ function render_header(string $title, string $active = '', string $bodyClass = '
 <header class="site-header no-print">
   <div class="container header-row">
     <a class="brand" href="<?= h(url('inventory')) ?>"><?= h($company) ?></a>
+    <?php $navGroups = nav_visible_groups($active); $navCurrent = nav_current_label($navGroups); ?>
     <nav class="main-nav" aria-label="القائمة الرئيسية">
-      <?php foreach (NAV as $route => $label): ?>
-        <a href="<?= h(url($route)) ?>"<?= $route === $active ? ' aria-current="page"' : '' ?>><?= h($label) ?></a>
+      <?php foreach ($navGroups as $group => $links): $inGroup = in_array(true, array_column($links, 2), true); ?>
+        <details class="nav-group<?= $inGroup ? ' is-current' : '' ?>">
+          <summary><?= h($group) ?></summary>
+          <div class="nav-group-links">
+            <?php foreach ($links as [$href, $label, $current]): ?>
+              <a href="<?= h($href) ?>"<?= $current ? ' aria-current="page"' : '' ?>><?= h($label) ?></a>
+            <?php endforeach; ?>
+          </div>
+        </details>
       <?php endforeach; ?>
     </nav>
     <?php /* على الموبايل تختفي القائمة الأفقية ويظهر هذا الزر بدلًا منها (يعمل بدون JavaScript) */ ?>
     <details class="nav-menu">
       <summary>
         <span>القائمة</span>
-        <?php if (isset(NAV[$active])): ?>
+        <?php if ($navCurrent !== ''): ?>
           <span class="visually-hidden">، الصفحة الحالية:</span>
-          <span class="nav-menu-current"><?= h(NAV[$active]) ?></span>
+          <span class="nav-menu-current"><?= h($navCurrent) ?></span>
         <?php endif; ?>
         <span class="nav-menu-state" aria-hidden="true"></span>
       </summary>
       <nav class="nav-menu-links" aria-label="القائمة الرئيسية">
-        <?php foreach (NAV as $route => $label): ?>
-          <a href="<?= h(url($route)) ?>"<?= $route === $active ? ' aria-current="page"' : '' ?>><?= h($label) ?></a>
+        <?php foreach ($navGroups as $group => $links): ?>
+          <p class="nav-menu-group"><?= h($group) ?></p>
+          <?php foreach ($links as [$href, $label, $current]): ?>
+            <a href="<?= h($href) ?>"<?= $current ? ' aria-current="page"' : '' ?>><?= h($label) ?></a>
+          <?php endforeach; ?>
         <?php endforeach; ?>
       </nav>
     </details>
+    <a class="btn btn-quiet header-account" href="<?= h(url('account')) ?>"<?= $active === 'account' ? ' aria-current="page"' : '' ?>><span class="visually-hidden">حسابي: </span><span class="header-account-name"><?= h((string) ($_SESSION['display_name'] ?? current_username())) ?></span></a>
     <form method="post" action="<?= h(url('logout')) ?>" class="logout-form">
       <?= csrf_field() ?>
       <button type="submit" class="btn btn-quiet">خروج</button>

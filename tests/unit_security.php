@@ -172,7 +172,7 @@ check('كلمة مرور خاطئة', attempt_login($pdo, 'admin', 'wrong-passwo
 check('كلمة مرور صحيحة: دخول مباشر', attempt_login($pdo, 'admin', 'Correct-Horse-9') === null && current_user_id() === $uid);
 $normalKeys = array_keys($_SESSION);
 sort($normalKeys);
-check_eq('مفاتيح الجلسة', ['auth_version', 'csrf', 'last_activity', 'login_at', 'ua_hash', 'user_id', 'username'], $normalKeys);
+check_eq('مفاتيح الجلسة', ['auth_version', 'csrf', 'display_name', 'last_activity', 'login_at', 'role', 'ua_hash', 'user_id', 'username'], $normalKeys);
 
 section('ربط الجلسة بالمتصفح ومدتها القصوى');
 $loginSession = $_SESSION;

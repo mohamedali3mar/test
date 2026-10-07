@@ -283,7 +283,7 @@ function two_factor_login(PDO $pdo, string $code): ?string
 
 function two_factor_redirect(): never
 {
-    header('Location: ' . url('settings') . '#two-factor', true, 303);
+    header('Location: ' . url('account') . '#two-factor', true, 303);
     exit;
 }
 

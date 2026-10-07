@@ -114,11 +114,22 @@ function muldiv_half_up(int $a, int $b, int $c): int
 
 function acct_can(string $perm): bool
 {
-    return function_exists('can') ? (bool) can($perm) : true;
+    if (!function_exists('can')) {
+        return true;
+    }
+    // سطر الأوامر بلا مستخدم مسجل (الاختبارات والصيانة) يعمل كالنظام. على الويب لا يصل طلب
+    // إلى الخدمات قبل require_login، فلا ينطبق هذا الاستثناء أبدًا على زائر.
+    if (PHP_SAPI === 'cli' && current_user_id() === 0) {
+        return true;
+    }
+    return (bool) can($perm);
 }
 
 function acct_require(string $perm): void
 {
+    if (PHP_SAPI === 'cli' && current_user_id() === 0) {
+        return; // مثل acct_can: سطر الأوامر بلا مستخدم يعمل كالنظام
+    }
     if (function_exists('require_permission')) {
         require_permission($perm);
     }

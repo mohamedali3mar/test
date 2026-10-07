@@ -69,10 +69,11 @@ function catalog_create(PDO $pdo, string $kind, string $raw): int
     $def = catalog_def($kind);
     [$name, $key] = catalog_validate_name($kind, $raw);
     try {
-        return db_transaction($pdo, function (PDO $pdo) use ($def, $name, $key) {
+        return db_transaction($pdo, function (PDO $pdo) use ($kind, $def, $name, $key) {
             $pdo->prepare("INSERT INTO {$def['table']} (name, name_key, created_at) VALUES (?, ?, ?)")
                 ->execute([$name, $key, now()]);
             $id = (int) $pdo->lastInsertId();
+            audit_catalog($pdo, $kind, 'create', $id, $name);
             data_version_bump($pdo);
             return $id;
         });
@@ -89,13 +90,17 @@ function catalog_rename(PDO $pdo, string $kind, int $id, string $raw): void
     $def = catalog_def($kind);
     [$name, $key] = catalog_validate_name($kind, $raw);
     try {
-        db_transaction($pdo, function (PDO $pdo) use ($def, $id, $name, $key) {
-            $stmt = $pdo->prepare("SELECT id FROM {$def['table']} WHERE id = ? FOR UPDATE");
+        db_transaction($pdo, function (PDO $pdo) use ($kind, $def, $id, $name, $key) {
+            $stmt = $pdo->prepare("SELECT id, name FROM {$def['table']} WHERE id = ? FOR UPDATE");
             $stmt->execute([$id]);
-            if (!$stmt->fetch()) {
+            $old = $stmt->fetch();
+            if (!$old) {
                 throw new ValidationException(['name' => $def['missing']]);
             }
             $pdo->prepare("UPDATE {$def['table']} SET name = ?, name_key = ? WHERE id = ?")->execute([$name, $key, $id]);
+            if ($old['name'] !== $name) {
+                audit_catalog($pdo, $kind, 'rename', $id, $name, $old['name']);
+            }
             data_version_bump($pdo);
         });
     } catch (PDOException $e) {
@@ -112,9 +117,10 @@ function catalog_delete(PDO $pdo, string $kind, int $id): void
     $def = catalog_def($kind);
     try {
         db_transaction($pdo, function (PDO $pdo) use ($kind, $def, $id) {
-            $stmt = $pdo->prepare("SELECT id FROM {$def['table']} WHERE id = ? FOR UPDATE");
+            $stmt = $pdo->prepare("SELECT id, name FROM {$def['table']} WHERE id = ? FOR UPDATE");
             $stmt->execute([$id]);
-            if (!$stmt->fetch()) {
+            $row = $stmt->fetch();
+            if (!$row) {
                 throw new ValidationException(['name' => $def['missing']]);
             }
             if ($kind === 'type') {
@@ -139,6 +145,7 @@ function catalog_delete(PDO $pdo, string $kind, int $id): void
                 }
             }
             $pdo->prepare("DELETE FROM {$def['table']} WHERE id = ?")->execute([$id]);
+            audit_catalog($pdo, $kind, 'delete', $id, $row['name']);
             data_version_bump($pdo);
         });
     } catch (PDOException $e) {

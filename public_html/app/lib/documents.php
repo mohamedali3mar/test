@@ -542,10 +542,7 @@ function record_receipt(PDO $pdo, int $userId, array $in): array
                     ledger_cash($pdo, (int) $box['id'], $date, $docId, null, 'purchase', -$pay['paid'], $desc);
                 }
             }
-            acct_audit($pdo, 'document_create', $desc, 'document', $docId, [
-                'total_cost' => piasters_to_money($value), 'payment_type' => $pay['payment_type'],
-                'paid' => piasters_to_money($pay['paid']), 'doc_date' => $date,
-            ]);
+            audit_receipt($pdo, $docId, $docNo, $v);
             data_version_bump($pdo);
             return ['id' => $docId, 'kind' => 'in', 'doc_no' => $docNo, 'duplicate' => false];
         });
@@ -811,10 +808,7 @@ function record_sale(PDO $pdo, int $userId, array $in): array
             if ($pay['paid'] > 0) {
                 ledger_cash($pdo, (int) $box['id'], $date, $docId, null, 'sale', $pay['paid'], $desc);
             }
-            acct_audit($pdo, 'document_create', $desc, 'document', $docId, [
-                'total' => $v['total_amount'], 'payment_type' => $pay['payment_type'],
-                'paid' => piasters_to_money($pay['paid']), 'doc_date' => $date,
-            ]);
+            audit_sale($pdo, $docId, $docNo, $v, $currency);
             data_version_bump($pdo);
             return ['id' => $docId, 'kind' => 'sale', 'doc_no' => $docNo, 'duplicate' => false];
         });
@@ -932,6 +926,7 @@ function record_transfer(PDO $pdo, int $userId, array $in): array
                 set_stock($pdo, $id, $fromId, $fromAfter, $now);
                 set_stock($pdo, $id, $toId, $toAfter, $now);
             }
+            audit_transfer($pdo, $docId, $docNo, $v);
             data_version_bump($pdo);
             return ['id' => $docId, 'kind' => 'transfer', 'doc_no' => $docNo, 'duplicate' => false];
         });
@@ -1068,7 +1063,7 @@ function cancel_document(PDO $pdo, int $userId, int $docId, string $reasonRaw): 
         } catch (ValidationException $e) {
             throw new ValidationException(['document' => 'لا يمكن إلغاء هذا المستند: رصيد الخزنة لا يكفي لرد المبلغ. ' . implode(' ', $e->errors)]);
         }
-        acct_audit($pdo, 'document_cancel', 'إلغاء ' . $label, 'document', $docId, ['reason' => $reason]);
+        audit_cancel($pdo, $doc, $reason);
         data_version_bump($pdo);
         return $doc;
     });

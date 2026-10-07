@@ -207,9 +207,9 @@ check('لا شرطة طويلة في الصفحة', re.search('[\u2013\u2014]', 
 # ------------------------------------------------------------------
 section('تغيير كلمة المرور')
 marker = last_event_id()
-token, _ = a.csrf('index.php?r=settings')
+token, _ = a.csrf('index.php?r=account')
 new_pw = 'AuthLog-Pass-71'
-s, _, _ = a.post('index.php?r=settings', {'csrf': token, 'action': 'password', 'current_password': ADMIN[1], 'new_password': new_pw, 'confirm_password': new_pw})
+s, _, _ = a.post('index.php?r=account', {'csrf': token, 'action': 'password', 'current_password': ADMIN[1], 'new_password': new_pw, 'confirm_password': new_pw})
 check('تغيير كلمة المرور نجح', s == 303, s)
 ADMIN = (ADMIN[0], new_pw)
 check('سُجل تغيير كلمة المرور باسم المدير', [(r[0], r[1]) for r in events_after(marker)] == [('password_changed', 'admin')], events_after(marker))

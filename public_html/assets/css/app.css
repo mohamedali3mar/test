@@ -108,7 +108,7 @@ html.js [data-nojs-only] { display: none; }
 .brand { font-weight: 700; color: var(--text); text-decoration: none; font-size: var(--fs-16); }
 .main-nav { display: flex; gap: 4px; flex-wrap: wrap; flex: 1; }
 .main-nav a {
-  display: inline-flex; align-items: center; min-height: 36px; padding: 0 12px;
+  display: inline-flex; align-items: center; min-height: 36px; padding: 0 10px;
   color: var(--text-2); text-decoration: none; border-radius: var(--radius); font-size: var(--fs-14); font-weight: 600;
 }
 .main-nav a:hover { background: var(--surface-2); color: var(--text); }
@@ -137,6 +137,8 @@ html.js [data-nojs-only] { display: none; }
 }
 .nav-menu-links a:hover { background: var(--surface-2); color: var(--text); }
 .nav-menu-links a[aria-current="page"] { color: var(--primary); background: var(--surface-2); }
+.header-row .header-account { padding: 0 8px; max-width: 200px; }
+.header-account-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .live-status { margin: 12px 0 0; }
 
 /* ---------- الأزرار ---------- */
@@ -260,6 +262,20 @@ tfoot tr:last-child th, tfoot tr:last-child td { border-bottom: 0; }
 .status-empty { color: var(--error); }
 .status-cancelled { color: var(--warning); }
 td.split { min-width: 160px; }
+/* المستخدمون والمراقبة */
+.status-online { color: var(--success); }
+.status-disabled, .row-disabled td { color: var(--muted); }
+.status-failed { color: var(--error); }
+td.audit-summary { min-width: 280px; }
+td.audit-device { min-width: 140px; }
+.monitor-facts { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); margin-bottom: 12px; }
+.fact-note, .fact-line { display: block; }
+.fact-note { font-size: var(--fs-14); font-weight: 400; color: var(--muted); }
+.edit-panel { background: var(--surface-2); border-radius: var(--radius); padding: 16px; }
+.edit-panel h3 { margin-top: 24px; }
+@media (max-width: 720px) {
+  .header-row .header-account { max-width: 120px; }
+}
 
 /* ---------- تسجيل الدخول ---------- */
 .login-box { max-width: 400px; margin: 48px auto 0; padding: 24px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); }
@@ -432,3 +448,25 @@ th.align-end, td.align-end { text-align: end; }
   .print-a5 .print-doc { page: voucher-a5; }
   .print-signatures { break-inside: avoid; }
 }
+
+/* ---------- القائمة الرئيسية في مجموعات (سطح المكتب): details/summary بدون JavaScript ---------- */
+.main-nav { align-items: center; }
+.nav-group { position: relative; }
+.nav-group > summary {
+  display: flex; align-items: center; gap: 4px; min-height: 36px; padding: 0 12px;
+  border-radius: var(--radius); color: var(--text-2); font-weight: 600; cursor: pointer; list-style: none;
+}
+.nav-group > summary::-webkit-details-marker { display: none; }
+.nav-group > summary::marker { content: ""; }
+.nav-group > summary::after {
+  content: ""; width: 0; height: 0; margin-inline-start: 4px;
+  border-inline-start: 4px solid transparent; border-inline-end: 4px solid transparent; border-top: 5px solid currentColor;
+}
+.nav-group > summary:hover, .nav-group[open] > summary { background: var(--surface-2); color: var(--text); }
+.nav-group.is-current > summary { color: var(--primary); }
+.nav-group-links {
+  position: absolute; inset-inline-start: 0; top: calc(100% + 4px); z-index: 20; min-width: 220px;
+  display: grid; gap: 4px; padding: 8px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+}
+.main-nav .nav-group-links a { display: flex; align-items: center; min-height: 36px; white-space: nowrap; }
+.nav-menu-group { grid-column: 1 / -1; margin: 8px 0 0; font-size: var(--fs-14); color: var(--muted); font-weight: 700; }

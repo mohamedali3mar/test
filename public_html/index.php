@@ -48,6 +48,9 @@ const ROUTES = [
     'pay'                => ['file' => 'voucher_form',       'public' => false, 'voucher' => 'pay'],
     'expense'            => ['file' => 'voucher_form',       'public' => false, 'voucher' => 'expense'],
     'cash_transfer'      => ['file' => 'voucher_form',       'public' => false, 'voucher' => 'cash_transfer'],
+    'account'    => ['file' => 'account',    'public' => false],
+    'users'      => ['file' => 'users',      'public' => false],
+    'monitor'    => ['file' => 'monitor',    'public' => false],
 ];
 
 $route = input($_GET, 'r');
@@ -64,6 +67,8 @@ start_secure_session(!is_live_request());
 
 if (!ROUTES[$route]['public']) {
     require_login();
+    // صلاحية الصفحة حسب الدور (ROUTE_PERMISSIONS في lib/users.php). الصفحة غير المسجلة هناك للمدير فقط.
+    require_permission(route_permission($route));
 }
 
 $catalogKind = ROUTES[$route]['catalog'] ?? null;

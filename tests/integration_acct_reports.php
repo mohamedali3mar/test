@@ -383,7 +383,7 @@ check_eq('بداية الشهر', '2026-09-01', $dash['month_start']);
 
 /* ---------------- الصفحات ---------------- */
 section('عرض الصفحات');
-$_SESSION = ['user_id' => $uid, 'username' => 'admin', 'auth_version' => 1];
+$_SESSION = ['user_id' => $uid, 'username' => 'admin', 'auth_version' => 1, 'role' => 'admin'];
 function render_page(string $page, array $get): array
 {
     $warnings = [];

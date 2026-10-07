@@ -356,7 +356,7 @@ check('لا استثناء من auth_event أو الدخول أو تغيير ك�
 check('الدخول الخاطئ برسالته المعتادة', $failMsg === 'اسم المستخدم أو كلمة المرور غير صحيحة.', (string) $failMsg);
 check('الحظر يعمل', str_contains((string) end($lockMsgs), 'محاولات دخول كثيرة'));
 check('الدخول الصحيح يعمل', $okMsg === null && current_user_id() === $uid, (string) $okMsg);
-check_eq('رقم الإصدار لا يتغير عند فشل التسجيل', $vBefore, data_version($pdo));
+check_eq('فشل تسجيل الحدث لا يرفع الإصدار (الزيادة الوحيدة من تغيير كلمة المرور المسجل في المراقبة)', (string) ((int) $vBefore + 1), data_version($pdo));
 $log = error_log_since($logBefore);
 check('الفشل يُكتب في سجل الأخطاء', str_contains($log, 'auth_event(login_ok)') && str_contains($log, "doesn't exist"));
 check('سجل الأخطاء لا يحتوي كلمات المرور', !str_contains($log, 'Third-Horse') && !str_contains($log, 'wrong-password'));

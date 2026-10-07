@@ -53,7 +53,9 @@ def sql(q):
 
 
 def db_checksum():
-    return sql("CHECKSUM TABLE users, settings, counters, wood_types, warehouses, items, stock, documents, document_lines")
+    # users.last_seen_at يتغير مع أي طلب (مرة كل دقيقة على الأكثر) فلا يدخل في المقارنة
+    users = sql("SELECT MD5(GROUP_CONCAT(CONCAT_WS('|', id, username, password_hash, auth_version, role, is_active, display_name) ORDER BY id)) FROM users")
+    return users + sql("CHECKSUM TABLE settings, counters, wood_types, warehouses, items, stock, documents, document_lines, audit_log")
 
 
 class NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -227,7 +229,8 @@ ADMIN = (ADMIN[0], 'New-Password-77')
 # ------------------------------------------------------------------
 section('الوصول بدون تسجيل دخول')
 anon = Client()
-for route in ['inventory', 'receive', 'sell', 'transfer', 'documents', 'document&id=1', 'print&id=1', 'types', 'warehouses', 'settings']:
+for route in ['inventory', 'receive', 'sell', 'transfer', 'documents', 'document&id=1', 'print&id=1', 'types', 'warehouses', 'settings',
+              'account', 'users', 'monitor']:
     s, h, _ = anon.get('index.php?r=' + route)
     check(f'GET {route} يحوّل إلى الدخول', s == 303 and 'r=login' in (h.get('Location') or ''), s)
 s, _, _ = anon.post('index.php?r=receive', {'csrf': 'x'})
@@ -468,9 +471,9 @@ check('الإلغاء الثاني لا يغير الرصيد', sql(f"SELECT qty
 section('تغيير كلمة المرور ينهي الجلسات الأخرى')
 s, _, _ = b.get('index.php?r=inventory')
 check('الجلسة الثانية تعمل قبل التغيير', s == 200, s)
-_, html = a.csrf('index.php?r=settings')
-s, h, _ = a.post('index.php?r=settings', {'csrf': token, 'action': 'password', 'current_password': ADMIN[1], 'new_password': 'Changed-Pass-55',
-                                          'confirm_password': 'Changed-Pass-55'})
+_, html = a.csrf('index.php?r=account')
+s, h, _ = a.post('index.php?r=account', {'csrf': token, 'action': 'password', 'current_password': ADMIN[1], 'new_password': 'Changed-Pass-55',
+                                         'confirm_password': 'Changed-Pass-55'})
 check('تغيير كلمة المرور نجح', s == 303, s)
 s, h, _ = b.get('index.php?r=inventory')
 check('الجلسة الأخرى انتهت وتحوّل للدخول', s == 303 and 'r=login' in h.get('Location', ''), s)
@@ -549,12 +552,12 @@ m = Client()
 m.login(*ADMIN)
 other = Client()
 other.login(*ADMIN)
-token, html = m.csrf('index.php?r=settings')
+token, html = m.csrf('index.php?r=account')
 check('قسم «التحقق بخطوتين» في الإعدادات مع زر البدء', 'التحقق بخطوتين' in html and 'value="tfa_start"' in html)
 check('  بدون سكربت QR قبل بدء التفعيل', 'twofactor.js' not in html and 'qrcode.js' not in html)
-s, h, _ = m.post('index.php?r=settings', {'csrf': token, 'action': 'tfa_start'})
+s, h, _ = m.post('index.php?r=account', {'csrf': token, 'action': 'tfa_start'})
 check('بدء التفعيل يعيد التوجيه إلى القسم', s == 303 and h.get('Location', '').endswith('#two-factor'), (s, h.get('Location')))
-s, _, html = m.get('index.php?r=settings')
+s, _, html = m.get('index.php?r=account')
 mm = re.search(r'<textarea id="tfa_secret"[^>]*>([A-Z2-7 ]+)</textarea>', html)
 secret = mm.group(1).replace(' ', '') if mm else ''
 mu = re.search(r'data-otpauth="([^"]+)"', html)
@@ -566,16 +569,16 @@ check('رابط otpauth: الجهة اسم الشركة والحساب اسم ا
 check('مكتبة QR و twofactor.js تُحمّلان في هذه الحالة', 'src="assets/js/vendor/qrcode.js?v=' in html and 'src="index.php?r=asset&amp;f=twofactor.js&amp;v=' in html)
 check('  بدون سكربت مضمّن', re.search(r'<script(?![^>]*\bsrc=)(?![^>]*application/json)[^>]*>', html) is None)
 check('السر لا يُحفظ في قاعدة البيانات قبل التأكيد', tfa_state() == '0:-', tfa_state())
-s, _, html = m.post('index.php?r=settings', {'csrf': token, 'action': 'tfa_confirm', 'tfa_code': wrong_code(secret)})
+s, _, html = m.post('index.php?r=account', {'csrf': token, 'action': 'tfa_confirm', 'tfa_code': wrong_code(secret)})
 check('رمز خاطئ عند التأكيد مرفوض', s == 200 and 'الرمز غير صحيح' in html and 'aria-invalid="true"' in html and tfa_state() == '0:-', s)
 version_before = sql(f"SELECT auth_version FROM users WHERE username = '{ADMIN[0]}'")
 enable_step = totp_step()
-s, h, _ = m.post('index.php?r=settings', {'csrf': token, 'action': 'tfa_confirm', 'tfa_code': totp(secret, enable_step)})
+s, h, _ = m.post('index.php?r=account', {'csrf': token, 'action': 'tfa_confirm', 'tfa_code': totp(secret, enable_step)})
 check('الرمز الصحيح يفعّل التحقق ويحفظ السر', s == 303 and tfa_state() == '1:' + secret, (s, tfa_state()))
 check('  رقم إصدار الدخول ارتفع', int(sql(f"SELECT auth_version FROM users WHERE username = '{ADMIN[0]}'")) == int(version_before) + 1)
 check('  الجلسة الأخرى انتهت', other.get('index.php?r=inventory')[0] == 303)
 check('  الجلسة الحالية مستمرة', m.get('index.php?r=inventory')[0] == 200)
-token, html = m.csrf('index.php?r=settings')
+token, html = m.csrf('index.php?r=account')
 check('  الحالة «مفعل» مع نموذج الإيقاف', 'value="tfa_disable"' in html and 'مفعل' in html and 'tfa_secret' not in html)
 m.post('index.php?r=logout', {'csrf': token})
 
@@ -631,10 +634,10 @@ check('  حتى الرمز الصحيح محظور أثناء الحظر', 'مح
 sql("DELETE FROM login_attempts")
 
 section('التحقق بخطوتين: الإيقاف يتطلب كلمة المرور والرمز')
-token, html = n.csrf('index.php?r=settings')
-s, _, html = n.post('index.php?r=settings', {'csrf': token, 'action': 'tfa_disable', 'tfa_password': 'Wrong-Pass-000', 'tfa_code': fresh_code(secret)})
+token, html = n.csrf('index.php?r=account')
+s, _, html = n.post('index.php?r=account', {'csrf': token, 'action': 'tfa_disable', 'tfa_password': 'Wrong-Pass-000', 'tfa_code': fresh_code(secret)})
 check('كلمة مرور خاطئة: الإيقاف مرفوض', s == 200 and 'كلمة المرور الحالية غير صحيحة' in html and tfa_state() == '1:' + secret, s)
-s, _, html = n.post('index.php?r=settings', {'csrf': token, 'action': 'tfa_disable', 'tfa_password': ADMIN[1], 'tfa_code': wrong_code(secret)})
+s, _, html = n.post('index.php?r=account', {'csrf': token, 'action': 'tfa_disable', 'tfa_password': ADMIN[1], 'tfa_code': wrong_code(secret)})
 check('رمز خاطئ: الإيقاف مرفوض', s == 200 and 'رمز التحقق غير صحيح' in html and tfa_state() == '1:' + secret, s)
 sql("DELETE FROM login_attempts")
 other = Client()
@@ -642,7 +645,7 @@ other.login(*ADMIN)
 to, _ = other.csrf('index.php?r=login')
 other.post('index.php?r=login', {'csrf': to, 'step': 'code', 'code': fresh_code(secret)})
 check('جلسة ثانية بالتحقق بخطوتين', other.get('index.php?r=inventory')[0] == 200)
-s, h, _ = n.post('index.php?r=settings', {'csrf': token, 'action': 'tfa_disable', 'tfa_password': ADMIN[1], 'tfa_code': fresh_code(secret)})
+s, h, _ = n.post('index.php?r=account', {'csrf': token, 'action': 'tfa_disable', 'tfa_password': ADMIN[1], 'tfa_code': fresh_code(secret)})
 check('كلمة المرور والرمز صحيحان: تم الإيقاف ومُسح السر', s == 303 and tfa_state() == '0:-', (s, tfa_state()))
 check('  الجلسة الأخرى انتهت', other.get('index.php?r=inventory')[0] == 303)
 check('  الجلسة الحالية مستمرة', n.get('index.php?r=inventory')[0] == 200)

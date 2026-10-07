@@ -10,8 +10,10 @@ $noun = catalog_def($kind)['noun'];
 $pdo = db();
 $errors = [];
 $newName = '';
+$manage = can('catalog.manage'); // الموظف يرى القائمة فقط
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    require_permission('catalog.manage');
     verify_csrf();
     $action = input($_POST, 'action');
     try {
@@ -60,8 +62,8 @@ if ($kind === 'warehouse') {
          GROUP BY t.id, t.name ORDER BY t.name, t.id'
     )->fetchAll();
 }
-$editId = (int) input($_GET, 'edit');
-$deleteId = (int) input($_GET, 'delete');
+$editId = $manage ? (int) input($_GET, 'edit') : 0;
+$deleteId = $manage ? (int) input($_GET, 'delete') : 0;
 $deleteRow = null;
 foreach ($rows as $r) {
     if ((int) $r['id'] === $deleteId && (int) $r['used'] === 0) {
@@ -91,6 +93,9 @@ render_header($title, $route);
   </section>
 <?php endif; ?>
 
+<?php if (!$manage): ?>
+  <p class="muted">إضافة <?= h($kind === 'warehouse' ? 'المخازن' : 'الأنواع') ?> وتعديلها وحذفها من صلاحية المدير.</p>
+<?php else: ?>
 <section class="section">
   <h2>إضافة <?= h($kind === 'warehouse' ? 'مخزن' : 'نوع') ?></h2>
   <form method="post" action="<?= h(url($route)) ?>" class="form-inline">
@@ -103,11 +108,12 @@ render_header($title, $route);
     <button type="submit" class="btn btn-primary">إضافة</button>
   </form>
 </section>
+<?php endif; ?>
 
 <section class="section" id="live-catalog" data-live aria-labelledby="list-title">
   <h2 id="list-title"><?= h($kind === 'warehouse' ? 'المخازن المسجلة' : 'الأنواع المسجلة') ?></h2>
   <?php if (!$rows): ?>
-    <p class="empty">لا توجد بيانات بعد. أضف أول <?= h($kind === 'warehouse' ? 'مخزن' : 'نوع') ?> من النموذج أعلاه.</p>
+    <p class="empty">لا توجد بيانات بعد.<?= $manage ? ' أضف أول ' . h($kind === 'warehouse' ? 'مخزن' : 'نوع') . ' من النموذج أعلاه.' : '' ?></p>
   <?php else: ?>
   <div class="table-wrap table-stack">
     <table>
@@ -145,8 +151,8 @@ render_header($title, $route);
           <td class="cell-actions">
             <div class="row-actions">
               <a href="<?= h(url('inventory', [$kind === 'warehouse' ? 'warehouse' : 'type' => $rid])) ?>">الأرصدة</a>
-              <?php if ($editId !== $rid): ?><a href="<?= h(url($route, ['edit' => $rid])) ?>">تعديل الاسم</a><?php endif; ?>
-              <?php if ((int) $r['used'] === 0): ?><a class="danger-link" href="<?= h(url($route, ['delete' => $rid])) ?>">حذف</a><?php endif; ?>
+              <?php if ($manage && $editId !== $rid): ?><a href="<?= h(url($route, ['edit' => $rid])) ?>">تعديل الاسم</a><?php endif; ?>
+              <?php if ($manage && (int) $r['used'] === 0): ?><a class="danger-link" href="<?= h(url($route, ['delete' => $rid])) ?>">حذف</a><?php endif; ?>
             </div>
           </td>
         </tr>
@@ -154,12 +160,14 @@ render_header($title, $route);
       </tbody>
     </table>
   </div>
+  <?php if ($manage): ?>
   <p class="muted">
     <?= $kind === 'warehouse'
         ? 'يمكن حذف المخزن فقط إذا لم تُسجل عليه أي حركة، ويجب أن يبقى مخزن واحد على الأقل.'
         : 'يمكن حذف النوع فقط إذا لم يُسجل له أي وارد.' ?>
     تعديل الاسم لا يغير الأسماء في المستندات السابقة.
   </p>
+  <?php endif; ?>
   <?php endif; ?>
 </section>
 <?php
