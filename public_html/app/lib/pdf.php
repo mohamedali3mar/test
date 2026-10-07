@@ -190,6 +190,8 @@ p { margin: 0; }
 .run-foot td { padding: 1.5mm 0 0 0; font-size: 9pt; color: {$c['muted']}; }
 .run-foot .end { text-align: left; }
 h1 { font-size: 18pt; font-weight: bold; margin: 0 0 1mm 0; color: {$c['text']}; }
+.branch { font-size: 10.5pt; font-weight: bold; color: {$c['text2']}; margin: 0 0 0.5mm 0; }
+.branch-contact { font-size: 9pt; color: {$c['text2']}; margin: 0 0 2mm 0; }
 .subtitle { font-size: 10.5pt; color: {$c['text2']}; margin: 0 0 1mm 0; }
 .generated { font-size: 9pt; color: {$c['muted']}; margin: 0 0 4mm 0; }
 .cancelled { border: 0.75pt solid {$c['error']}; background-color: {$c['error_bg']}; color: {$c['error']};
@@ -290,7 +292,7 @@ function pdf_document(array $doc, array $lines): string
     $isSale = $kind === 'sale';
     $cancelled = ($doc['status'] ?? 'active') === 'cancelled';
     $title = doc_print_title($kind);
-    $fullTitle = $title . ' رقم ' . fmt_int((int) $doc['doc_no']);
+    $fullTitle = $title . ' رقم ' . fmt_doc_no((int) $doc['doc_no']);
     $rounded = (bool) array_filter($lines, fn ($l) => volume_display_rounded((string) $l['total_volume_m3']));
 
     $mpdf = pdf_engine();
@@ -301,7 +303,23 @@ function pdf_document(array $doc, array $lines): string
         $mpdf->showWatermarkText = true;
     }
 
-    $html = '<h1>' . h($title) . '</h1>';
+    // الفرع كما سُجل مع المستند، والعنوان والهاتف الحاليان للفرع (مثل صفحة الطباعة)
+    $html = '';
+    if (($doc['branch_name'] ?? null) !== null && $doc['branch_name'] !== '') {
+        $html .= '<p class="branch">فرع: ' . pdf_bdi((string) $doc['branch_name']) . '</p>';
+        $branch = ($doc['branch_id'] ?? null) !== null && function_exists('branch_find') ? branch_find(db(), (int) $doc['branch_id']) : null;
+        $contact = [];
+        if ($branch && (string) $branch['address'] !== '') {
+            $contact[] = 'العنوان: ' . pdf_bdi((string) $branch['address']);
+        }
+        if ($branch && (string) $branch['phone'] !== '') {
+            $contact[] = 'الهاتف: <bdo dir="ltr">' . h(fmt_phone((string) $branch['phone'])) . '</bdo>';
+        }
+        if ($contact) {
+            $html .= '<p class="branch-contact">' . implode('&nbsp;&nbsp;&nbsp;', $contact) . '</p>';
+        }
+    }
+    $html .= '<h1>' . h($title) . '</h1>';
     if ($cancelled) {
         $html .= '<div class="cancelled">ملغاة بتاريخ ' . h(fmt_datetime($doc['cancelled_at'] ?? null));
         if (($doc['cancel_reason'] ?? null) !== null && $doc['cancel_reason'] !== '') {
@@ -311,18 +329,27 @@ function pdf_document(array $doc, array $lines): string
     }
 
     // بيانات المستند في عمودين: [العنوان، HTML القيمة]
+    // تاريخ المستند (اليدوي إن حدده المدير)، وليس وقت التسجيل
     $meta = [
-        ['رقم ' . ($isSale ? 'الفاتورة' : 'الإذن'), h(fmt_int((int) $doc['doc_no']))],
-        ['التاريخ', h(fmt_datetime($doc['created_at']))],
+        ['رقم ' . ($isSale ? 'الفاتورة' : 'الإذن'), h(fmt_doc_no((int) $doc['doc_no']))],
+        ['التاريخ', h(fmt_datetime($doc['doc_date'] ?? $doc['created_at']))],
     ];
     if ($kind === 'transfer') {
         $meta[] = ['من مخزن', pdf_bdi((string) $doc['warehouse_name'])];
         $meta[] = ['إلى مخزن', pdf_bdi((string) $doc['to_warehouse_name'])];
+        $toBranch = $doc['to_branch_id'] ?? null;
+        if ($toBranch !== null && (int) $toBranch !== (int) ($doc['branch_id'] ?? 0) && ($doc['to_branch_name'] ?? null) !== null) {
+            $meta[] = ['إلى فرع', pdf_bdi((string) $doc['to_branch_name'])];
+        }
     } else {
         $meta[] = ['المخزن', pdf_bdi((string) $doc['warehouse_name'])];
     }
     if (($doc['party_name'] ?? null) !== null) {
         $meta[] = [$isSale ? 'العميل' : 'المورد', pdf_bdi((string) $doc['party_name'])];
+    }
+    // طريقة الدفع فقط؛ لا تُطبع التكلفة أو الربح أبدًا
+    if ($isSale && ($doc['payment_type'] ?? null) !== null) {
+        $meta[] = ['طريقة الدفع', h(PAYMENT_TYPE_LABELS[$doc['payment_type']] ?? (string) $doc['payment_type'])];
     }
     if (($doc['reference'] ?? null) !== null) {
         $meta[] = ['المرجع', pdf_bdi((string) $doc['reference'])];
@@ -377,10 +404,16 @@ function pdf_document(array $doc, array $lines): string
     $html .= '</tr></tbody></table>';
 
     if ($isSale) {
+        $paid = '';
+        if (($doc['payment_type'] ?? null) !== null) {
+            $paidP = money_to_piasters((string) $doc['paid_amount']);
+            $paid = '<br><span class="grand-label">المدفوع: ' . h(fmt_piasters($paidP))
+                . '، المتبقي: ' . h(fmt_piasters(money_to_piasters((string) $doc['total_amount']) - $paidP)) . '</span>';
+        }
         $html .= '<table class="grand"><tr><td class="grand-space" width="55%"></td><td class="grand-box">'
             . '<span class="grand-label">إجمالي القيمة</span><br>'
             . '<span class="grand-amount">' . h(fmt_money_currency((string) $doc['total_amount'], $currency)) . '</span>'
-            . '</td></tr></table>';
+            . $paid . '</td></tr></table>';
     }
     if ($rounded) {
         $html .= '<p class="note">' . ($isSale
@@ -417,7 +450,8 @@ function pdf_report_value(string $type, mixed $raw): string
         return preg_match('/^\d{4}-\d{2}-\d{2}\z/', $s) ? digits($s) : fmt_datetime($s);
     }
     if (!in_array($type, ['int', 'volume', 'money'], true)) {
-        return $s;
+        // نص من أرقام فقط (مثل الفترة 2026-01) بشكل الأرقام في الإعدادات، كما في صفحات التقارير
+        return preg_match('/^[\d\-]+\z/', $s) ? digits($s) : $s;
     }
     // دوال fmt_* تقبل القيم الموجبة فقط؛ الإشارة السالبة تُضاف بعد التنسيق
     if (!preg_match('/^(-?)(\d+(?:\.\d+)?)\z/', $s, $m)) {

@@ -20,6 +20,7 @@ render_header(doc_print_title($kind) . ' ' . fmt_doc_no((int) $d['doc_no']), 'do
 ?>
 <div class="print-toolbar no-print">
   <button type="button" class="btn btn-primary" data-action="print">طباعة</button>
+  <a class="btn" href="<?= h(url('pdf', ['id' => $id])) ?>">تحميل PDF</a>
   <a class="btn" href="<?= h(url('document', ['id' => $id])) ?>">تفاصيل المستند</a>
   <?php if ($kind === 'sale'): ?><a class="btn btn-quiet" href="<?= h(url('sell')) ?>">فاتورة جديدة</a><?php endif; ?>
 </div>

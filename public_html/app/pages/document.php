@@ -45,6 +45,7 @@ render_header(doc_label($d), 'documents');
   <h1><?= h(doc_label($d)) ?></h1>
   <div class="page-actions">
     <a class="btn" href="<?= h(url('print', ['id' => $id])) ?>">طباعة</a>
+    <a class="btn" href="<?= h(url('pdf', ['id' => $id])) ?>">تحميل PDF</a>
     <a class="btn btn-quiet" href="<?= h(url('documents')) ?>">السجل</a>
   </div>
 </div>

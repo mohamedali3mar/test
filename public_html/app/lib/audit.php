@@ -20,6 +20,8 @@ const AUDIT_GROUPS = [
     'master'    => 'البيانات الأساسية',
     'settings'  => 'الإعدادات',
     'users'     => 'المستخدمون',
+    'accounts'  => 'الحسابات',
+    'export'    => 'التصدير',
 ];
 
 /** العملية => [الاسم المعروض، المجموعة] */
@@ -28,12 +30,17 @@ const AUDIT_ACTIONS = [
     'doc.sale'            => ['فاتورة بيع', 'documents'],
     'doc.transfer'        => ['تحويل', 'documents'],
     'doc.cancel'          => ['إلغاء مستند', 'cancel'],
+    'voucher.cancel'      => ['إلغاء سند', 'cancel'],
     'type.create'         => ['إضافة نوع خشب', 'master'],
     'type.rename'         => ['تعديل اسم نوع', 'master'],
     'type.delete'         => ['حذف نوع خشب', 'master'],
     'warehouse.create'    => ['إضافة مخزن', 'master'],
     'warehouse.rename'    => ['تعديل اسم مخزن', 'master'],
     'warehouse.delete'    => ['حذف مخزن', 'master'],
+    'warehouse.move'      => ['نقل مخزن إلى فرع', 'master'],
+    'branch.create'       => ['إضافة فرع', 'master'],
+    'branch.update'       => ['تعديل فرع', 'master'],
+    'branch.delete'       => ['حذف فرع', 'master'],
     'settings.update'     => ['تعديل الإعدادات', 'settings'],
     'db.migrate'          => ['تحديث قاعدة البيانات', 'settings'],
     'account.password'    => ['تغيير كلمة المرور', 'users'],
@@ -43,6 +50,23 @@ const AUDIT_ACTIONS = [
     'user.disable'        => ['تعطيل مستخدم', 'users'],
     'user.enable'         => ['تفعيل مستخدم', 'users'],
     'user.password_reset' => ['تعيين كلمة مرور', 'users'],
+    'user.branch'         => ['تحديد فرع المستخدم', 'users'],
+    'voucher.create'      => ['سند', 'accounts'],
+    'party.create'        => ['إضافة عميل أو مورد', 'accounts'],
+    'party.update'        => ['تعديل عميل أو مورد', 'accounts'],
+    'party.activate'      => ['تفعيل عميل أو مورد', 'accounts'],
+    'party.deactivate'    => ['إيقاف عميل أو مورد', 'accounts'],
+    'party.delete'        => ['حذف عميل أو مورد', 'accounts'],
+    'cash_box.create'     => ['إضافة خزنة', 'accounts'],
+    'cash_box.rename'     => ['تعديل اسم خزنة', 'accounts'],
+    'cash_box.activate'   => ['تفعيل خزنة', 'accounts'],
+    'cash_box.deactivate' => ['إيقاف خزنة', 'accounts'],
+    'expense_category.create'     => ['إضافة تصنيف مصروفات', 'accounts'],
+    'expense_category.rename'     => ['تعديل تصنيف مصروفات', 'accounts'],
+    'expense_category.activate'   => ['تفعيل تصنيف مصروفات', 'accounts'],
+    'expense_category.deactivate' => ['إيقاف تصنيف مصروفات', 'accounts'],
+    'opening_valuation'   => ['تقييم افتتاحي للمخزون', 'accounts'],
+    'data.export'         => ['تصدير بيانات', 'export'],
 ];
 
 /** الإعدادات التي تُسجل تغييراتها، بأسمائها المعروضة. أي مفتاح غيرها (مثل dummy_hash) لا يُسجل أبدًا */
@@ -55,6 +79,7 @@ const AUDIT_SETTING_LABELS = [
     'digits'          => 'شكل الأرقام',
     'volume_decimals' => 'دقة عرض الحجم',
     'volume_pad'      => 'إظهار الأصفار في الحجم',
+    'closing_date'    => 'تاريخ الإقفال',
 ];
 
 /** أحداث جدول auth_events (سجل الدخول) بنفس أسمائها في قسم الإعدادات */
@@ -274,6 +299,7 @@ function audit_setting_display(string $key, string $value): string
         'unit_width', 'unit_thickness', 'unit_length' => is_unit($value) ? unit_label($value) : $value,
         'volume_decimals' => $value === 'full' ? 'الدقة الكاملة' : digits($value) . ' خانات',
         'volume_pad' => $value === '1' ? 'نعم' : 'لا',
+        'closing_date' => $value === '' ? 'بدون' : digits($value),
         default => $value,
     };
 }
