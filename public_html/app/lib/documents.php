@@ -7,12 +7,14 @@ defined('APP_ROOT') || exit;
  * قواعد ثابتة في كل العمليات:
  *  - كل عملية معاملة واحدة: الرصيد والمستند وأسطره والترقيم إما تُحفظ معًا أو لا يُحفظ شيء.
  *  - ترتيب الأقفال واحد دائمًا لمنع الجمود (الترتيب الكامل في رأس accounting.php):
- *      (الإلغاء فقط) صف المستند ← صف العميل أو المورد ← صفوف الخزائن تصاعديًا
+ *      (الإلغاء فقط) صف المستند ← (الوارد والبيع والتحويل) صفوف warehouses ثم branches بقفل مشترك
+ *      مرتبة تصاعديًا (lock_doc_warehouses) ← صف العميل أو المورد ← صفوف الخزائن تصاعديًا
  *      ← صفوف items مرتبة تصاعديًا (FOR UPDATE في الوارد والبيع وإلغائهما لأن قيمة المخزون تتغير،
  *        ومشترك LOCK IN SHARE MODE في التحويل وإلغائه) ثم قراءة Q المقفلة من stock
  *      ← صفوف stock مرتبة تصاعديًا (item_id, warehouse_id) ← صف عداد الترقيم ← إدراج المستند وأسطره
  *      ← قيود الدفاتر ← سجل المراقبة ← رفع data_version آخر شيء.
  *  - تكلفة المخزون بالمتوسط المرجح في costing.php، والمبالغ بالقروش (int) كما في accounting.php.
+ *  - اسم المخزن واسم فرعه في المستند، وفحص نطاق فرع المستخدم، من صفوف المخازن والفروع المقفلة.
  *  - لا قراءات غير مقفلة داخل المعاملات (تُقرأ البيانات الثابتة قبلها)، توافقًا مع MariaDB 11.6+.
  *  - الرصيد الملزم يُقرأ بعد القفل (SELECT ... FOR UPDATE)، وليس من القيمة المعروضة في الواجهة.
  *  - رمز الطلب request_token فريد، ومعه بصمة المحتوى request_hash، فإعادة الإرسال لا تكرر العملية.
@@ -176,6 +178,7 @@ function set_stock(PDO $pdo, int $itemId, int $warehouseId, int $qty, string $no
 function insert_document(PDO $pdo, array $d): int
 {
     $cols = ['kind', 'doc_no', 'warehouse_id', 'warehouse_name', 'to_warehouse_id', 'to_warehouse_name',
+        'branch_id', 'branch_name', 'to_branch_id', 'to_branch_name',
         'party_name', 'reference', 'notes', 'line_count', 'total_qty', 'total_volume_m3', 'total_amount',
         'currency', 'request_token', 'request_hash', 'created_at', 'created_by',
         // الحسابات (المرحلة الثانية): التاريخ المحاسبي افتراضيًا هو وقت الإنشاء
@@ -395,6 +398,8 @@ function validate_receipt(PDO $pdo, array $in): array
     $wh = catalog_find($pdo, 'warehouse', (int) ($in['warehouse_id'] ?? 0));
     if (!$wh) {
         $errors['warehouse_id'] = 'اختر المخزن.';
+    } elseif ($scopeError = warehouse_scope_error($pdo, (int) $wh['id'])) {
+        $errors['warehouse_id'] = $scopeError;
     }
     $type = catalog_find($pdo, 'type', (int) ($in['wood_type_id'] ?? 0));
     if (!$type) {
@@ -477,12 +482,17 @@ function record_receipt(PDO $pdo, int $userId, array $in): array
     if ($dup = existing_request($pdo, $v['request_token'], 'in', $v['hash'])) {
         return $dup;
     }
+    $scope = allowed_branch_id($pdo);
     try {
-        return db_transaction($pdo, function (PDO $pdo) use ($v, $userId) {
+        return db_transaction($pdo, function (PDO $pdo) use ($v, $userId, $scope) {
             $now = now();
             $d = $v['dims'];
             $wid = (int) $v['warehouse']['id'];
             $identity = [(int) $v['type']['id'], $d['width']['um'], $d['thickness']['um'], $d['length']['um']];
+            $wh = lock_doc_warehouses($pdo, [$wid])[$wid];
+            if (!branch_in_scope($scope, $wh['branch_id'])) {
+                throw new ValidationException(['warehouse_id' => BRANCH_NO_ACCESS]);
+            }
             $pay = $v['pay'];
             [$supplier, $box] = lock_payment_rows($pdo, $pay, 'supplier');
 
@@ -511,7 +521,8 @@ function record_receipt(PDO $pdo, int $userId, array $in): array
             $docNo = counter_next($pdo, DOC_COUNTERS['in']);
             $docId = insert_document($pdo, [
                 'kind' => 'in', 'doc_no' => $docNo,
-                'warehouse_id' => $wid, 'warehouse_name' => $v['warehouse']['name'],
+                'warehouse_id' => $wid, 'warehouse_name' => $wh['name'],
+                'branch_id' => $wh['branch_id'], 'branch_name' => $wh['branch_name'],
                 'party_name' => $v['party_name'] ?: null, 'reference' => $v['reference'] ?: null, 'notes' => $v['notes'] ?: null,
                 'line_count' => 1, 'total_qty' => $v['quantity'], 'total_volume_m3' => $v['total_m3'],
                 'request_token' => $v['request_token'], 'request_hash' => $v['hash'],
@@ -676,6 +687,8 @@ function validate_sale(PDO $pdo, array $in, bool $checkStock = true): array
     $wh = catalog_find($pdo, 'warehouse', (int) ($in['warehouse_id'] ?? 0));
     if (!$wh) {
         $errors['warehouse_id'] = 'اختر المخزن.';
+    } elseif ($scopeError = warehouse_scope_error($pdo, (int) $wh['id'])) {
+        $errors['warehouse_id'] = $scopeError;
     }
     $lines = validate_lines($pdo, $in['lines'] ?? [], true, $errors);
     $text = clean_text_fields($in, [
@@ -740,8 +753,13 @@ function record_sale(PDO $pdo, int $userId, array $in): array
     }
     // تُقرأ قبل المعاملة حتى لا تُفتح قراءة غير مقفلة داخلها (توافق MariaDB 11.6+)
     $currency = app_setting('currency');
+    $scope = allowed_branch_id($pdo);
     try {
-        return db_transaction($pdo, function (PDO $pdo) use ($v, $wid, $userId, $itemIds, $currency) {
+        return db_transaction($pdo, function (PDO $pdo) use ($v, $wid, $userId, $itemIds, $currency, $scope) {
+            $wh = lock_doc_warehouses($pdo, [$wid])[$wid];
+            if (!branch_in_scope($scope, $wh['branch_id'])) {
+                throw new ValidationException(['warehouse_id' => BRANCH_NO_ACCESS]);
+            }
             $pay = $v['pay'];
             [$customer, $box] = lock_payment_rows($pdo, $pay, 'customer');
             if ($customer && ($err = credit_limit_error($customer, money_to_piasters((string) $customer['balance']), $pay['remaining']))) {
@@ -772,7 +790,8 @@ function record_sale(PDO $pdo, int $userId, array $in): array
             $docNo = counter_next($pdo, DOC_COUNTERS['sale']);
             $docId = insert_document($pdo, [
                 'kind' => 'sale', 'doc_no' => $docNo,
-                'warehouse_id' => $wid, 'warehouse_name' => $v['warehouse']['name'],
+                'warehouse_id' => $wid, 'warehouse_name' => $wh['name'],
+                'branch_id' => $wh['branch_id'], 'branch_name' => $wh['branch_name'],
                 'party_name' => $v['party_name'] ?: null, 'notes' => $v['notes'] ?: null,
                 'line_count' => count($v['lines']), 'total_qty' => $v['total_qty'], 'total_volume_m3' => $v['total_m3'],
                 'total_amount' => $v['total_amount'], 'currency' => $currency,
@@ -831,6 +850,9 @@ function validate_transfer(PDO $pdo, array $in, bool $checkStock = true): array
     $from = catalog_find($pdo, 'warehouse', (int) ($in['warehouse_id'] ?? 0));
     if (!$from) {
         $errors['warehouse_id'] = 'اختر المخزن المحوَّل منه.';
+    } elseif ($scopeError = warehouse_scope_error($pdo, (int) $from['id'])) {
+        // المصدر من فرع المستخدم فقط، والمستلم أي مخزن (التحويل بين الفروع مسموح)
+        $errors['warehouse_id'] = $scopeError;
     }
     $to = catalog_find($pdo, 'warehouse', (int) ($in['to_warehouse_id'] ?? 0));
     if (!$to) {
@@ -878,8 +900,13 @@ function record_transfer(PDO $pdo, int $userId, array $in): array
     if ($stockErrors = stock_errors($v['lines'], current_stock($pdo, $itemIds, $fromId))) {
         throw new ValidationException($stockErrors);
     }
+    $scope = allowed_branch_id($pdo);
     try {
-        return db_transaction($pdo, function (PDO $pdo) use ($v, $fromId, $toId, $userId, $itemIds) {
+        return db_transaction($pdo, function (PDO $pdo) use ($v, $fromId, $toId, $userId, $itemIds, $scope) {
+            $whs = lock_doc_warehouses($pdo, [$fromId, $toId]);
+            if (!branch_in_scope($scope, $whs[$fromId]['branch_id'])) {
+                throw new ValidationException(['warehouse_id' => BRANCH_NO_ACCESS]);
+            }
             lock_items_shared($pdo, $itemIds);
             $pairs = [];
             foreach ($v['lines'] as $l) {
@@ -899,8 +926,10 @@ function record_transfer(PDO $pdo, int $userId, array $in): array
             $docNo = counter_next($pdo, DOC_COUNTERS['transfer']);
             $docId = insert_document($pdo, [
                 'kind' => 'transfer', 'doc_no' => $docNo,
-                'warehouse_id' => $fromId, 'warehouse_name' => $v['from']['name'],
-                'to_warehouse_id' => $toId, 'to_warehouse_name' => $v['to']['name'],
+                'warehouse_id' => $fromId, 'warehouse_name' => $whs[$fromId]['name'],
+                'to_warehouse_id' => $toId, 'to_warehouse_name' => $whs[$toId]['name'],
+                'branch_id' => $whs[$fromId]['branch_id'], 'branch_name' => $whs[$fromId]['branch_name'],
+                'to_branch_id' => $whs[$toId]['branch_id'], 'to_branch_name' => $whs[$toId]['branch_name'],
                 'notes' => $v['notes'] ?: null,
                 'line_count' => count($v['lines']), 'total_qty' => $v['total_qty'], 'total_volume_m3' => $v['total_m3'],
                 'request_token' => $v['request_token'], 'request_hash' => $v['hash'],
@@ -957,12 +986,17 @@ function cancel_document(PDO $pdo, int $userId, int $docId, string $reasonRaw): 
     $lines = document_lines($pdo, $docId);
     $sources = ledger_sources_of($pdo, 'document', $docId);
     closing_date();
-    return db_transaction($pdo, function (PDO $pdo) use ($userId, $docId, $reason, $lines, $sources) {
+    $scope = allowed_branch_id($pdo);
+    return db_transaction($pdo, function (PDO $pdo) use ($userId, $docId, $reason, $lines, $sources, $scope) {
         $stmt = $pdo->prepare('SELECT * FROM documents WHERE id = ? FOR UPDATE');
         $stmt->execute([$docId]);
         $doc = $stmt->fetch();
-        if (!$doc) {
+        // مستند فرع آخر يُعامل كأنه غير موجود، والتحويل بين فرعين يلغيه فقط من يملك الطرفين
+        if (!$doc || !document_visible($doc, $scope)) {
             throw new ValidationException(['document' => 'المستند غير موجود.']);
+        }
+        if (!document_cancellable($doc, $scope)) {
+            throw new ValidationException(['document' => 'لا يمكنك إلغاء هذا المستند لأن أحد طرفيه في فرع آخر.']);
         }
         if ($doc['status'] !== 'active') {
             throw new ValidationException(['document' => 'هذا المستند ملغى بالفعل.']);

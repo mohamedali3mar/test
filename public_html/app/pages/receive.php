@@ -49,8 +49,9 @@ if ($posted) {
 }
 
 $types = catalog_all($pdo, 'type');
-$warehouses = catalog_all($pdo, 'warehouse');
-$done = (int) input($_GET, 'done') > 0 ? find_document($pdo, (int) input($_GET, 'done')) : null;
+$scope = allowed_branch_id($pdo);
+$warehouses = scoped_warehouses($pdo, $scope);
+$done = (int) input($_GET, 'done') > 0 ? find_document_scoped($pdo, (int) input($_GET, 'done')) : null;
 if ($done && $done['kind'] !== 'in') {
     $done = null;
 }
@@ -90,7 +91,7 @@ render_header('إضافة وارد', 'receive');
 
 <?php if (!$types || !$warehouses): ?>
   <p class="empty">
-    <?php if (!$warehouses): ?>لا توجد مخازن. <a href="<?= h(url('warehouses')) ?>">أضف مخزنًا أولًا</a>.<?php endif; ?>
+    <?php if (!$warehouses && $scope !== null): ?>لا توجد مخازن في فرعك. اطلب من المدير إضافة مخزن للفرع.<?php elseif (!$warehouses): ?>لا توجد مخازن. <a href="<?= h(url('warehouses')) ?>">أضف مخزنًا أولًا</a>.<?php endif; ?>
     <?php if (!$types): ?>لا توجد أنواع خشب بعد. <a href="<?= h(url('types')) ?>">أضف نوعًا أولًا</a>.<?php endif; ?>
   </p>
 <?php else: ?>
@@ -180,7 +181,7 @@ render_header('إضافة وارد', 'receive');
     <button type="submit" class="btn btn-primary" data-busy-text="جارٍ الحفظ">حفظ الوارد</button>
   </div>
 </form>
-<?= stock_data_script(stock_payload($pdo)) ?>
+<?= stock_data_script(stock_payload($pdo, $scope)) ?>
 <?php endif; ?>
 <?php
 render_footer();

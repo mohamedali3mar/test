@@ -470,3 +470,12 @@ th.align-end, td.align-end { text-align: end; }
 }
 .main-nav .nav-group-links a { display: flex; align-items: center; min-height: 36px; white-space: nowrap; }
 .nav-menu-group { grid-column: 1 / -1; margin: 8px 0 0; font-size: var(--fs-14); color: var(--muted); font-weight: 700; }
+
+/* ---------- الفروع ---------- */
+.panel { background: var(--surface-2); border-radius: var(--radius); padding: 16px; margin-bottom: 24px; }
+.panel h2 { font-size: var(--fs-16); margin-bottom: 8px; }
+.row-child th { padding-inline-start: 32px; font-weight: 400; }
+.print-branch { font-size: var(--fs-16); font-weight: 600; margin: 4px 0 0; }
+.print-branch-contact { display: flex; flex-wrap: wrap; gap: 4px 24px; font-size: var(--fs-14); color: var(--text-2); margin: 4px 0 8px; }
+input.input-ltr { direction: ltr; text-align: right; }
+.actions-nowrap { flex-wrap: nowrap; white-space: nowrap; }

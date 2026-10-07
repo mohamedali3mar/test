@@ -36,6 +36,7 @@ require APP_ROOT . '/lib/db.php';
 require APP_ROOT . '/lib/auth.php';
 require APP_ROOT . '/lib/view.php';
 require APP_ROOT . '/lib/catalog.php';
+require APP_ROOT . '/lib/branches.php';
 require APP_ROOT . '/lib/documents.php';
 require APP_ROOT . '/lib/stock.php';
 require APP_ROOT . '/lib/migrate.php';

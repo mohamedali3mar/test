@@ -8,14 +8,25 @@ $warehouseId = (int) input($_GET, 'warehouse');
 $hideEmpty = input($_GET, 'hide_empty') === '1';
 
 $types = catalog_all($pdo, 'type');
-$warehouses = catalog_all($pdo, 'warehouse');
+// الفرع: المستخدم المقيد بفرع يرى فرعه فقط، وغيره يختار فرعًا أو كل الفروع
+$scope = allowed_branch_id($pdo);
+$branches = catalog_all($pdo, 'branch');
+$branchNames = array_column($branches, 'name', 'id');
+$branchId = $scope ?? (int) input($_GET, 'branch');
+if (!isset($branchNames[$branchId])) {
+    $branchId = $scope ?? 0;
+}
+$branchFilter = $branchId > 0 ? $branchId : null;
+$warehouses = scoped_warehouses($pdo, $branchFilter);
 $whNames = array_column($warehouses, 'name', 'id');
 if ($warehouseId > 0 && !isset($whNames[$warehouseId])) {
     $warehouseId = 0;
 }
-$view = inventory_view($pdo, $q, $typeId, $warehouseId, $hideEmpty);
-$summary = warehouse_summary($pdo);
-$filtered = $q !== '' || $typeId > 0 || $warehouseId > 0 || $hideEmpty;
+$view = inventory_view($pdo, $q, $typeId, $warehouseId, $hideEmpty, $branchFilter);
+$summary = warehouse_summary($pdo, $branchFilter);
+// عند عرض كل الفروع: ملخص لكل فرع مع مخازنه
+$branchRows = $branchFilter === null && count($branches) > 1 ? branch_summary($pdo) : [];
+$filtered = $q !== '' || $typeId > 0 || $warehouseId > 0 || $hideEmpty || ($scope === null && $branchFilter !== null);
 $showSplit = $warehouseId === 0 && count($warehouses) > 1;
 
 render_header('المخزون', 'inventory');
@@ -39,9 +50,15 @@ render_header('المخزون', 'inventory');
     <label for="type">نوع الخشب</label>
     <select id="type" name="type"><?= options_html($types, $typeId ? (string) $typeId : '', 'كل الأنواع') ?></select>
   </div>
+  <?php if ($scope === null && count($branches) > 1): ?>
+  <div class="field">
+    <label for="branch">الفرع</label>
+    <select id="branch" name="branch"><?= options_html($branches, $branchId ? (string) $branchId : '', 'كل الفروع') ?></select>
+  </div>
+  <?php endif; ?>
   <div class="field">
     <label for="warehouse">المخزن</label>
-    <select id="warehouse" name="warehouse"><?= options_html($warehouses, $warehouseId ? (string) $warehouseId : '', 'كل المخازن') ?></select>
+    <select id="warehouse" name="warehouse"><?= warehouse_options($warehouses, $warehouseId ? (string) $warehouseId : '', 'كل المخازن') ?></select>
   </div>
   <div class="field field-check">
     <input type="checkbox" id="hide_empty" name="hide_empty" value="1"<?= $hideEmpty ? ' checked' : '' ?>>
@@ -54,7 +71,54 @@ render_header('المخزون', 'inventory');
 </form>
 
 <div id="live-inventory" data-live>
-<?php if (count($summary) > 1): ?>
+<?php if ($branchRows): $branchTotals = branch_summary_totals($branchRows); ?>
+  <section class="section" aria-labelledby="branch-summary-title">
+    <h2 id="branch-summary-title">ملخص الفروع</h2>
+    <div class="table-wrap">
+      <table>
+        <caption class="visually-hidden">إجمالي كل فرع ثم مخازنه</caption>
+        <thead>
+          <tr>
+            <th scope="col">الفرع والمخزن</th>
+            <th scope="col" class="num">مقاسات متاحة</th>
+            <th scope="col" class="num">القطع</th>
+            <th scope="col" class="num">الحجم (م³)</th>
+          </tr>
+        </thead>
+        <?php foreach ($branchRows as $b): $bid = (int) $b['id']; ?>
+        <tbody>
+          <tr class="row-subtotal">
+            <th scope="row"><a href="<?= h(url('inventory', ['branch' => $bid])) ?>"><?= h($b['name']) ?></a></th>
+            <td class="num" data-label="مقاسات متاحة"><?= h(fmt_int((string) $b['sizes'])) ?></td>
+            <td class="num" data-label="القطع"><?= h(fmt_int((string) $b['qty'])) ?></td>
+            <td class="num" data-label="<?= h('الحجم (م³)') ?>"><?= h(fmt_volume((string) $b['volume'])) ?></td>
+          </tr>
+          <?php $inBranch = array_filter($summary, fn ($s) => (int) $s['branch_id'] === $bid); ?>
+          <?php foreach ($inBranch as $s): ?>
+          <tr class="row-child">
+            <th scope="row"><a href="<?= h(url('inventory', ['warehouse' => (int) $s['id']])) ?>"><?= h($s['name']) ?></a></th>
+            <td class="num" data-label="مقاسات متاحة"><?= h(fmt_int((string) $s['sizes'])) ?></td>
+            <td class="num" data-label="القطع"><?= h(fmt_int((string) $s['qty'])) ?></td>
+            <td class="num" data-label="<?= h('الحجم (م³)') ?>"><?= h(fmt_volume((string) $s['volume'])) ?></td>
+          </tr>
+          <?php endforeach; ?>
+          <?php if (!$inBranch): ?>
+          <tr class="row-child"><td colspan="4" class="muted" data-label="المخزن">لا توجد مخازن في هذا الفرع.</td></tr>
+          <?php endif; ?>
+        </tbody>
+        <?php endforeach; ?>
+        <tfoot>
+          <tr class="row-total">
+            <th scope="row">إجمالي كل الفروع</th>
+            <td></td>
+            <td class="num" data-label="القطع"><?= h(fmt_int($branchTotals['qty'])) ?></td>
+            <td class="num" data-label="<?= h('الحجم (م³)') ?>"><?= h(fmt_volume($branchTotals['volume'])) ?></td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  </section>
+<?php elseif (count($summary) > 1): ?>
   <section class="section" aria-labelledby="wh-summary-title">
     <h2 id="wh-summary-title">ملخص المخازن</h2>
     <div class="table-wrap table-stack">
@@ -93,7 +157,8 @@ render_header('المخزون', 'inventory');
   </p>
 <?php else: ?>
   <section aria-labelledby="stock-title">
-    <h2 id="stock-title"><?= $warehouseId ? h('أرصدة ' . $whNames[$warehouseId]) : 'أرصدة كل المخازن' ?></h2>
+    <h2 id="stock-title"><?= h($warehouseId ? 'أرصدة ' . $whNames[$warehouseId]
+        : ($branchFilter !== null ? 'أرصدة الفرع: ' . $branchNames[$branchFilter] : 'أرصدة كل المخازن')) ?></h2>
     <p class="summary">
       <?= $filtered ? 'إجمالي النتائج المعروضة' : 'إجمالي المخزون' ?>:
       <strong class="nowrap"><?= h(fmt_volume($view['volume'])) ?> م³</strong>

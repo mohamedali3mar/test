@@ -28,6 +28,7 @@ const ROUTES = [
     'document'   => ['file' => 'document',   'public' => false],
     'print'      => ['file' => 'print',      'public' => false],
     'types'      => ['file' => 'catalog',    'public' => false, 'catalog' => 'type'],
+    'branches'   => ['file' => 'branches',   'public' => false],
     'warehouses' => ['file' => 'catalog',    'public' => false, 'catalog' => 'warehouse'],
     'settings'   => ['file' => 'settings',   'public' => false],
     'api'        => ['file' => 'api',        'public' => false],
@@ -69,6 +70,15 @@ if (!ROUTES[$route]['public']) {
     require_login();
     // صلاحية الصفحة حسب الدور (ROUTE_PERMISSIONS في lib/users.php). الصفحة غير المسجلة هناك للمدير فقط.
     require_permission(route_permission($route));
+    // بعد رفع إصدار جديد وقبل تحديث قاعدة البيانات: الصفحات تحتاج الجداول الجديدة، فيُوجَّه المدير
+    // إلى زر التحديث في الإعدادات، ويرى الموظف رسالة واضحة بدل خطأ عام
+    if (!in_array($route, ['settings', 'logout', 'api', 'asset', 'account'], true) && pending_migrations(db())) {
+        if (can('migrate.run')) {
+            flash('warning', 'يوجد تحديث لقاعدة البيانات لم يُطبق بعد. خذ نسخة احتياطية ثم اضغط «تحديث قاعدة البيانات».');
+            redirect('settings');
+        }
+        render_simple_error('النظام قيد التحديث الآن. حاول مرة أخرى بعد قليل، أو راجع مدير النظام.', 503);
+    }
 }
 
 $catalogKind = ROUTES[$route]['catalog'] ?? null;

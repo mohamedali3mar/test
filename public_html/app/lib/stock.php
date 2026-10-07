@@ -5,20 +5,23 @@ defined('APP_ROOT') || exit;
  * استعلامات الأرصدة للعرض. كل المجاميع تُحسب بدقة كاملة كأعداد صحيحة بالميكرومتر المكعب.
  */
 
-/** ملخص لكل مخزن: عدد المقاسات المتاحة، والقطع، والحجم */
-function warehouse_summary(PDO $pdo): array
+/** ملخص لكل مخزن: عدد المقاسات المتاحة، والقطع، والحجم. $branchId يقصره على مخازن فرع واحد */
+function warehouse_summary(PDO $pdo, ?int $branchId = null): array
 {
-    $rows = $pdo->query(
-        'SELECT w.id, w.name,
+    $stmt = $pdo->prepare(
+        'SELECT w.id, w.name, w.branch_id,
                 COALESCE(SUM(CASE WHEN s.qty_on_hand > 0 THEN 1 ELSE 0 END), 0) AS sizes,
                 COALESCE(SUM(s.qty_on_hand), 0) AS qty,
                 COALESCE(SUM(s.qty_on_hand * i.piece_volume_m3), 0) AS volume
          FROM warehouses w
          LEFT JOIN stock s ON s.warehouse_id = w.id
-         LEFT JOIN items i ON i.id = s.item_id
-         GROUP BY w.id, w.name
+         LEFT JOIN items i ON i.id = s.item_id'
+        . ($branchId !== null ? ' WHERE w.branch_id = ?' : '') . '
+         GROUP BY w.id, w.name, w.branch_id
          ORDER BY w.name, w.id'
-    )->fetchAll();
+    );
+    $stmt->execute($branchId !== null ? [$branchId] : []);
+    $rows = $stmt->fetchAll();
     foreach ($rows as &$r) {
         $r['volume'] = Num::trimDecimal((string) $r['volume']);
     }
@@ -28,8 +31,9 @@ function warehouse_summary(PDO $pdo): array
 /**
  * جدول المخزون مجمعًا حسب النوع.
  * $warehouseId = 0 يعني كل المخازن (الكمية = مجموع المخازن، مع التوزيع).
+ * $branchId يقصر الأرصدة والإجماليات على مخازن فرع واحد (null = كل الفروع).
  */
-function inventory_view(PDO $pdo, string $q, int $typeId, int $warehouseId, bool $hideEmpty): array
+function inventory_view(PDO $pdo, string $q, int $typeId, int $warehouseId, bool $hideEmpty, ?int $branchId = null): array
 {
     $where = [];
     $params = [];
@@ -44,6 +48,10 @@ function inventory_view(PDO $pdo, string $q, int $typeId, int $warehouseId, bool
     if ($warehouseId > 0) {
         $where[] = 's.warehouse_id = ?';
         $params[] = $warehouseId;
+    }
+    if ($branchId !== null) {
+        $where[] = 's.warehouse_id IN (SELECT id FROM warehouses WHERE branch_id = ?)';
+        $params[] = $branchId;
     }
     $stmt = $pdo->prepare(
         'SELECT i.id, i.wood_type_id, t.name AS wood_type_name, i.width_um, i.thickness_um, i.length_um,
@@ -107,11 +115,15 @@ function inventory_view(PDO $pdo, string $q, int $typeId, int $warehouseId, bool
 /**
  * بيانات الأصناف وأرصدتها في كل المخازن، لنماذج الوارد والبيع والتحويل وللتحديث التلقائي.
  * النصوص منسقة على الخادم (حسب إعداد الأرقام) وتُعرض في المتصفح كنص فقط.
+ * $branchId (نطاق المستخدم) يقصر الأرصدة على مخازن فرعه؛ قائمة المقاسات نفسها مشتركة بين الفروع.
  */
-function stock_payload(PDO $pdo): array
+function stock_payload(PDO $pdo, ?int $branchId = null): array
 {
     $stock = [];
-    foreach ($pdo->query('SELECT item_id, warehouse_id, qty_on_hand FROM stock') as $s) {
+    $stmt = $pdo->prepare('SELECT item_id, warehouse_id, qty_on_hand FROM stock'
+        . ($branchId !== null ? ' WHERE warehouse_id IN (SELECT id FROM warehouses WHERE branch_id = ?)' : ''));
+    $stmt->execute($branchId !== null ? [$branchId] : []);
+    foreach ($stmt as $s) {
         $stock[(int) $s['item_id']][(string) $s['warehouse_id']] = (int) $s['qty_on_hand'];
     }
     $out = [];

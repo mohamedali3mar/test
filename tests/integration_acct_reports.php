@@ -216,7 +216,8 @@ $ds = $R('sales_by', ['dimension' => 'customer', 'type' => (string) $t1, 'from' 
 check_eq('حسب العميل لنوع زان من سبتمبر', [['عميل ب', '360.00'], ['عميل أ', '60.00']], array_map(fn ($r) => [$r['label'], $r['amount']], $ds['rows']));
 check_eq('  الوصف', 'من ' . digits('2026-09-01') . '، حسب العميل، نوع الخشب: زان', $ds['subtitle']);
 $ds = $R('sales_by', ['dimension' => 'branch']);
-check_eq('الفرع غير متاح بدون عمود branch_id: يُتجاهل', [['dimension'], 'نوع الخشب'], [$ds['ignored'], $ds['columns'][0]['label']]);
+check_eq('حسب الفرع متاح بعد ترقية الفروع (005)', [], $ds['ignored']);
+check_eq('  مجموع الفروع = كل المبيعات السارية', '850.00', piasters_to_money(array_sum(array_map(fn ($r) => money_to_piasters($r['amount']), $ds['rows']))));
 
 /* ---------------- الأرباح ---------------- */
 section('الأرباح');

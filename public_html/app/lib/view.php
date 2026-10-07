@@ -94,6 +94,7 @@ const NAV = [
     'transfer'   => 'تحويل',
     'documents'  => 'الفواتير والحركات',
     'types'      => 'أنواع الخشب',
+    'branches'   => 'الفروع',
     'warehouses' => 'المخازن',
     'monitor'    => 'المراقبة',
     'users'      => 'المستخدمون',

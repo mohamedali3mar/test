@@ -2,7 +2,7 @@
 declare(strict_types=1);
 
 /*
- * صفحة التثبيت: تنشئ الجداول وحساب المدير وأول مخزن مرة واحدة فقط، ثم تُغلق.
+ * صفحة التثبيت: تنشئ الجداول وحساب المدير وأول فرع وأول مخزن مرة واحدة فقط، ثم تُغلق.
  * بعد التثبيت تحاول حذف نفسها. لاستعادة كلمة مرور المدير: ارفع هذا الملف مرة أخرى
  * وأنشئ ملفًا فارغًا باسم app/storage/reset.allow ثم افتح الصفحة (يُطلب مفتاح التثبيت).
  */
@@ -186,11 +186,15 @@ if (!class_exists('Normalizer')) {
 }
 
 $errors = [];
-$form = ['username' => '', 'company_name' => DEFAULT_SETTINGS['company_name'], 'warehouse_name' => 'المخزن الرئيسي'];
+$form = ['username' => '', 'company_name' => DEFAULT_SETTINGS['company_name'], 'branch_name' => BRANCH_DEFAULT_NAME, 'warehouse_name' => 'المخزن الرئيسي'];
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     verify_csrf();
-    $form = string_inputs($_POST, ['username', 'company_name', 'warehouse_name']);
+    $form = string_inputs($_POST, ['username', 'company_name', 'branch_name', 'warehouse_name']);
+    // طلب تثبيت بدون حقل الفرع (نموذج قديم أو أداة آلية) يستخدم الاسم الافتراضي
+    if (!array_key_exists('branch_name', $_POST)) {
+        $form['branch_name'] = BRANCH_DEFAULT_NAME;
+    }
     if (!check_install_key(input($_POST, 'install_key'))) {
         $errors['install_key'] = 'مفتاح التثبيت غير صحيح.';
     }
@@ -207,6 +211,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $errors['company_name'] = 'اسم الشركة مطلوب (120 حرفًا على الأكثر).';
     }
     try {
+        [$branchName, $branchKey] = catalog_validate_name('branch', $form['branch_name']);
+    } catch (ValidationException $e) {
+        $errors['branch_name'] = $e->errors['name'];
+    }
+    try {
         [$whName, $whKey] = catalog_validate_name('warehouse', $form['warehouse_name']);
     } catch (ValidationException $e) {
         $errors['warehouse_name'] = $e->errors['name'];
@@ -221,14 +230,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ((int) $pdo->query('SELECT COUNT(*) FROM users')->fetchColumn() > 0) {
                 render_simple_error('النظام مثبت بالفعل.', 403);
             }
-            db_transaction($pdo, function (PDO $pdo) use ($username, $password, $company, $whName, $whKey) {
+            db_transaction($pdo, function (PDO $pdo) use ($username, $password, $company, $branchName, $branchKey, $whName, $whKey) {
                 $now = now();
                 foreach (DEFAULT_SETTINGS as $name => $value) {
                     $pdo->prepare('INSERT IGNORE INTO settings (name, value) VALUES (?, ?)')->execute([$name, $value]);
                 }
                 save_setting($pdo, 'company_name', $company);
                 save_setting($pdo, 'dummy_hash', password_hash(bin2hex(random_bytes(16)), PASSWORD_DEFAULT));
-                $pdo->prepare('INSERT INTO warehouses (name, name_key, created_at) VALUES (?, ?, ?)')->execute([$whName, $whKey, $now]);
+                // ترقية الفروع تنشئ الفرع الافتراضي: يُعاد تسميته بالاسم المختار بدل إنشاء فرع ثانٍ
+                $branchId = (int) $pdo->query('SELECT id FROM branches ORDER BY id LIMIT 1 FOR UPDATE')->fetchColumn();
+                if ($branchId > 0) {
+                    $pdo->prepare('UPDATE branches SET name = ?, name_key = ?, created_at = ? WHERE id = ?')
+                        ->execute([$branchName, $branchKey, $now, $branchId]);
+                } else {
+                    $pdo->prepare('INSERT INTO branches (name, name_key, created_at) VALUES (?, ?, ?)')->execute([$branchName, $branchKey, $now]);
+                    $branchId = (int) $pdo->lastInsertId();
+                }
+                $pdo->prepare('INSERT INTO warehouses (name, name_key, branch_id, created_at) VALUES (?, ?, ?, ?)')
+                    ->execute([$whName, $whKey, $branchId, $now]);
                 $pdo->prepare('INSERT INTO users (username, password_hash, created_at) VALUES (?, ?, ?)')
                     ->execute([$username, password_hash($password, PASSWORD_DEFAULT), $now]);
                 data_version_bump($pdo);
@@ -241,7 +260,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         session_regenerate_id(true);
         $_SESSION = [];
         $selfDeleted = @unlink(__FILE__);
-        echo '<div class="alert alert-success" role="status">تم التثبيت وإنشاء حساب المدير و«' . h($whName) . '». صفحة التثبيت أُغلقت.</div>';
+        echo '<div class="alert alert-success" role="status">تم التثبيت وإنشاء حساب المدير و«' . h($whName) . '» في «' . h($branchName) . '». صفحة التثبيت أُغلقت.</div>';
         echo '<p>' . ($selfDeleted
             ? 'تم حذف ملف install.php تلقائيًا.'
             : '<strong>مهم:</strong> احذف الملف install.php من الاستضافة الآن.') . ' يمكنك أيضًا مسح قيمة install_key من ملف الإعدادات، أو تركها لاستعادة كلمة المرور مستقبلًا.</p>';
@@ -250,7 +269,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 ?>
-<p>تنشئ هذه الصفحة جداول قاعدة البيانات وحساب المدير وأول مخزن. تعمل مرة واحدة فقط، ولا توجد كلمة مرور افتراضية.</p>
+<p>تنشئ هذه الصفحة جداول قاعدة البيانات وحساب المدير وأول فرع وأول مخزن. تعمل مرة واحدة فقط، ولا توجد كلمة مرور افتراضية.</p>
 <?= errors_summary($errors) ?>
 <form method="post" action="install.php" class="form" autocomplete="off">
   <?= csrf_field() ?>
@@ -263,6 +282,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <label for="company_name">اسم الشركة</label>
     <input type="text" id="company_name" name="company_name" value="<?= h($form['company_name']) ?>" maxlength="120" required<?= field_attrs($errors, 'company_name') ?>>
     <?= field_error($errors, 'company_name') ?>
+  </div>
+  <div class="field">
+    <label for="branch_name">اسم أول فرع</label>
+    <input type="text" id="branch_name" name="branch_name" value="<?= h($form['branch_name']) ?>" maxlength="100" required<?= field_attrs($errors, 'branch_name', 'hint-branch') ?>>
+    <p class="hint" id="hint-branch">يمكن إضافة فروع أخرى وعنوان وهاتف كل فرع بعد التثبيت.</p>
+    <?= field_error($errors, 'branch_name') ?>
   </div>
   <div class="field">
     <label for="warehouse_name">اسم أول مخزن</label>
