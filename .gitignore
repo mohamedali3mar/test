@@ -7,3 +7,4 @@ public_html/app/storage/logs/*.log.1
 public_html/app/storage/sessions/sess_*
 tests/output/
 node_modules/
+dist/
