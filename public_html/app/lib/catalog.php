@@ -46,7 +46,7 @@ function catalog_validate_name(string $kind, string $raw): array
     }
     $key = name_key($name);
     if (mb_strlen($name) > 100 || mb_strlen($key) > 100) {
-        throw new ValidationException(['name' => "اسم {$noun} طويل جدًا (100 حرف على الأكثر)."]);
+        throw new ValidationException(['name' => "اسم {$noun} طويل جدًا (" . fmt_int(100) . " حرف على الأكثر)."]);
     }
     if ($key === '') {
         throw new ValidationException(['name' => "أدخل اسم {$noun}."]);

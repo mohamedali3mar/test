@@ -39,8 +39,8 @@ if ($posted) {
             'party_name' => clean_text($form['party_name']), 'reference' => clean_text($form['reference']),
         ];
         flash($result['duplicate'] ? 'warning' : 'success', $result['duplicate']
-            ? sprintf('هذا الوارد سُجل من قبل (وارد رقم %s) ولم يُضف مرة ثانية.', fmt_int($result['doc_no']))
-            : sprintf('تم تسجيل وارد رقم %s وإضافته إلى المخزون.', fmt_int($result['doc_no'])));
+            ? sprintf('هذا الوارد سُجل من قبل (وارد رقم %s) ولم يُضف مرة ثانية.', fmt_doc_no((int) $result['doc_no']))
+            : sprintf('تم تسجيل وارد رقم %s وإضافته إلى المخزون.', fmt_doc_no((int) $result['doc_no'])));
         redirect('receive', ['done' => $result['id']]);
     } catch (ValidationException $e) {
         $errors = $e->errors;
@@ -173,7 +173,7 @@ render_header('إضافة وارد', 'receive');
   <div class="field">
     <label for="notes">ملاحظات <span class="optional">(اختياري)</span></label>
     <textarea id="notes" name="notes" rows="3" maxlength="1000"<?= field_attrs($errors, 'notes', 'hint-notes') ?>><?= h($form['notes']) ?></textarea>
-    <p class="hint" id="hint-notes">لتسجيل الرصيد الافتتاحي اكتب في الملاحظات: رصيد افتتاحي.</p>
+    <p class="hint" id="hint-notes">لتسجيل الرصيد الافتتاحي: اترك التكلفة والمورد فارغين واكتب في الملاحظات «رصيد افتتاحي»، ثم قيّمه من صفحة «تقييم المخزون الافتتاحي». إدخال تكلفة بدون مورد يُعامل كشراء نقدي ويحتاج رصيدًا كافيًا في الخزنة.</p>
     <?= field_error($errors, 'notes') ?>
   </div>
 

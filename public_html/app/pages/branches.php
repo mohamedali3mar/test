@@ -113,7 +113,7 @@ render_header('الفروع', 'branches');
   <section class="panel" aria-labelledby="edit-title">
     <h2 id="edit-title">تعديل الفرع «<?= h($editRow['name']) ?>»</h2>
     <?= errors_summary($editErrors) ?>
-    <form method="post" action="<?= h(url('branches', ['edit' => (int) $editRow['id']])) ?>" class="form-inline">
+    <form method="post" action="<?= h(url('branches', ['edit' => (int) $editRow['id']])) ?>" class="form-inline" novalidate>
       <?= csrf_field() ?>
       <input type="hidden" name="action" value="update">
       <input type="hidden" name="id" value="<?= (int) $editRow['id'] ?>">
@@ -129,7 +129,7 @@ render_header('الفروع', 'branches');
 <section class="section" aria-labelledby="add-title">
   <h2 id="add-title">إضافة فرع</h2>
   <?= errors_summary($addErrors) ?>
-  <form method="post" action="<?= h(url('branches')) ?>" class="form-inline">
+  <form method="post" action="<?= h(url('branches')) ?>" class="form-inline" novalidate>
     <?= csrf_field() ?>
     <input type="hidden" name="action" value="create">
     <?= $branchFields('new', $addForm, $addErrors) ?>

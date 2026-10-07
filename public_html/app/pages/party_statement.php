@@ -47,7 +47,7 @@ render_header($title, 'parties', 'page-print');
     <?php if ($from !== null || $to !== null): ?><a class="btn btn-quiet" href="<?= h(url('party_statement', ['id' => $id])) ?>">كل الفترات</a><?php endif; ?>
   </div>
 </form>
-<?php if ($invalid): ?><div class="alert alert-warning" role="status">صيغة التاريخ غير صحيحة وتم تجاهلها. استخدم الصيغة 2026-01-31.</div><?php endif; ?>
+<?php if ($invalid): ?><div class="alert alert-warning" role="status">صيغة التاريخ غير صحيحة وتم تجاهلها. استخدم الصيغة <?= h(digits('2026-01-31')) ?>.</div><?php endif; ?>
 
 <article class="print-doc" id="live-party-statement" data-live aria-label="<?= h($title) ?>">
   <header class="print-head">

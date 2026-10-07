@@ -30,8 +30,8 @@ if ($posted) {
         } elseif ($action === 'confirm') {
             $result = record_sale($pdo, current_user_id(), $form);
             flash($result['duplicate'] ? 'warning' : 'success', $result['duplicate']
-                ? sprintf('هذه الفاتورة سُجلت من قبل (بيع رقم %s) ولم تُخصم مرة ثانية.', fmt_int($result['doc_no']))
-                : sprintf('تم حفظ فاتورة بيع رقم %s وخصم الكميات من المخزون.', fmt_int($result['doc_no'])));
+                ? sprintf('هذه الفاتورة سُجلت من قبل (بيع رقم %s) ولم تُخصم مرة ثانية.', fmt_doc_no((int) $result['doc_no']))
+                : sprintf('تم حفظ فاتورة بيع رقم %s وخصم الكميات من المخزون.', fmt_doc_no((int) $result['doc_no'])));
             redirect('sell', ['done' => $result['id']]);
         } elseif ($action === 'more_lines') {
             $extraLines = 3;
@@ -75,7 +75,7 @@ if ($review) {
         <th scope="col">المقاس</th>
         <th scope="col" class="num">العدد</th>
         <th scope="col" class="num">الحجم (م³)</th>
-        <th scope="col" class="num">سعر المتر (<?= h(app_setting('currency')) ?>)</th>
+        <th scope="col" class="num">سعر المتر المكعب (<?= h(app_setting('currency')) ?>)</th>
         <th scope="col" class="num">القيمة</th>
         <th scope="col" class="num">المتاح الآن</th>
         <th scope="col" class="num">بعد البيع</th>
@@ -89,7 +89,7 @@ if ($review) {
         <td data-label="<?= h('المقاس') ?>"><?= h(fmt_size($l['item'])) ?></td>
         <td class="num" data-label="<?= h('العدد') ?>"><?= h(fmt_int($l['quantity'])) ?></td>
         <td class="num" data-label="<?= h('الحجم (م³)') ?>"><?= h(fmt_volume($l['total_m3'])) ?></td>
-        <td class="num" data-label="<?= h('سعر المتر (' . app_setting('currency') . ')') ?>"><?= h(fmt_money($l['price'])) ?></td>
+        <td class="num" data-label="<?= h('سعر المتر المكعب (' . app_setting('currency') . ')') ?>"><?= h(fmt_money($l['price'])) ?></td>
         <td class="num" data-label="<?= h('القيمة') ?>"><?= h(fmt_money($l['amount'])) ?></td>
         <td class="num" data-label="<?= h('المتاح الآن') ?>"><?= h(fmt_int($have)) ?></td>
         <td class="num" data-label="<?= h('بعد البيع') ?>"><?= h(fmt_int($have - $l['quantity'])) ?></td>
@@ -109,6 +109,9 @@ if ($review) {
   </table>
 </div>
 <p class="muted">لا تُضاف ضرائب أو شحن أو خصومات. القيمة = حجم الكمية × سعر المتر المكعب، مقربة لأقرب قرش.</p>
+<?php if (array_filter($review['lines'], fn ($l) => volume_display_rounded((string) $l['total_m3']))): ?>
+  <p class="muted">الأحجام معروضة مقربة، والقيمة محسوبة من الحجم الدقيق.</p>
+<?php endif; ?>
 <form method="post" action="<?= h(url('sell')) ?>" class="actions">
   <?= csrf_field() ?>
   <?php foreach (['warehouse_id', 'party_name', 'notes', 'request_token'] as $f): ?>

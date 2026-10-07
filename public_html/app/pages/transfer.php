@@ -17,8 +17,8 @@ if ($posted) {
         if ($action === 'save') {
             $result = record_transfer($pdo, current_user_id(), $form);
             flash($result['duplicate'] ? 'warning' : 'success', $result['duplicate']
-                ? sprintf('هذا التحويل سُجل من قبل (تحويل رقم %s) ولم يتكرر.', fmt_int($result['doc_no']))
-                : sprintf('تم حفظ تحويل رقم %s ونقل الكميات.', fmt_int($result['doc_no'])));
+                ? sprintf('هذا التحويل سُجل من قبل (تحويل رقم %s) ولم يتكرر.', fmt_doc_no((int) $result['doc_no']))
+                : sprintf('تم حفظ تحويل رقم %s ونقل الكميات.', fmt_doc_no((int) $result['doc_no'])));
             redirect('transfer', ['done' => $result['id']]);
         } elseif ($action === 'more_lines') {
             $extraLines = 3;

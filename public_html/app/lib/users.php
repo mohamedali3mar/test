@@ -257,7 +257,7 @@ function user_validate_display_name(string $raw): array
 {
     $name = clean_text($raw);
     if ($name === '' || mb_strlen($name) > 100) {
-        return [null, 'الاسم المعروض مطلوب (100 حرف على الأكثر)، مثل: أحمد محمود.'];
+        return [null, 'الاسم المعروض مطلوب (' . fmt_int(100) . ' حرف على الأكثر)، مثل: أحمد محمود.'];
     }
     return [$name, null];
 }

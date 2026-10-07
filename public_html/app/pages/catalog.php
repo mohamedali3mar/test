@@ -19,6 +19,8 @@ $scope = allowed_branch_id($pdo);
 $canManage = $manage && ($kind === 'type' || $scope === null);
 $branches = $kind === 'warehouse' ? catalog_all($pdo, 'branch') : [];
 $newBranch = '';
+$renameId = 0; // عند فشل تعديل الاسم يبقى نموذج التعديل مفتوحًا بالاسم المرسل
+$renameName = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     require_permission('catalog.manage');
@@ -34,7 +36,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $branchName = warehouse_move($pdo, (int) input($_POST, 'id'), (int) input($_POST, 'branch_id'));
             flash('success', sprintf('تم نقل المخزن إلى «%s». المستندات السابقة تحتفظ باسم الفرع كما سُجل وقتها.', $branchName));
         } elseif ($action === 'rename') {
-            catalog_rename($pdo, $kind, (int) input($_POST, 'id'), input($_POST, 'name'));
+            $renameId = (int) input($_POST, 'id');
+            $renameName = input($_POST, 'name');
+            catalog_rename($pdo, $kind, $renameId, $renameName);
             flash('success', 'تم تعديل الاسم. المستندات السابقة تحتفظ بالاسم القديم كما سُجل وقتها.');
         } elseif ($action === 'delete') {
             catalog_delete($pdo, $kind, (int) input($_POST, 'id'));
@@ -83,6 +87,13 @@ if ($kind === 'warehouse') {
     $rows = $stmt->fetchAll();
 }
 $editId = $canManage ? (int) input($_GET, 'edit') : 0;
+// إذا لم يعد الصنف في القائمة (حُذف مثلًا) يظهر الخطأ في التنبيه العام
+if (!$errors || !in_array($renameId, array_map('intval', array_column($rows, 'id')), true)) {
+    $renameId = 0;
+}
+if ($renameId > 0) {
+    $editId = $renameId;
+}
 $deleteId = $canManage ? (int) input($_GET, 'delete') : 0;
 $canMove = $kind === 'warehouse' && $canManage && count($branches) > 1;
 $moveId = $canMove ? (int) input($_GET, 'move') : 0;
@@ -101,7 +112,7 @@ render_header($title, $route);
 ?>
 <h1><?= h($title) ?></h1>
 
-<?php if ($errors): ?>
+<?php if ($errors && $renameId === 0): ?>
   <div class="alert alert-error" role="alert"><?= h(implode(' ', $errors)) ?></div>
 <?php endif; ?>
 
@@ -123,7 +134,7 @@ render_header($title, $route);
   <section class="panel" aria-labelledby="move-title">
     <h2 id="move-title">نقل المخزن «<?= h($moveRow['name']) ?>» إلى فرع آخر</h2>
     <p>الفرع الحالي: <?= h($moveRow['branch_name']) ?>. النقل مسموح حتى لو كان على المخزن رصيد: تظهر أرصدته تحت الفرع الجديد، والمستندات السابقة تحتفظ باسم الفرع كما سُجل وقتها.</p>
-    <form method="post" action="<?= h(url($route, ['move' => (int) $moveRow['id']])) ?>" class="form-inline">
+    <form method="post" action="<?= h(url($route, ['move' => (int) $moveRow['id']])) ?>" class="form-inline" novalidate>
       <?= csrf_field() ?>
       <input type="hidden" name="action" value="move">
       <input type="hidden" name="id" value="<?= (int) $moveRow['id'] ?>">
@@ -142,7 +153,7 @@ render_header($title, $route);
 <?php if ($canManage): ?>
 <section class="section">
   <h2>إضافة <?= h($kind === 'warehouse' ? 'مخزن' : 'نوع') ?></h2>
-  <form method="post" action="<?= h(url($route)) ?>" class="form-inline">
+  <form method="post" action="<?= h(url($route)) ?>" class="form-inline" novalidate>
     <?= csrf_field() ?>
     <input type="hidden" name="action" value="create">
     <div class="field">
@@ -187,14 +198,15 @@ render_header($title, $route);
         <tr>
           <td data-label="<?= h('الاسم') ?>">
             <?php if ($editId === $rid): ?>
-              <form method="post" action="<?= h(url($route)) ?>" class="form-inline compact">
+              <form method="post" action="<?= h(url($route)) ?>" class="form-inline compact" novalidate>
                 <?= csrf_field() ?>
                 <input type="hidden" name="action" value="rename">
                 <input type="hidden" name="id" value="<?= $rid ?>">
                 <label class="visually-hidden" for="rename-<?= $rid ?>">الاسم الجديد</label>
-                <input type="text" id="rename-<?= $rid ?>" name="name" value="<?= h($r['name']) ?>" maxlength="100" required>
+                <input type="text" id="rename-<?= $rid ?>" name="name" value="<?= h($renameId === $rid ? $renameName : $r['name']) ?>" maxlength="100" required<?= $renameId === $rid ? field_attrs($errors, 'name') : '' ?>>
                 <button type="submit" class="btn">حفظ</button>
                 <a class="btn btn-quiet" href="<?= h(url($route)) ?>">تراجع</a>
+                <?= $renameId === $rid ? field_error($errors, 'name') : '' ?>
               </form>
             <?php else: ?>
               <?= h($r['name']) ?>

@@ -93,7 +93,7 @@ function fmt_money_currency(string $amount, ?string $currency = null): string
 /** بعد واحد مع وحدته، مثل: 10 سم */
 function fmt_dim(int $um, string $unit): string
 {
-    return digits(group_thousands(um_in_unit($um, $unit))) . ' ' . unit_label($unit);
+    return digits(group_thousands(um_in_unit($um, $unit))) . "\u{00A0}" . unit_label($unit);
 }
 
 /**
@@ -103,9 +103,10 @@ function fmt_dim(int $um, string $unit): string
 function fmt_size(array $item, ?array $units = null): string
 {
     $u = $units ?? $item;
-    return 'عرض ' . fmt_dim((int) $item['width_um'], $u['width_unit'])
-        . ' × تخانة ' . fmt_dim((int) $item['thickness_um'], $u['thickness_unit'])
-        . ' × طول ' . fmt_dim((int) $item['length_um'], $u['length_unit']);
+    // U+00A0 بين اسم البعد ورقمه ووحدته حتى لا ينكسر السطر داخل البعد الواحد
+    return "عرض\u{00A0}" . fmt_dim((int) $item['width_um'], $u['width_unit'])
+        . " × تخانة\u{00A0}" . fmt_dim((int) $item['thickness_um'], $u['thickness_unit'])
+        . " × طول\u{00A0}" . fmt_dim((int) $item['length_um'], $u['length_unit']);
 }
 
 function fmt_meters(array $item): string
@@ -168,7 +169,13 @@ function kind_label(string $kind): string
 /** مثل: بيع رقم ١٥ */
 function doc_label(array $doc): string
 {
-    return kind_label($doc['kind']) . ' رقم ' . fmt_int((int) $doc['doc_no']);
+    return kind_label($doc['kind']) . ' رقم ' . fmt_doc_no((int) $doc['doc_no']);
+}
+
+/** رقم المستند أو السند بدون فاصل آلاف، حتى لا يُقرأ ١ ٠٠٠ كرقمين */
+function fmt_doc_no(int $n): string
+{
+    return digits((string) $n);
 }
 
 /** عنوان المستند المطبوع */

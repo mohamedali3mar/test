@@ -49,6 +49,13 @@ function render_line(int|string $i, array $line, array $errors, bool $withPrice,
     $err = fn (string $f) => is_int($i) ? field_error($errors, "lines.$i.$f") : '';
     $attrs = fn (string $f) => is_int($i) ? field_attrs($errors, "lines.$i.$f") : '';
     $no = is_int($i) ? fmt_int($i + 1) : '';
+    // نص المقاس المختار كاملًا تحت القائمة، لأن القائمة تقص النص على الموبايل
+    $sizeText = '';
+    foreach ($stockData as $it) {
+        if (($line['item_id'] ?? '') !== '' && (string) $it['id'] === (string) $line['item_id']) {
+            $sizeText = $it['typeName'] . ': ' . $it['size'];
+        }
+    }
 
     ob_start(); ?>
 <fieldset class="line" data-line>
@@ -65,6 +72,7 @@ function render_line(int|string $i, array $line, array $errors, bool $withPrice,
       <select id="<?= h($id('item')) ?>" name="<?= h($name('item_id')) ?>" data-line-item<?= $attrs('item_id') ?>>
         <?= item_options($stockData, $line['item_id'] ?? '') ?>
       </select>
+      <p class="hint" data-line-size<?= $sizeText === '' ? ' hidden' : '' ?>><?= h($sizeText) ?></p>
       <p class="hint" data-line-available></p>
       <?= $err('item_id') ?>
     </div>
@@ -191,7 +199,7 @@ function render_payment_fields(array $form, array $errors, string $partyKind, ar
     <fieldset class="payment-type">
       <legend>طريقة الدفع</legend>
       <?php foreach (PAYMENT_TYPE_LABELS as $value => $label): ?>
-        <label><input type="radio" name="payment_type" value="<?= h($value) ?>" data-payment-type<?= $form['payment_type'] === $value ? ' checked' : '' ?>> <?= h($label) ?></label>
+        <label class="radio"><input type="radio" name="payment_type" value="<?= h($value) ?>" data-payment-type<?= $form['payment_type'] === $value ? ' checked' : '' ?>> <?= h($label) ?></label>
       <?php endforeach; ?>
       <?= field_error($errors, 'payment_type') ?>
     </fieldset>

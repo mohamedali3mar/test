@@ -84,7 +84,7 @@ render_header('المستخدمون', 'users');
 <section class="section edit-panel" aria-labelledby="edit-title">
   <h2 id="edit-title">تعديل المستخدم <?= h((string) $editUser['username']) ?></h2>
   <?= errors_summary($editErrors) ?>
-  <form method="post" action="<?= h(url('users', ['edit' => $uid])) ?>" class="form">
+  <form method="post" action="<?= h(url('users', ['edit' => $uid])) ?>" class="form" novalidate>
     <?= csrf_field() ?>
     <input type="hidden" name="action" value="update">
     <input type="hidden" name="id" value="<?= $uid ?>">
@@ -135,7 +135,7 @@ render_header('المستخدمون', 'users');
   <?php else: ?>
     <h3>تعيين كلمة مرور جديدة</h3>
     <?= errors_summary($pwErrors) ?>
-    <form method="post" action="<?= h(url('users', ['edit' => $uid])) ?>" class="form" autocomplete="off">
+    <form method="post" action="<?= h(url('users', ['edit' => $uid])) ?>" class="form" autocomplete="off" novalidate>
       <?= csrf_field() ?>
       <input type="hidden" name="action" value="password">
       <input type="hidden" name="id" value="<?= $uid ?>">
@@ -143,7 +143,7 @@ render_header('المستخدمون', 'users');
         <div class="field">
           <label for="reset-password">كلمة المرور الجديدة</label>
           <input type="password" id="reset-password" name="password" minlength="10" required autocomplete="new-password"<?= field_attrs($pwErrors, 'password', 'hint-reset') ?>>
-          <p class="hint" id="hint-reset">10 أحرف على الأقل. تنتهي جلسات المستخدم المفتوحة فورًا.</p>
+          <p class="hint" id="hint-reset"><?= h(fmt_int(10)) ?> أحرف على الأقل. تنتهي جلسات المستخدم المفتوحة فورًا.</p>
           <?= field_error($pwErrors, 'password') ?>
         </div>
         <div class="field">
@@ -220,7 +220,7 @@ render_header('المستخدمون', 'users');
 <section class="section" aria-labelledby="add-user-title">
   <h2 id="add-user-title">إضافة مستخدم</h2>
   <?= errors_summary($createErrors) ?>
-  <form method="post" action="<?= h(url('users')) ?>" class="form" autocomplete="off">
+  <form method="post" action="<?= h(url('users')) ?>" class="form" autocomplete="off" novalidate>
     <?= csrf_field() ?>
     <input type="hidden" name="action" value="create">
     <div class="field-row">
@@ -233,7 +233,7 @@ render_header('المستخدمون', 'users');
       <div class="field">
         <label for="username">اسم المستخدم للدخول</label>
         <input type="text" id="username" name="username" value="<?= h($createForm['username']) ?>" maxlength="60" required autocomplete="off"<?= field_attrs($createErrors, 'username', 'hint-username') ?>>
-        <p class="hint" id="hint-username">من 3 إلى 60 حرفًا: حروف وأرقام و _ . - بدون مسافات.</p>
+        <p class="hint" id="hint-username">من <?= h(fmt_int(3)) ?> إلى <?= h(fmt_int(60)) ?> حرفًا: حروف وأرقام و _ . - بدون مسافات.</p>
         <?= field_error($createErrors, 'username') ?>
       </div>
     </div>
@@ -251,7 +251,7 @@ render_header('المستخدمون', 'users');
       <div class="field">
         <label for="password">كلمة المرور</label>
         <input type="password" id="password" name="password" minlength="10" required autocomplete="new-password"<?= field_attrs($createErrors, 'password', 'hint-password') ?>>
-        <p class="hint" id="hint-password">10 أحرف على الأقل. يمكن للمستخدم تغييرها بعد الدخول.</p>
+        <p class="hint" id="hint-password"><?= h(fmt_int(10)) ?> أحرف على الأقل. يمكن للمستخدم تغييرها بعد الدخول.</p>
         <?= field_error($createErrors, 'password') ?>
       </div>
       <div class="field">

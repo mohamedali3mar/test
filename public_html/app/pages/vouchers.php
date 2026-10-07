@@ -131,14 +131,14 @@ render_header('السندات', 'vouchers');
     <?php if ($filtered): ?><a class="btn btn-quiet" href="<?= h(url('vouchers')) ?>">مسح التصفية</a><?php endif; ?>
   </div>
 </form>
-<?php if ($invalid): ?><div class="alert alert-warning" role="status">صيغة التاريخ غير صحيحة وتم تجاهلها. استخدم الصيغة 2026-01-31.</div><?php endif; ?>
+<?php if ($invalid): ?><div class="alert alert-warning" role="status">صيغة التاريخ غير صحيحة وتم تجاهلها. استخدم الصيغة <?= h(digits('2026-01-31')) ?>.</div><?php endif; ?>
 
 <div id="live-vouchers" data-live>
 <?php if (!$rows): ?>
   <p class="empty"><?= $filtered ? 'لا توجد سندات مطابقة.' : 'لا توجد سندات بعد.' ?></p>
 <?php else: ?>
   <p class="summary">
-    <?= h(fmt_int($total)) ?> سند.
+    عدد السندات: <?= h(fmt_int($total)) ?>.
     <?php foreach (VOUCHER_KIND_LABELS as $k => $label): if (!isset($totals[$k])) { continue; } ?>
       <?= h($label) ?>: <?= h(fmt_int((int) $totals[$k]['n'])) ?> بإجمالي <strong><?= h(fmt_money((string) $totals[$k]['total'])) ?></strong>.
     <?php endforeach; ?>

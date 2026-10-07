@@ -27,10 +27,10 @@ if ($posted) {
             'volume_pad' => input($_POST, 'volume_pad') === '1' ? '1' : '0',
         ];
         if ($values['company_name'] === '' || mb_strlen($values['company_name']) > 120) {
-            $errors['company_name'] = 'اسم الشركة مطلوب (120 حرفًا على الأكثر).';
+            $errors['company_name'] = 'اسم الشركة مطلوب (' . fmt_int(120) . ' حرفًا على الأكثر).';
         }
         if ($values['currency'] === '' || mb_strlen($values['currency']) > 40) {
-            $errors['currency'] = 'اسم العملة مطلوب (40 حرفًا على الأكثر).';
+            $errors['currency'] = 'اسم العملة مطلوب (' . fmt_int(40) . ' حرفًا على الأكثر).';
         }
         foreach (DIMENSIONS as $key => $label) {
             $u = input($_POST, 'unit_' . $key);
@@ -82,7 +82,7 @@ render_header('الإعدادات', 'settings');
 <h1>الإعدادات</h1>
 
 <?php if ($pending): ?>
-<section class="section confirm-box" aria-labelledby="migrate-title">
+<section class="section confirm-box warning" aria-labelledby="migrate-title">
   <h2 id="migrate-title">تحديث قاعدة البيانات مطلوب</h2>
   <p>يوجد تحديث لقاعدة البيانات مع هذا الإصدار من النظام. خذ نسخة احتياطية من قاعدة البيانات أولًا (من phpMyAdmin أو Backups في لوحة Hostinger) ثم اضغط التحديث.</p>
   <form method="post" action="<?= h(url('settings')) ?>">
@@ -96,7 +96,7 @@ render_header('الإعدادات', 'settings');
 <section class="section">
   <h2>بيانات عامة</h2>
   <?= errors_summary($errors) ?>
-  <form method="post" action="<?= h(url('settings')) ?>" class="form">
+  <form method="post" action="<?= h(url('settings')) ?>" class="form" novalidate>
     <?= csrf_field() ?>
     <input type="hidden" name="action" value="general">
     <div class="field">
@@ -139,7 +139,7 @@ render_header('الإعدادات', 'settings');
         <label for="volume_decimals">دقة عرض الحجم (م³)</label>
         <select id="volume_decimals" name="volume_decimals" aria-describedby="hint-volume"<?= field_attrs($errors, 'volume_decimals') ?>>
           <?php foreach (VOLUME_DECIMAL_CHOICES as $v => $label): ?>
-            <option value="<?= h($v) ?>"<?= $current('volume_decimals') === $v ? ' selected' : '' ?>><?= h($label) ?></option>
+            <option value="<?= h($v) ?>"<?= $current('volume_decimals') === $v ? ' selected' : '' ?>><?= h(digits($label)) ?></option>
           <?php endforeach; ?>
         </select>
         <p class="hint" id="hint-volume">للعرض فقط. الحساب الداخلي والقيمة المالية من الحجم الدقيق دائمًا.</p>
@@ -147,7 +147,7 @@ render_header('الإعدادات', 'settings');
     </div>
     <div class="field field-check">
       <input type="checkbox" id="volume_pad" name="volume_pad" value="1"<?= $current('volume_pad') === '1' ? ' checked' : '' ?>>
-      <label for="volume_pad">إظهار الأصفار في آخر الحجم عند اختيار عدد خانات ثابت (مثل 0.150)</label>
+      <label for="volume_pad">إظهار الأصفار في آخر الحجم عند اختيار عدد خانات ثابت (مثل <?= h(digits('0.150')) ?>)</label>
     </div>
     <div class="field field-narrow">
       <label for="closing_date">تاريخ الإقفال (اختياري)</label>

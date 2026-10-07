@@ -140,7 +140,7 @@ function audit_doc_name(string $kind, int $docNo): string
         'transfer' => 'تحويل',
         default => 'وارد',
     };
-    return $noun . ' رقم ' . fmt_int($docNo);
+    return $noun . ' رقم ' . fmt_doc_no($docNo);
 }
 
 /** عدد الأصناف بصيغة عربية صحيحة: صنف واحد، صنفان، ٣ أصناف، ١١ صنفًا */

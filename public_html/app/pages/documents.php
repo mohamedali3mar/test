@@ -151,11 +151,13 @@ render_header('الفواتير والحركات', 'documents');
   </div>
   <div class="field">
     <label for="from">من تاريخ</label>
-    <input type="date" id="from" name="from" value="<?= h($from ? $from->format('Y-m-d') : '') ?>">
+    <input type="date" id="from" name="from" value="<?= h($from ? $from->format('Y-m-d') : '') ?>" aria-describedby="hint-from">
+    <p class="hint" id="hint-from">الترتيب: سنة-شهر-يوم</p>
   </div>
   <div class="field">
     <label for="to">إلى تاريخ</label>
-    <input type="date" id="to" name="to" value="<?= h($to ? $to->format('Y-m-d') : '') ?>">
+    <input type="date" id="to" name="to" value="<?= h($to ? $to->format('Y-m-d') : '') ?>" aria-describedby="hint-to">
+    <p class="hint" id="hint-to">الترتيب: سنة-شهر-يوم</p>
   </div>
   <div class="field field-wide">
     <label for="q">بحث</label>
@@ -167,7 +169,7 @@ render_header('الفواتير والحركات', 'documents');
   </div>
 </form>
 
-<?php if ($dateInvalid): ?><div class="alert alert-warning" role="status">صيغة التاريخ غير صحيحة وتم تجاهلها. استخدم الصيغة 2026-01-31.</div><?php endif; ?>
+<?php if ($dateInvalid): ?><div class="alert alert-warning" role="status">صيغة التاريخ غير صحيحة وتم تجاهلها. استخدم الصيغة <?= h(digits('2026-01-31')) ?>.</div><?php endif; ?>
 
 <div id="live-documents" data-live>
 <?php if (!$rows): ?>
@@ -180,12 +182,12 @@ render_header('الفواتير والحركات', 'documents');
   </p>
 <?php else: ?>
   <p class="summary">
-    <?= h(fmt_int($total)) ?> مستند<?= $branchId > 0 ? h(' في الفرع: ' . $branchNames[$branchId]) : '' ?>.
+    عدد المستندات<?= $branchId > 0 ? h(' في الفرع «' . $branchNames[$branchId] . '»') : '' ?>: <?= h(fmt_int($total)) ?>
   </p>
   <?php foreach ($salesTotals as $st): ?>
     <p class="summary">
-      مبيعات سارية في النتائج<?= count($salesTotals) > 1 ? h(' بعملة ' . $st['currency']) : '' ?>: <?= h(fmt_int($st['count'])) ?> فاتورة،
-      <strong><?= h(fmt_volume($st['volume'])) ?> م³</strong>،
+      مبيعات سارية في النتائج<?= count($salesTotals) > 1 ? h(' بعملة ' . $st['currency']) : '' ?>: عدد الفواتير: <?= h(fmt_int($st['count'])) ?>،
+      الحجم: <strong><?= h(fmt_volume($st['volume'])) ?> م³</strong>،
       الإجمالي: <strong><?= h(fmt_money_currency($st['amount'], $st['currency'])) ?></strong>
     </p>
   <?php endforeach; ?>
