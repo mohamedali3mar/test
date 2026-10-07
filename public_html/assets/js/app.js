@@ -450,6 +450,14 @@
         var pInput = line.querySelector('[data-line-price]');
         var errors = [];
         var avail = item ? (wh ? qtyIn(item, wh) : null) : null;
+        // المقاس المختار كاملًا تحت القائمة (النص في القائمة يُقص على الشاشات الضيقة)
+        var sizeBox = line.querySelector('[data-line-size]');
+        if (sizeBox) {
+          var opt = itemSel.selectedIndex >= 0 ? itemSel.options[itemSel.selectedIndex] : null;
+          var sizeText = item && opt ? opt.textContent.trim() : '';
+          setText(sizeBox, sizeText);
+          sizeBox.hidden = sizeText === '';
+        }
 
         if (item && hasBigInt && avail !== null) {
           setText(line.querySelector('[data-line-available]'),

@@ -44,7 +44,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 $pending = two_factor_pending($pendingExpired);
 if ($pendingExpired && $error === null) {
-    $error = 'انتهت مهلة إدخال رمز التحقق (5 دقائق). أدخل اسم المستخدم وكلمة المرور مرة أخرى.';
+    $error = 'انتهت مهلة إدخال رمز التحقق (' . fmt_int(5) . ' دقائق). أدخل اسم المستخدم وكلمة المرور مرة أخرى.';
 }
 
 render_header('تسجيل الدخول', '', 'page-login');
@@ -56,13 +56,13 @@ if ($pending !== null):
   <?php if ($error): ?>
     <div class="alert alert-error" role="alert"><?= h($error) ?></div>
   <?php endif; ?>
-  <form method="post" action="<?= h(url('login')) ?>" class="form">
+  <form method="post" action="<?= h(url('login')) ?>" class="form" novalidate>
     <?= csrf_field() ?>
     <input type="hidden" name="step" value="code">
     <div class="field">
       <label for="code">رمز التحقق من تطبيق المصادقة</label>
       <input type="text" id="code" name="code" inputmode="numeric" autocomplete="one-time-code" required maxlength="12" autofocus aria-describedby="hint-code"<?= $error ? ' aria-invalid="true"' : '' ?>>
-      <p class="hint" id="hint-code">افتح تطبيق المصادقة على هاتفك واكتب الرمز المكون من 6 أرقام الظاهر لهذا الحساب.</p>
+      <p class="hint" id="hint-code">افتح تطبيق المصادقة على هاتفك واكتب الرمز المكون من <?= h(fmt_int(6)) ?> أرقام الظاهر لهذا الحساب.</p>
     </div>
     <div class="actions">
       <button type="submit" class="btn btn-primary">تحقق</button>
@@ -85,7 +85,7 @@ endif;
   <?php if ($error): ?>
     <div class="alert alert-error" role="alert"><?= h($error) ?></div>
   <?php endif; ?>
-  <form method="post" action="<?= h(url('login')) ?>" class="form">
+  <form method="post" action="<?= h(url('login')) ?>" class="form" novalidate>
     <?= csrf_field() ?>
     <div class="field">
       <label for="username">اسم المستخدم</label>

@@ -91,7 +91,7 @@ render_header(voucher_label($v), 'vouchers');
     <?php endif; ?>
   </p>
   <?= errors_summary($errors) ?>
-  <form method="post" action="<?= h(url('voucher', ['id' => $id])) ?>" class="form">
+  <form method="post" action="<?= h(url('voucher', ['id' => $id])) ?>" class="form" novalidate>
     <?= csrf_field() ?>
     <input type="hidden" name="action" value="cancel">
     <div class="field">

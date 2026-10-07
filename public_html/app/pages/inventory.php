@@ -161,8 +161,8 @@ render_header('المخزون', 'inventory');
         : ($branchFilter !== null ? 'أرصدة الفرع: ' . $branchNames[$branchFilter] : 'أرصدة كل المخازن')) ?></h2>
     <p class="summary">
       <?= $filtered ? 'إجمالي النتائج المعروضة' : 'إجمالي المخزون' ?>:
-      <strong class="nowrap"><?= h(fmt_volume($view['volume'])) ?> م³</strong>
-      في <span class="nowrap"><?= h(fmt_int($view['qty'])) ?> قطعة</span>
+      الحجم <strong class="nowrap"><?= h(fmt_volume($view['volume'])) ?> م³</strong>،
+      عدد القطع: <span class="nowrap"><?= h(fmt_int($view['qty'])) ?></span>
       <?php if ($view['empty']): ?><span class="muted">، مقاسات نافدة: <?= h(fmt_int($view['empty'])) ?></span><?php endif; ?>
     </p>
     <div class="table-wrap table-stack">

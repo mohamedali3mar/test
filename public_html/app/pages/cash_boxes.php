@@ -62,7 +62,7 @@ render_header('الخزائن', 'cash_boxes');
 <section class="section" aria-labelledby="add-title">
   <h2 id="add-title">إضافة خزنة</h2>
   <?= $creating ? errors_summary($errors) : '' ?>
-  <form method="post" action="<?= h(url('cash_boxes')) ?>" class="form-inline">
+  <form method="post" action="<?= h(url('cash_boxes')) ?>" class="form-inline" novalidate>
     <?= csrf_field() ?>
     <input type="hidden" name="action" value="create">
     <div class="field">
@@ -100,7 +100,7 @@ render_header('الخزائن', 'cash_boxes');
         <tr class="<?= $active ? '' : 'row-cancelled' ?>">
           <td data-label="الاسم">
             <?php if ($canManage && $editId === $rid): ?>
-              <form method="post" action="<?= h(url('cash_boxes')) ?>" class="form-inline compact">
+              <form method="post" action="<?= h(url('cash_boxes')) ?>" class="form-inline compact" novalidate>
                 <?= csrf_field() ?>
                 <input type="hidden" name="action" value="rename">
                 <input type="hidden" name="id" value="<?= $rid ?>">

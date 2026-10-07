@@ -49,7 +49,7 @@ render_header($title, 'cash_boxes', 'page-print');
     <a class="btn btn-quiet" href="<?= h(url('cash_statement', ['id' => $id, 'all' => '1'])) ?>">كل الفترات</a>
   </div>
 </form>
-<?php if ($invalid): ?><div class="alert alert-warning" role="status">صيغة التاريخ غير صحيحة وتم تجاهلها. استخدم الصيغة 2026-01-31.</div><?php endif; ?>
+<?php if ($invalid): ?><div class="alert alert-warning" role="status">صيغة التاريخ غير صحيحة وتم تجاهلها. استخدم الصيغة <?= h(digits('2026-01-31')) ?>.</div><?php endif; ?>
 
 <article class="print-doc" id="live-cash-statement" data-live aria-label="<?= h($title) ?>">
   <header class="print-head">

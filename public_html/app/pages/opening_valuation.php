@@ -59,7 +59,7 @@ render_header('التقييم الافتتاحي للمخزون', 'opening_valua
           <td data-label="القطع" class="num"><?= h(fmt_int((int) $r['qty'])) ?></td>
           <td data-label="الحجم (م³)" class="num"><?= h(fmt_volume($vol)) ?></td>
           <td data-label="تكلفة المتر المكعب">
-            <form method="post" action="<?= h(url('opening_valuation')) ?>" class="inline-form">
+            <form method="post" action="<?= h(url('opening_valuation')) ?>" class="inline-form" novalidate>
               <?= csrf_field() ?>
               <input type="hidden" name="item_id" value="<?= $id ?>">
               <label for="<?= h($fieldId) ?>" class="visually-hidden">تكلفة المتر المكعب لـ <?= h($r['wood_type_name'] . ' ' . fmt_size($r)) ?></label>

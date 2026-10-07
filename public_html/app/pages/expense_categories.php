@@ -51,7 +51,7 @@ render_header('تصنيفات المصروفات', 'expense_categories');
 
 <section class="section">
   <h2>إضافة تصنيف</h2>
-  <form method="post" action="<?= h(url('expense_categories')) ?>" class="form-inline">
+  <form method="post" action="<?= h(url('expense_categories')) ?>" class="form-inline" novalidate>
     <?= csrf_field() ?>
     <input type="hidden" name="action" value="create">
     <div class="field">
@@ -80,7 +80,7 @@ render_header('تصنيفات المصروفات', 'expense_categories');
         <tr class="<?= $active ? '' : 'row-cancelled' ?>">
           <td data-label="الاسم">
             <?php if ($editId === $rid): ?>
-              <form method="post" action="<?= h(url('expense_categories')) ?>" class="form-inline compact">
+              <form method="post" action="<?= h(url('expense_categories')) ?>" class="form-inline compact" novalidate>
                 <?= csrf_field() ?>
                 <input type="hidden" name="action" value="rename">
                 <input type="hidden" name="id" value="<?= $rid ?>">

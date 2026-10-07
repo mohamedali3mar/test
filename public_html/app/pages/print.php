@@ -16,7 +16,7 @@ $kind = $d['kind'];
 $cancelled = $d['status'] === 'cancelled';
 $rounded = (bool) array_filter($lines, fn ($l) => volume_display_rounded($l['total_volume_m3']));
 
-render_header(doc_print_title($kind) . ' ' . fmt_int((int) $d['doc_no']), 'documents', 'page-print');
+render_header(doc_print_title($kind) . ' ' . fmt_doc_no((int) $d['doc_no']), 'documents', 'page-print');
 ?>
 <div class="print-toolbar no-print">
   <button type="button" class="btn btn-primary" data-action="print">طباعة</button>
@@ -38,12 +38,12 @@ render_header(doc_print_title($kind) . ' ' . fmt_int((int) $d['doc_no']), 'docum
     <?php endif; ?>
     <h1><?= h(doc_print_title($kind)) ?></h1>
     <?php if ($cancelled): ?>
-      <p class="print-cancelled">ملغاة بتاريخ <?= h(fmt_datetime($d['cancelled_at'])) ?></p>
+      <p class="print-cancelled"><?= $kind === 'sale' ? 'ملغاة' : 'ملغى' ?> بتاريخ <?= h(fmt_datetime($d['cancelled_at'])) ?></p>
     <?php endif; ?>
   </header>
 
   <dl class="print-meta">
-    <div><dt>رقم <?= $kind === 'sale' ? 'الفاتورة' : 'الإذن' ?></dt><dd><?= h(fmt_int((int) $d['doc_no'])) ?></dd></div>
+    <div><dt>رقم <?= $kind === 'sale' ? 'الفاتورة' : 'الإذن' ?></dt><dd><?= h(fmt_doc_no((int) $d['doc_no'])) ?></dd></div>
     <div><dt>التاريخ</dt><dd><?= h(fmt_datetime($d['doc_date'])) ?></dd></div>
     <?php if ($kind === 'transfer'): ?>
       <div><dt>من مخزن</dt><dd><?= h($d['warehouse_name']) ?></dd></div>

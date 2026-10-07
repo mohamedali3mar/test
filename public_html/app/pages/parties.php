@@ -134,7 +134,7 @@ render_header($title, 'parties');
   <h2 id="edit-title">تعديل <?= h($noun) ?> «<?= h($editRow['name']) ?>»</h2>
   <?= errors_summary($errors) ?>
   <p class="muted">تغيير الرصيد الافتتاحي يغير الرصيد الحالي بنفس الفرق، ويُسجل في سجل المراقبة.</p>
-  <form method="post" action="<?= h(url('parties', $self + ['edit' => (int) $editRow['id']])) ?>" class="form">
+  <form method="post" action="<?= h(url('parties', $self + ['edit' => (int) $editRow['id']])) ?>" class="form" novalidate>
     <?= csrf_field() ?>
     <input type="hidden" name="action" value="update">
     <input type="hidden" name="id" value="<?= (int) $editRow['id'] ?>">
@@ -151,7 +151,7 @@ render_header($title, 'parties');
 <section class="section" aria-labelledby="add-title">
   <h2 id="add-title">إضافة <?= h($kind === 'customer' ? 'عميل' : 'مورد') ?></h2>
   <?= $creating ? errors_summary($errors) : '' ?>
-  <form method="post" action="<?= h(url('parties', $self)) ?>" class="form">
+  <form method="post" action="<?= h(url('parties', $self)) ?>" class="form" novalidate>
     <?= csrf_field() ?>
     <input type="hidden" name="action" value="create">
     <?php $partyFields($creating ? $form : [], $creating ? $errors : [], 'new'); ?>

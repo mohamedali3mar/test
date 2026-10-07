@@ -227,11 +227,11 @@ function branch_validate(array $in): array
     }
     $address = clean_text(input($in, 'address'));
     if (mb_strlen($address) > 200) {
-        $errors['address'] = 'العنوان أطول من المسموح (200 حرف على الأكثر).';
+        $errors['address'] = 'العنوان أطول من المسموح (' . fmt_int(200) . ' حرف على الأكثر).';
     }
     $phone = normalize_number_input(clean_text(input($in, 'phone')));
     if (mb_strlen($phone) > 40) {
-        $errors['phone'] = 'رقم الهاتف أطول من المسموح (40 حرفًا على الأكثر).';
+        $errors['phone'] = 'رقم الهاتف أطول من المسموح (' . fmt_int(40) . ' حرفًا على الأكثر).';
     } elseif (!preg_match('/^[0-9+\- ]*\z/', $phone)) {
         $errors['phone'] = 'رقم الهاتف يقبل الأرقام والمسافات وعلامتي + و- فقط.';
     }
@@ -479,7 +479,7 @@ function branch_summary_totals(array $rows): array
 /** سطر مبيعات لكل عملة، مثل: ٣ فاتورة، ٣ ٠٠٠٫٠٠ جنيه مصري */
 function fmt_sales_lines(array $sales): array
 {
-    return array_map(fn ($s) => fmt_int($s['count']) . ' فاتورة، ' . fmt_money_currency($s['amount'], $s['currency']), $sales);
+    return array_map(fn ($s) => 'عدد الفواتير: ' . fmt_int($s['count']) . '، ' . fmt_money_currency($s['amount'], $s['currency']), $sales);
 }
 
 /**

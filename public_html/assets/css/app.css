@@ -94,6 +94,7 @@ main.container { padding-top: 24px; padding-bottom: 48px; }
 .optional { color: var(--muted); font-weight: 400; font-size: var(--fs-14); }
 .pre { white-space: pre-line; }
 .nowrap { white-space: nowrap; }
+[hidden] { display: none !important; }
 .visually-hidden, .default-submit {
   position: absolute !important; width: 1px; height: 1px; overflow: hidden;
   clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; border: 0; padding: 0; margin: -1px;
@@ -170,6 +171,8 @@ html.js [data-nojs-only] { display: none; }
 .field-check { display: flex; align-items: center; gap: 8px; }
 .field-check label { margin: 0; font-weight: 400; font-size: var(--fs-16); }
 .field-check input { width: 20px; height: 20px; margin: 0; accent-color: var(--primary); }
+.payment-type label { display: inline-flex; align-items: center; gap: 8px; min-height: 40px; margin: 0 0 0 24px; font-weight: 400; font-size: var(--fs-16); cursor: pointer; }
+.payment-type input[type="radio"] { width: 20px; height: 20px; margin: 0; accent-color: var(--primary); }
 
 input[type="text"], input[type="password"], input[type="search"], input[type="date"], select, textarea {
   width: 100%; min-height: 40px; padding: 4px 12px; background: var(--surface);
@@ -195,6 +198,7 @@ fieldset legend { padding: 0 4px; }
 .form-inline { display: flex; align-items: flex-end; gap: 8px; flex-wrap: wrap; }
 .form-inline .field { margin-bottom: 0; min-width: 240px; }
 .form-inline.compact { align-items: center; }
+.form-inline .field-error { flex: 1 1 100%; }
 .form-inline.compact input { min-width: 160px; width: auto; }
 
 /* ---------- أسطر الفاتورة والتحويل ---------- */
@@ -235,6 +239,7 @@ fieldset legend { padding: 0 4px; }
 .calc-panel h2, .confirm-box h2 { font-size: var(--fs-16); margin-bottom: 8px; }
 .confirm-box { border: 1px solid var(--success); background: var(--success-bg); }
 .confirm-box.danger { border-color: var(--error); background: var(--error-bg); }
+.confirm-box.warning { border-color: var(--warning); background: var(--warning-bg); }
 .calc-error { color: var(--error); font-size: var(--fs-14); margin: 8px 0 0; }
 
 .facts { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 8px 24px; margin: 0; }
@@ -331,6 +336,8 @@ td.audit-device { min-width: 140px; }
   }
   .field-check { min-height: 44px; }
   .field-check input { width: 24px; height: 24px; }
+  .payment-type label { display: flex; min-height: 44px; margin: 0; }
+  .payment-type input[type="radio"] { width: 24px; height: 24px; }
   .field-check label { flex: 1 1 auto; padding: 8px 0; }
   .actions .btn { flex: 1 1 auto; }
   .row-actions { gap: 8px; }

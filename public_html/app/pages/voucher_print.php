@@ -15,7 +15,7 @@ $size = input($_GET, 'size') === 'a5' ? 'a5' : 'a4';
 $title = VOUCHER_TITLES[$kind];
 $amount = money_to_piasters($v['amount']);
 
-render_header($title . ' ' . fmt_int((int) $v['doc_no']), 'vouchers', 'page-print print-' . $size);
+render_header($title . ' ' . fmt_doc_no((int) $v['doc_no']), 'vouchers', 'page-print print-' . $size);
 ?>
 <div class="print-toolbar no-print">
   <button type="button" class="btn btn-primary" data-action="print">طباعة</button>
@@ -37,7 +37,7 @@ render_header($title . ' ' . fmt_int((int) $v['doc_no']), 'vouchers', 'page-prin
   </header>
 
   <dl class="print-meta">
-    <div><dt>رقم السند</dt><dd><?= h(fmt_int((int) $v['doc_no'])) ?></dd></div>
+    <div><dt>رقم السند</dt><dd><?= h(fmt_doc_no((int) $v['doc_no'])) ?></dd></div>
     <div><dt>التاريخ</dt><dd><?= h(fmt_datetime($v['voucher_date'])) ?></dd></div>
     <?php if ($kind === 'collect'): ?>
       <div><dt>استلمنا من</dt><dd><?= h((string) $v['party_name']) ?></dd></div>

@@ -428,7 +428,7 @@ check_eq('  اسم الموظف لقطة', 'ahmed', $row['username']);
 check_eq('  عنوان IPv6 كاملًا وموحدًا (ليس /64)', '2001:db8::1', $row['ip']);
 check('  وصف الجهاز منظف من رموز التحكم', !preg_match('/\p{C}/u', $row['user_agent']) && str_contains($row['user_agent'], 'iPhone'));
 check_eq('  الجهاز بالعربية', 'سفاري على آيفون', audit_device_label($row['user_agent']));
-check_eq('  الملخص', 'وارد رقم ١ إلى المخزن الرئيسي: موسكي، عرض ١٠ سم × تخانة ٥٠ مللي × طول ٣ متر، ١٠ قطعة، المورد: مورد الشرق', $row['summary']);
+check_eq('  الملخص', "وارد رقم ١ إلى المخزن الرئيسي: موسكي، عرض\u{00A0}١٠\u{00A0}سم × تخانة\u{00A0}٥٠\u{00A0}مللي × طول\u{00A0}٣\u{00A0}متر، ١٠ قطعة، المورد: مورد الشرق", $row['summary']);
 $d = details_of($row);
 check('  التفاصيل', $d['quantity'] === 10 && $d['warehouse'] === 'المخزن الرئيسي' && $d['volume_m3'] === '0.15' && $d['supplier'] === 'مورد الشرق', json_encode($d, JSON_UNESCAPED_UNICODE));
 $item = item_id_for($pdo, $mosky, 100000, 50000, 3000000);

@@ -115,7 +115,7 @@ render_header(doc_label($d), 'documents');
         <th scope="col" class="num">حجم القطعة</th>
         <th scope="col" class="num">الحجم (م³)</th>
         <?php if ($kind === 'sale'): ?>
-          <th scope="col" class="num">سعر المتر</th>
+          <th scope="col" class="num">سعر المتر المكعب</th>
           <th scope="col" class="num">القيمة</th>
         <?php endif; ?>
         <th scope="col" class="num"><?= $kind === 'transfer' ? 'رصيد المصدر قبل/بعد' : 'الرصيد قبل/بعد' ?></th>
@@ -133,7 +133,7 @@ render_header(doc_label($d), 'documents');
         <td class="num" data-label="<?= h('حجم القطعة (م³)') ?>"><?= h(fmt_volume($l['piece_volume_m3'])) ?></td>
         <td class="num" data-label="<?= h('الحجم (م³)') ?>"><?= h(fmt_volume($l['total_volume_m3'])) ?></td>
         <?php if ($kind === 'sale'): ?>
-          <td class="num" data-label="<?= h('سعر المتر') ?>"><?= h(fmt_money((string) $l['price_per_m3'])) ?></td>
+          <td class="num" data-label="<?= h('سعر المتر المكعب') ?>"><?= h(fmt_money((string) $l['price_per_m3'])) ?></td>
           <td class="num" data-label="<?= h('القيمة') ?>"><?= h(fmt_money((string) $l['amount'])) ?></td>
         <?php endif; ?>
         <td class="num" data-label="<?= h($kind === 'transfer' ? 'رصيد المصدر قبل/بعد' : 'الرصيد قبل/بعد') ?>"><?= h(fmt_int((int) $l['balance_before']) . ' / ' . fmt_int((int) $l['balance_after'])) ?></td>
@@ -145,6 +145,9 @@ render_header(doc_label($d), 'documents');
     </tbody>
   </table>
 </div>
+<?php if ($kind === 'sale' && array_filter($lines, fn ($l) => volume_display_rounded((string) $l['total_volume_m3']))): ?>
+  <p class="muted">الأحجام معروضة مقربة، والقيمة محسوبة من الحجم الدقيق.</p>
+<?php endif; ?>
 <?php if ($cancelled): ?>
   <p class="muted">المستند ملغى، ولا يمكن إلغاؤه مرة أخرى.</p>
 <?php endif; ?>
@@ -168,8 +171,8 @@ render_header(doc_label($d), 'documents');
     <?php endif; ?>
     يبقى المستند في السجل بحالة «ملغى».
   </p>
-  <?= errors_summary($errors) ?>
-  <form method="post" action="<?= h(url('document', ['id' => $id])) ?>" class="form">
+  <?= errors_summary($errors, 'تعذر الإلغاء') ?>
+  <form method="post" action="<?= h(url('document', ['id' => $id])) ?>" class="form" novalidate>
     <?= csrf_field() ?>
     <input type="hidden" name="action" value="cancel">
     <div class="field">

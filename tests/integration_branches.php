@@ -353,7 +353,7 @@ check_eq('  إجمالي الدولار', '1.50', $totalByCur['دولار']['amo
 $egpMonth = $pdo->prepare("SELECT SUM(total_amount) FROM documents WHERE kind = 'sale' AND status = 'active' AND currency = 'جنيه مصري' AND created_at >= ?");
 $egpMonth->execute([current_month_range()[0]]);
 check_eq('  إجمالي الجنيه للشهر', (string) $egpMonth->fetchColumn(), $totalByCur['جنيه مصري']['amount'] ?? null);
-check('  سطر العرض لكل عملة', fmt_sales_lines([['count' => 1, 'amount' => '1.50', 'currency' => 'دولار']]) === [fmt_int(1) . ' فاتورة، ' . fmt_money('1.50') . ' دولار']);
+check('  سطر العرض لكل عملة', fmt_sales_lines([['count' => 1, 'amount' => '1.50', 'currency' => 'دولار']]) === ['عدد الفواتير: ' . fmt_int(1) . '، ' . fmt_money('1.50') . ' دولار']);
 $old = record_sale($pdo, $uid, sale_input($whMaadi, [[$item, 1, '100']]));
 $pdo->prepare("UPDATE documents SET created_at = DATE_SUB(?, INTERVAL 1 DAY) WHERE id = ?")->execute([current_month_range()[0], $old['id']]);
 $bs2 = array_column(branch_summary($pdo, $maadi)[0]['sales'], null, 'currency');

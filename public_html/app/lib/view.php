@@ -351,14 +351,19 @@ function options_html(array $rows, string $selected, string $placeholder = ''): 
     return $html;
 }
 
-function errors_summary(array $errors): string
+function errors_summary(array $errors, string $title = 'تعذر الحفظ'): string
 {
     if (!$errors) {
         return '';
     }
-    $html = '<div class="alert alert-error" role="alert"><p>تعذر الحفظ. راجع ما يلي:</p><ul>';
-    foreach (array_unique($errors) as $field => $e) {
-        $html .= '<li>' . h(line_prefix((string) $field) . $e) . '</li>';
+    // إزالة التكرار بعد إضافة «السطر N:» حتى لا يختفي نفس الخطأ في سطر آخر
+    $items = [];
+    foreach ($errors as $field => $e) {
+        $items[] = line_prefix((string) $field) . $e;
+    }
+    $html = '<div class="alert alert-error" role="alert"><p>' . h($title) . '. راجع ما يلي:</p><ul>';
+    foreach (array_unique($items) as $item) {
+        $html .= '<li>' . h($item) . '</li>';
     }
     return $html . '</ul></div>';
 }

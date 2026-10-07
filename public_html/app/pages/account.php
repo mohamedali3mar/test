@@ -45,7 +45,7 @@ render_header('حسابي', 'account');
 <section class="section" aria-labelledby="password-title">
   <h2 id="password-title">تغيير كلمة المرور</h2>
   <?= errors_summary($pwErrors) ?>
-  <form method="post" action="<?= h(url('account')) ?>" class="form">
+  <form method="post" action="<?= h(url('account')) ?>" class="form" novalidate>
     <?= csrf_field() ?>
     <input type="hidden" name="action" value="password">
     <input type="text" name="username" value="<?= h(current_username()) ?>" autocomplete="username" hidden>
@@ -57,7 +57,7 @@ render_header('حسابي', 'account');
     <div class="field">
       <label for="new_password">كلمة المرور الجديدة</label>
       <input type="password" id="new_password" name="new_password" autocomplete="new-password" minlength="10" required<?= field_attrs($pwErrors, 'new_password', 'hint-newpw') ?>>
-      <p class="hint" id="hint-newpw">10 أحرف على الأقل. ستنتهي الجلسات المفتوحة على الأجهزة الأخرى.</p>
+      <p class="hint" id="hint-newpw"><?= h(fmt_int(10)) ?> أحرف على الأقل. ستنتهي الجلسات المفتوحة على الأجهزة الأخرى.</p>
       <?= field_error($pwErrors, 'new_password') ?>
     </div>
     <div class="field">
@@ -83,7 +83,7 @@ $tfaSecret = (!$tfaEnabled && is_string($_SESSION['tfa_setup'] ?? null)) ? $_SES
   <?php elseif ($tfaEnabled): ?>
     <p>التحقق بخطوتين <strong>مفعل</strong> لحسابك: بعد كلمة المرور يُطلب رمز من تطبيق المصادقة على هاتفك.</p>
     <?= errors_summary($tfaErrors) ?>
-    <form method="post" action="<?= h(url('account')) ?>" class="form">
+    <form method="post" action="<?= h(url('account')) ?>" class="form" novalidate>
       <?= csrf_field() ?>
       <input type="hidden" name="action" value="tfa_disable">
       <input type="text" name="username" value="<?= h(current_username()) ?>" autocomplete="username" hidden>
@@ -103,7 +103,7 @@ $tfaSecret = (!$tfaEnabled && is_string($_SESSION['tfa_setup'] ?? null)) ? $_SES
       </div>
     </form>
   <?php elseif ($tfaSecret === ''): ?>
-    <p>حماية إضافية اختيارية: بعد كلمة المرور يُطلب رمز من 6 أرقام يظهر في تطبيق مصادقة على هاتفك، مثل Google Authenticator أو Microsoft Authenticator.</p>
+    <p>حماية إضافية اختيارية: بعد كلمة المرور يُطلب رمز من <?= h(fmt_int(6)) ?> أرقام يظهر في تطبيق مصادقة على هاتفك، مثل Google Authenticator أو Microsoft Authenticator.</p>
     <form method="post" action="<?= h(url('account')) ?>">
       <?= csrf_field() ?>
       <input type="hidden" name="action" value="tfa_start">
@@ -124,13 +124,13 @@ $tfaSecret = (!$tfaEnabled && is_string($_SESSION['tfa_setup'] ?? null)) ? $_SES
       </div>
     </div>
     <?= errors_summary($tfaErrors) ?>
-    <form method="post" action="<?= h(url('account')) ?>" class="form">
+    <form method="post" action="<?= h(url('account')) ?>" class="form" novalidate>
       <?= csrf_field() ?>
       <input type="hidden" name="action" value="tfa_confirm">
       <div class="field field-narrow">
         <label for="tfa_code">رمز التحقق من تطبيق المصادقة</label>
         <input type="text" id="tfa_code" name="tfa_code" inputmode="numeric" autocomplete="one-time-code" maxlength="12" required<?= field_attrs($tfaErrors, 'tfa_code', 'hint-tfa-on') ?>>
-        <p class="hint" id="hint-tfa-on">اكتب الرمز المكون من 6 أرقام الظاهر الآن في التطبيق لتأكيد التفعيل. ستنتهي الجلسات المفتوحة على الأجهزة الأخرى.</p>
+        <p class="hint" id="hint-tfa-on">اكتب الرمز المكون من <?= h(fmt_int(6)) ?> أرقام الظاهر الآن في التطبيق لتأكيد التفعيل. ستنتهي الجلسات المفتوحة على الأجهزة الأخرى.</p>
         <?= field_error($tfaErrors, 'tfa_code') ?>
       </div>
       <div class="actions">

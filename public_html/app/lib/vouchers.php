@@ -39,7 +39,7 @@ const VOUCHER_TITLES = [
 
 function voucher_label(array $v): string
 {
-    return (VOUCHER_KIND_LABELS[$v['kind']] ?? (string) $v['kind']) . ' رقم ' . fmt_int((int) $v['doc_no']);
+    return (VOUCHER_KIND_LABELS[$v['kind']] ?? (string) $v['kind']) . ' رقم ' . fmt_doc_no((int) $v['doc_no']);
 }
 
 /** نوع الطرف المطلوب لنوع السند (null = بلا طرف) */
@@ -259,7 +259,7 @@ function cancel_voucher(PDO $pdo, int $userId, int $id, string $reasonRaw): arra
     }
     $reason = clean_text($reasonRaw);
     if (mb_strlen($reason) > 255) {
-        throw new ValidationException(['reason' => 'سبب الإلغاء أطول من المسموح (255 حرفًا).']);
+        throw new ValidationException(['reason' => 'سبب الإلغاء أطول من المسموح (' . fmt_int(255) . ' حرفًا).']);
     }
     return db_transaction($pdo, function (PDO $pdo) use ($userId, $id, $reason) {
         $stmt = $pdo->prepare('SELECT * FROM vouchers WHERE id = ? FOR UPDATE');
