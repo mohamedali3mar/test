@@ -6,7 +6,7 @@
  */
 import { chromium } from '/opt/node22/lib/node_modules/playwright/index.mjs';
 import { execSync } from 'node:child_process';
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -28,7 +28,7 @@ const text = async (page, sel) => ((await page.locator(sel).first().textContent(
 const settle = (page) => page.waitForTimeout(400);
 
 const browser = await chromium.launch();
-const context = await browser.newContext({ viewport: { width: 1280, height: 800 }, locale: 'ar-EG' });
+const context = await browser.newContext({ viewport: { width: 1280, height: 800 }, locale: 'ar-EG', acceptDownloads: true });
 const problems = [];
 function watch(page, name) {
   page.on('console', (m) => { if (m.type() === 'error') { problems.push(`${name}: console ${m.text()}`); } });
@@ -261,9 +261,87 @@ await page.goto(BASE + 'index.php?r=document&id=' + sale2);
 check('المستند الملغى باقٍ في السجل بدون نموذج إلغاء', (await page.locator('#live-cancel').count()) === 0 && (await page.content()).includes('ملغى منذ'));
 
 /* ---------------------------------------------------------------- */
+section('أدوات الجداول: البحث السريع والأعمدة والتصدير والطباعة');
+await page.goto(BASE + 'index.php?r=inventory');
+await page.evaluate(() => localStorage.removeItem('wood.cols.inventory'));
+await page.goto(BASE + 'index.php?r=inventory');
+const tools = '[data-table-tools="inventory"]';
+check('tables.js أضاف البحث والأعمدة والطباعة', (await page.locator(tools + ' input[type="search"]').count()) === 1
+  && (await page.locator(tools + ' details.table-columns > summary').count()) === 1 && (await page.locator(tools + ' button[data-action="print"]').count()) === 1);
+check('البحث السريع له تسمية', (await page.locator(tools + ' label', { hasText: 'بحث سريع في الجدول' }).count()) === 1);
+const visibleRows = () => page.evaluate(() => [...document.querySelectorAll('#stock-table tbody tr:not(.row-subtotal)')].filter((r) => !r.hidden).length);
+const allRows = await visibleRows();
+await page.fill(tools + ' input[type="search"]', 'زان');
+check('بحث بلا نتائج يخفي الصفوف ويقول ذلك', (await visibleRows()) === 0 && (await text(page, tools + ' .table-search-status')).includes('لا توجد صفوف مطابقة'));
+check('الإجمالي الفرعي يختفي مع صفوف نوعه', (await page.evaluate(() => [...document.querySelectorAll('#stock-table .row-subtotal')].every((r) => r.hidden))));
+await page.fill(tools + ' input[type="search"]', '90');
+check('البحث بأرقام إنجليزية يطابق الأرقام العربية المعروضة (٩٠)', (await visibleRows()) === allRows && (await text(page, tools + ' .table-search-status')).startsWith('الصفوف الظاهرة'));
+await page.fill(tools + ' input[type="search"]', '');
+check('مسح البحث يعيد كل الصفوف', (await visibleRows()) === allRows && (await page.locator(tools + ' .table-search-status').isHidden()));
+
+await page.click(tools + ' details.table-columns > summary');
+check('العمود الأول لا يمكن إخفاؤه', await page.locator(tools + ' .table-columns-panel input[value="type"]').isDisabled());
+await page.uncheck(tools + ' .table-columns-panel input[value="width"]');
+const widthHidden = await page.evaluate(() => [...document.querySelectorAll('#stock-table [data-col="width"]')].every((c) => c.hidden));
+const span = await page.evaluate(() => document.querySelector('#stock-table .row-subtotal th[data-span]').colSpan);
+check('إخفاء عمود العرض من الرأس والصفوف', widthHidden);
+check('خانة الإجمالي الممتدة تصغر إلى 3 أعمدة', span === 3, String(span));
+await page.keyboard.press('Escape');
+check('Escape يغلق قائمة الأعمدة', !(await page.locator(tools + ' details.table-columns').getAttribute('open')));
+await page.goto(BASE + 'index.php?r=inventory');
+check('المتصفح يتذكر الأعمدة بعد إعادة التحميل', await page.evaluate(() => document.querySelector('#stock-table th[data-col="width"]').hidden));
+const [dl] = await Promise.all([page.waitForEvent('download'), page.click(tools + ' button[name="format"][value="csv"]')]);
+const csvText = readFileSync(await dl.path(), 'utf8');
+const csvHead = csvText.replace(/^﻿/, '').split('\r\n')[0];
+check('التصدير بالأعمدة الظاهرة على الشاشة', csvHead.startsWith('النوع,التخانة') && !csvHead.includes('العرض'), csvHead);
+check('اسم ملف التصدير', dl.suggestedFilename().startsWith('المخزون') && dl.suggestedFilename().endsWith('.csv'), dl.suggestedFilename());
+
+// التحديث التلقائي يحافظ على البحث والأعمدة المخفية
+await page.fill(tools + ' input[type="search"]', 'موسكي');
+await page.locator('h1').click();
+const p2 = await context.newPage();
+watch(p2, 'p2');
+await p2.goto(BASE + 'index.php?r=receive');
+await p2.selectOption('#warehouse_id', { label: 'المخزن الرئيسي' });
+await p2.selectOption('#wood_type_id', { label: 'موسكي' });
+await p2.fill('#width', '10');
+await p2.selectOption('#width_unit', 'cm');
+await p2.fill('#thickness', '50');
+await p2.selectOption('#thickness_unit', 'mm');
+await p2.fill('#length', '3');
+await p2.selectOption('#length_unit', 'm');
+await p2.fill('#quantity', '5');
+await p2.click('button:has-text("حفظ الوارد")');
+await p2.waitForURL(/done=/);
+await page.waitForFunction(() => document.querySelector('#stock-table tbody tr td[data-col="qty"]').textContent.trim() === '٩٥', null, { timeout: 15000 }).catch(() => {});
+check('الجدول تحدّث تلقائيًا (٩٥)', (await text(page, '#stock-table tbody tr td[data-col="qty"]')) === '٩٥');
+check('بعد التحديث: العمود المخفي ما زال مخفيًا', await page.evaluate(() => [...document.querySelectorAll('#stock-table [data-col="width"]')].every((c) => c.hidden)));
+check('بعد التحديث: نص البحث باقٍ ومطبق', (await page.inputValue(tools + ' input[type="search"]')) === 'موسكي'
+  && (await text(page, tools + ' .table-search-status')).startsWith('الصفوف الظاهرة'));
+await p2.close();
+await page.click(tools + ' details.table-columns > summary');
+await page.check(tools + ' .table-columns-panel input[value="width"]');
+await page.keyboard.press('Escape');
+
+await page.emulateMedia({ media: 'print' });
+const printState = await page.evaluate(() => ['.table-tools', '.filters', '.print-heading'].map((s) => getComputedStyle(document.querySelector(s)).display));
+check('الطباعة: الأدوات والتصفية مخفية، ووصف التصفية ظاهر', printState[0] === 'none' && printState[1] === 'none' && printState[2] !== 'none', JSON.stringify(printState));
+await page.emulateMedia({ media: 'screen' });
+
+await page.goto(BASE + 'index.php?r=documents');
+await page.click('#documents-table th[data-col="qty"] a.sort-link');
+check('الترتيب من رأس العمود في السجل', page.url().includes('sort=qty%3Aasc') && (await page.getAttribute('#documents-table th[data-col="qty"]', 'aria-sort')) === 'ascending');
+await page.goto(BASE + 'index.php?r=reports&report=sales_period');
+const [dl2] = await Promise.all([page.waitForEvent('download'), page.click('[data-table-tools="report.sales_period"] button[value="xlsx"]')]);
+check('تقرير المبيعات إلى Excel من المتصفح', readFileSync(await dl2.path()).subarray(0, 2).toString() === 'PK' && dl2.suggestedFilename().endsWith('.xlsx'), dl2.suggestedFilename());
+await page.goto(BASE + 'index.php?r=print&id=' + new URL(saleUrl).searchParams.get('id'));
+const [dl3] = await Promise.all([page.waitForEvent('download'), page.click('a:has-text("تحميل PDF")')]);
+check('تحميل PDF الفاتورة من صفحة الطباعة', readFileSync(await dl3.path()).subarray(0, 5).toString() === '%PDF-' && dl3.suggestedFilename().endsWith('.pdf'), dl3.suggestedFilename());
+
+/* ---------------------------------------------------------------- */
 section('إمكانية الوصول وقواعد التصميم (كمبيوتر)');
 const pages = ['inventory', 'receive', 'sell', 'transfer', 'documents', 'types', 'warehouses', 'settings', 'document&id=1', 'print&id=' + new URL(saleUrl).searchParams.get('id'),
-  'account', 'users', 'users&edit=1', 'monitor'];
+  'account', 'users', 'users&edit=1', 'monitor', 'reports&report=sales_period', 'reports&report=cash_summary', 'dashboard'];
 for (const r of pages) {
   await page.goto(BASE + 'index.php?r=' + r);
   await settle(page);

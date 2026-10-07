@@ -6,6 +6,8 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 OUT="$ROOT/tests/output"
 mkdir -p "$OUT"
 export PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers
+# أسماء ملفات التحميل العربية في Chromium تحتاج لغة نظام UTF-8 (وإلا يسمي الملف «download»)
+export LANG=C.UTF-8 LC_ALL=C.UTF-8
 status=0
 run() {
   local name="$1"; shift
