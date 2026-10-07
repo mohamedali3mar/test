@@ -1,0 +1,9 @@
+# أسرار وبيانات تشغيل لا تُرفع للمستودع
+public_html/app/config.php
+public_html/app/storage/installed.lock
+public_html/app/storage/reset.allow
+public_html/app/storage/logs/*.log
+public_html/app/storage/logs/*.log.1
+public_html/app/storage/sessions/sess_*
+tests/output/
+node_modules/
