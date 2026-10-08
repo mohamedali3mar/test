@@ -322,6 +322,42 @@
     ready.then(function () { window.print(); });
   });
 
+  /* ---------- القائمة الرئيسية على الكمبيوتر (details/summary) ----------
+   * بدون JavaScript تفتح المجموعة وتُغلق بالضغط فقط. هنا: مجموعة واحدة مفتوحة في كل مرة، وتُغلق عند خروج
+   * الماوس منها (بمهلة قصيرة حتى لا تُغلق أثناء الحركة إلى روابطها)، أو الضغط خارجها، أو Escape. */
+  var navGroups = Array.prototype.slice.call(document.querySelectorAll('.main-nav details.nav-group'));
+  var navTimers = [];
+  function closeNav(except) {
+    navGroups.forEach(function (g) { if (g !== except) { g.open = false; } });
+  }
+  navGroups.forEach(function (g, i) {
+    g.addEventListener('toggle', function () { if (g.open) { closeNav(g); } });
+    // pointerleave للماوس فقط: مع اللمس يُطلق الحدث عند رفع الإصبع فتُغلق القائمة فور فتحها
+    g.addEventListener('pointerleave', function (e) {
+      if (e.pointerType !== 'mouse') { return; }
+      clearTimeout(navTimers[i]);
+      navTimers[i] = setTimeout(function () {
+        // لا تُغلق إذا كان التركيز بلوحة المفاتيح داخل المجموعة
+        if (!g.contains(document.activeElement) || document.activeElement === g.querySelector('summary')) { g.open = false; }
+      }, 350);
+    });
+    g.addEventListener('pointerenter', function () { clearTimeout(navTimers[i]); });
+    g.addEventListener('focusout', function (e) {
+      if (!e.relatedTarget || !g.contains(e.relatedTarget)) { g.open = false; }
+    });
+  });
+  document.addEventListener('click', function (e) {
+    if (!e.target.closest || !e.target.closest('.main-nav details.nav-group')) { closeNav(null); }
+  });
+  document.addEventListener('keydown', function (e) {
+    if (e.key !== 'Escape') { return; }
+    var open = navGroups.filter(function (g) { return g.open; })[0];
+    if (open) {
+      open.open = false;
+      open.querySelector('summary').focus();
+    }
+  });
+
   /* ---------- نموذج الوارد ---------- */
   var receiveForm = document.querySelector('form[data-calc="receive"]');
   var refreshReceive = function () {};
