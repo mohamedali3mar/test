@@ -19,7 +19,8 @@ render_header('الرئيسية', 'home', 'page-home');
 <div class="page-head">
   <div>
     <h1>الرئيسية</h1>
-    <p class="home-sub">
+    <?php /* التاريخ منطقة حية مع أرقام اليوم: بعد منتصف الليل يتغيران معًا مع أول تحديث */ ?>
+    <p class="home-sub" id="live-home-day" data-live>
       <?= h((string) ($_SESSION['display_name'] ?? current_username())) ?>،
       <?= h(home_day_label($o['day'])) ?><?= $branchName !== '' ? '، الفرع: ' . h($branchName) : ($allBranches ? '، كل الفروع' : '') ?>
     </p>
@@ -136,8 +137,8 @@ render_header('الرئيسية', 'home', 'page-home');
 <section class="section" aria-labelledby="home-admin-title">
   <h2 id="home-admin-title">للمدير</h2>
   <nav class="home-actions" aria-label="صفحات المدير">
-    <?php if (acct_can('dashboard')): ?><a class="btn" href="<?= h(url('dashboard')) ?>"><?= icon('dashboard') ?>لوحة التحكم والأرباح</a><?php endif; ?>
-    <?php if (can_open('reports')): ?><a class="btn" href="<?= h(url('reports')) ?>"><?= icon('reports') ?>التقارير</a><?php endif; ?>
+    <?php if (acct_can('dashboard')): ?><a class="btn <?= h(action_btn_class('dashboard')) ?>" href="<?= h(url('dashboard')) ?>"><?= icon('dashboard') ?>لوحة التحكم والأرباح</a><?php endif; ?>
+    <?php if (can_open('reports')): ?><a class="btn <?= h(action_btn_class('reports')) ?>" href="<?= h(url('reports')) ?>"><?= icon('reports') ?>التقارير</a><?php endif; ?>
     <?php if (can('monitor.view')): ?><a class="btn" href="<?= h(url('monitor')) ?>"><?= icon('monitor') ?>المراقبة</a><?php endif; ?>
   </nav>
 </section>

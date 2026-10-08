@@ -130,7 +130,7 @@ Each voucher kind has:
 - `voucher_date` via `acct_doc_date($in, $errors, 'voucher_date')`.
 - Idempotency (`request_token`/`request_hash`, same pattern as `existing_request`).
 - Audit, then `data_version_bump`.
-- Branch snapshot: `branch_id`/`branch_name` NULL for now.
+- Branch snapshot: `branch_id`/`branch_name` = the creating user's branch when that user is restricted to one branch (used by the home page "today's collections" of that branch), NULL when the user sees all branches (a company-wide voucher). Balances and statements ignore it: accounts stay shared.
 
 Pages:
 - `vouchers` log: filters by kind, date, cash box, party, status, number; totals.

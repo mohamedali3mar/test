@@ -501,4 +501,38 @@ expect_validation('فرع غير موجود مرفوض', fn () => user_update($p
 expect_validation('قيمة غير رقمية مرفوضة', fn () => user_update($pdoU, $adminU, $staffU, ['display_name' => 'موظف الفرع', 'role' => 'staff', 'branch_id' => '1 OR 1=1']));
 expect_validation('المدير لا يقيد نفسه بفرع', fn () => user_update($pdoU, $adminU, $adminU, ['display_name' => 'boss', 'role' => 'admin', 'branch_id' => (string) $brU]));
 
+section('تحصيلات اليوم في الرئيسية: فرع من سجّل سند القبض');
+$pdoH = fresh_database();
+$bossH = seed_user($pdoH, 'boss_h', 'Boss-Pass-12345');
+$pdoH->exec("UPDATE users SET role = 'admin'");
+$mainH = (int) $pdoH->query('SELECT id FROM branches ORDER BY id LIMIT 1')->fetchColumn();
+$alexH = branch_create($pdoH, ['name' => 'فرع الإسكندرية']);
+$staffH = user_create($pdoH, $bossH, ['display_name' => 'محصل الإسكندرية', 'username' => 'alex_cashier', 'role' => 'staff',
+    'password' => 'Staff-Pass-12345', 'password_confirm' => 'Staff-Pass-12345']);
+$pdoH->exec("UPDATE users SET branch_id = $alexH WHERE id = $staffH");
+$custH = party_create($pdoH, $bossH, 'customer', ['name' => 'عميل التحصيل', 'opening_balance' => '1000', 'opening_direction' => 'owes_us']);
+$boxH = (int) $pdoH->query('SELECT id FROM cash_boxes ORDER BY id LIMIT 1')->fetchColumn();
+$collectIn = fn (string $amount) => ['party_id' => (string) $custH, 'cash_box_id' => (string) $boxH, 'amount' => $amount,
+    'reference' => '', 'notes' => '', 'request_token' => new_request_token()];
+
+$_SESSION = ['user_id' => $staffH, 'role' => 'staff'];
+reset_branch_scope_cache();
+$vStaff = record_voucher($pdoH, $staffH, 'collect', $collectIn('250'));
+$_SESSION = ['user_id' => $bossH, 'role' => 'admin'];
+reset_branch_scope_cache();
+$vBoss = record_voucher($pdoH, $bossH, 'collect', $collectIn('100'));
+$row = fn (int $id) => $pdoH->query("SELECT branch_id, branch_name FROM vouchers WHERE id = $id")->fetch();
+check_eq('سند الموظف المقيد يحفظ فرعه', [(string) $alexH, 'فرع الإسكندرية'], array_values(array_map('strval', $row($vStaff['id']))));
+check_eq('سند من يرى كل الفروع عام (بلا فرع)', [null, null], array_values($row($vBoss['id'])));
+
+$homeAll = home_overview($pdoH, null);
+check_eq('الرئيسية لكل الفروع: كل التحصيلات (350.00 في سندين)', [['currency' => app_setting('currency'), 'count' => 2, 'amount' => '350.00']], $homeAll['collect']);
+$_SESSION = ['user_id' => $staffH, 'role' => 'staff'];
+reset_branch_scope_cache();
+$homeAlex = home_overview($pdoH, $alexH);
+check_eq('الرئيسية للموظف المقيد: تحصيلات فرعه فقط (250.00)', [['currency' => app_setting('currency'), 'count' => 1, 'amount' => '250.00']], $homeAlex['collect']);
+check_eq('الرئيسية لفرع آخر: لا تحصيلات', [], home_overview($pdoH, $mainH)['collect']);
+$_SESSION = [];
+reset_branch_scope_cache();
+
 finish();

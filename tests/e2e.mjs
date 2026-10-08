@@ -82,6 +82,10 @@ section('الهوية: الشعار وأيقونة المتصفح والرئيس
   check('أيقونات القائمة', id.navIcons >= 6, String(id.navIcons));
   check('أزرار الرئيسية بألوان الإجراءات', id.actions.some((c) => c.includes('btn-sale')) && id.actions.some((c) => c.includes('btn-receive'))
     && id.actions.some((c) => c.includes('btn-transfer')), id.actions.join(','));
+  const noIcon = await page.evaluate(() => [...document.querySelectorAll('.main-nav a, .nav-menu-links a, .nav-group > summary')]
+    .filter((a) => !a.querySelector('svg.icon')).map((a) => a.textContent.trim()));
+  check('كل روابط القائمة ومجموعاتها بأيقونة (ومنها «فاتورة بيع»)', noIcon.length === 0, noIcon.join(','));
+  check('زرا التقارير ولوحة التحكم في الرئيسية بلون التقارير', (await page.locator('a.btn-reports').count()) === 2);
 }
 
 section('العربية وRTL وخط Cairo');
@@ -206,6 +210,7 @@ await page.fill('#party_name', 'مؤسسة البناء الحديث');
 await page.screenshot({ path: path.join(OUT, 'sell-desktop.png'), fullPage: true });
 await page.click('button:has-text("مراجعة الفاتورة")');
 check('صفحة المراجعة على الخادم', (await text(page, 'h1')) === 'مراجعة فاتورة البيع' && (await page.content()).includes(AMOUNT_3000));
+check('زر «تأكيد البيع» بأيقونة البيع', (await page.locator('button:has-text("تأكيد البيع") svg.icon use[href="#i-sale"]').count()) === 1);
 await page.dblclick('button:has-text("تأكيد البيع")');
 await page.waitForURL(/r=sell&done=/);
 await settle(page);
@@ -278,6 +283,30 @@ check('ما كتبه المستخدم في النموذج لم يُمسح بال
 await seller.fill('#pos-price', '20000');
 await seller.click('[data-pos-add]');
 check('رفض التجاوز بناءً على الرصيد المحدث', (await text(seller, '[data-pos-error]')).includes('٦٥'));
+check('  والخطأ على حقل العدد وحده', (await seller.getAttribute('#pos-qty', 'aria-invalid')) === 'true'
+  && (await seller.getAttribute('#pos-price', 'aria-invalid')) === 'false');
+{
+  // سطر في الجدول، ثم تحديث تلقائي للأرصدة (أي حفظ في النظام يرفع رقم الإصدار)، ثم نفس الصنف مرة أخرى
+  await seller.fill('#pos-qty', '3');
+  await seller.click('[data-pos-add]');
+  check('سطر في جدول البيع قبل التحديث التلقائي', (await seller.locator('[data-pos-rows] tr').count()) === 1);
+  const refreshed = seller.waitForResponse((r) => r.url().includes('op=stock'), { timeout: 15000 }).catch(() => null);
+  sql("UPDATE counters SET value = value + 1 WHERE name = 'data_version'");
+  check('الأرصدة تحدّثت تلقائيًا', (await refreshed) !== null);
+  await settle(seller);
+  check('  الطول يعرض المتاح ناقص ما في الجدول (٦٢)', (await seller.locator('#pos-length option:checked').textContent()).includes('٦٢'));
+  await seller.fill('#pos-qty', '2');
+  await seller.click('[data-pos-add]');
+  check('  نفس الصنف بنفس السعر يُجمع في سطره بعد التحديث (٥ قطع في سطر واحد)', (await seller.locator('[data-pos-rows] tr').count()) === 1
+    && (await seller.inputValue('[data-pos-hidden] input[name="lines[0][quantity]"]')) === '5');
+  await seller.fill('#pos-qty', '61');
+  await seller.click('[data-pos-add]');
+  check('  والتجاوز يُحسب مع ما في الجدول (٥ + ٦١ > ٦٥)', (await text(seller, '[data-pos-error]')).includes('أكبر من المتاح'));
+  await seller.fill('#pos-qty', '');
+  await seller.click('[data-pos-rows] [data-pos-action="edit"]');
+  check('  تعديل السطر بعد التحديث يحمّل نفس الصنف', (await seller.inputValue('#pos-qty')) === '5' && (await seller.inputValue('#pos-length')) !== '');
+  await seller.click('[data-pos-cancel]');
+}
 
 await viewer.goto(BASE + 'index.php?r=print&id=' + sale2);
 check('الفاتورة الثانية سارية في النافذة الأخرى', (await viewer.locator('.print-cancelled').count()) === 0);
@@ -419,6 +448,55 @@ for (const r of pages) {
   });
   check(`قواعد التصميم والتسميات: ${r}`, audit.length === 0, audit.slice(0, 6).join(' | '));
 }
+section('القائمة العلوية: الفتح والإغلاق بالماوس ولوحة المفاتيح');
+{
+  let crashed = false;
+  page.on('crash', () => { crashed = true; });
+  await page.goto(BASE + 'index.php?r=sell');
+  const grp = page.locator('.main-nav details.nav-group').first();
+  const isOpen = () => grp.evaluate((d) => d.open).catch(() => null);
+  await grp.locator('summary').click();
+  check('المجموعة تفتح بالضغط', (await isOpen()) === true);
+  const box = await grp.locator('.nav-group-links').boundingBox();
+  const first = await grp.locator('.nav-group-links a').first().boundingBox();
+  await page.mouse.click(first.x + first.width / 2, box.y + 3);
+  await page.waitForTimeout(200);
+  check('الضغط في حشوة القائمة المفتوحة لا يُسقط الصفحة ويبقيها مفتوحة', !crashed && (await isOpen()) === true);
+  await page.mouse.click(first.x + first.width / 2, first.y + first.height + 2);
+  await page.waitForTimeout(200);
+  check('الضغط في الفراغ بين الروابط لا يُسقط الصفحة', !crashed && (await isOpen()) === true);
+  await page.click('h1');
+  await page.waitForTimeout(100);
+  check('الضغط خارج المجموعة يغلقها', (await isOpen()) === false);
+  await grp.locator('summary').focus();
+  await page.keyboard.press('Enter');
+  check('Enter على المجموعة يفتحها', (await isOpen()) === true);
+  const links = await grp.locator('.nav-group-links a').count();
+  for (let i = 0; i < links; i++) { await page.keyboard.press('Tab'); }
+  check('Tab بين روابطها يبقيها مفتوحة', (await isOpen()) === true);
+  await page.keyboard.press('Tab');
+  await page.waitForTimeout(100);
+  check('Tab بعد آخر رابط يغلقها', (await isOpen()) === false);
+  await grp.locator('summary').click();
+  await page.keyboard.press('Escape');
+  check('Escape يغلقها ويعيد التركيز لعنوانها', (await isOpen()) === false
+    && (await page.evaluate(() => document.activeElement.tagName)) === 'SUMMARY');
+}
+
+section('متصفح قديم بلا BigInt: المحرر الكلاسيكي يبقى كاملًا');
+{
+  const octx = await browser.newContext({ viewport: { width: 1280, height: 800 }, storageState: await context.storageState() });
+  await octx.addInitScript(() => { delete window.BigInt; });
+  const o = await octx.newPage();
+  await o.goto(BASE + 'index.php?r=sell');
+  check('بدون BigInt: الأسطر الكلاسيكية وزر «أسطر إضافية» ظاهر', (await o.locator('[data-pos]').count()) === 0
+    && (await o.locator('[data-line]').count()) >= 3 && (await o.locator('button[value="more_lines"]').isVisible()));
+  const before = await o.locator('[data-line]').count();
+  await Promise.all([o.waitForNavigation(), o.click('button[value="more_lines"]')]);
+  check('  والزر يضيف أسطرًا', (await o.locator('[data-line]').count()) > before, `${before} -> ${await o.locator('[data-line]').count()}`);
+  await octx.close();
+}
+
 await page.goto(BASE + 'index.php?r=receive');
 await page.keyboard.press('Tab');
 await page.keyboard.press('Tab');

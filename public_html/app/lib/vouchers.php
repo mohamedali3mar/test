@@ -172,8 +172,11 @@ function record_voucher(PDO $pdo, int $userId, string $kind, array $in): array
     }
     // تُقرأ قبل المعاملة حتى لا تُفتح قراءة غير مقفلة داخلها
     $currency = app_setting('currency');
+    // فرع السند: فرع المستخدم المقيد بفرع (تحصيلات الفرع في الرئيسية)، وNULL لمن يرى كل الفروع (سند عام)
+    $branchId = acct_branch_scope($pdo);
+    $branchName = $branchId !== null ? (string) (branch_find($pdo, $branchId)['name'] ?? '') : null;
     try {
-        return db_transaction($pdo, function (PDO $pdo) use ($v, $kind, $userId, $currency) {
+        return db_transaction($pdo, function (PDO $pdo) use ($v, $kind, $userId, $currency, $branchId, $branchName) {
             $party = null;
             if ($v['party'] !== null) {
                 // التحصيل والصرف مسموحان لحساب موقوف (تسوية رصيده)
@@ -188,7 +191,7 @@ function record_voucher(PDO $pdo, int $userId, string $kind, array $in): array
             $pdo->prepare('INSERT INTO vouchers (kind, doc_no, voucher_date, party_id, party_name, cash_box_id, cash_box_name,
                     to_cash_box_id, to_cash_box_name, category_id, category_name, amount, currency, reference, notes,
                     branch_id, branch_name, request_token, request_hash, created_at, created_by)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?, ?, ?)')
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
                 ->execute([
                     $kind, $docNo, $v['date'],
                     $party ? (int) $party['id'] : null, $party ? $party['name'] : null,
@@ -197,7 +200,7 @@ function record_voucher(PDO $pdo, int $userId, string $kind, array $in): array
                     $v['category'] ? (int) $v['category']['id'] : null, $v['category'] ? $v['category']['name'] : null,
                     piasters_to_money($amount), $currency,
                     $v['reference'] !== '' ? $v['reference'] : null, $v['notes'] !== '' ? $v['notes'] : null,
-                    $v['request_token'], $v['hash'], now(), $userId,
+                    $branchId, $branchName, $v['request_token'], $v['hash'], now(), $userId,
                 ]);
             $id = (int) $pdo->lastInsertId();
             $label = VOUCHER_KIND_LABELS[$kind] . ' رقم ' . $docNo;

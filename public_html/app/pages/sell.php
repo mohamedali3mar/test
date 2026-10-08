@@ -123,7 +123,7 @@ if ($review) {
       <input type="hidden" name="lines[<?= (int) $i ?>][<?= h($f) ?>]" value="<?= h($line[$f]) ?>">
     <?php endforeach; ?>
   <?php endforeach; ?>
-  <button type="submit" name="action" value="confirm" class="btn btn-sale" data-busy-text="جارٍ الحفظ"><?= icon('check') ?>تأكيد البيع</button>
+  <button type="submit" name="action" value="confirm" class="btn btn-sale" data-busy-text="جارٍ الحفظ"><?= icon('sale') ?>تأكيد البيع</button>
   <button type="submit" name="action" value="edit" class="btn">تعديل</button>
 </form>
 <?php

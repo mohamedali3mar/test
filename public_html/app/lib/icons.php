@@ -96,13 +96,16 @@ function icon_sprite(): string
     return $out . '</svg>';
 }
 
+/** صفحات اسم أيقونتها غير اسم مسارها */
+const ROUTE_ICON_NAMES = ['sell' => 'sale'];
+
 /** أيقونة صفحة في القائمة. العملاء والموردون صفحة واحدة بنوعين */
 function route_icon(string $route, array $params = []): string
 {
     if ($route === 'parties') {
         return ($params['kind'] ?? '') === 'supplier' ? 'suppliers' : 'customers';
     }
-    return $route;
+    return ROUTE_ICON_NAMES[$route] ?? $route;
 }
 
 /** فئة الزر الرئيسي لصفحة: لون الإجراء إن كان لها لون، وإلا الزر الرئيسي العادي */

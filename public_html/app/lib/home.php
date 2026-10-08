@@ -57,7 +57,8 @@ function home_overview(PDO $pdo, ?int $scope, ?string $today = null): array
     $stmt->execute($condParams);
     $recent = $stmt->fetchAll();
 
-    // التحصيلات السارية اليوم (سندات القبض) في فرع المستخدم أو كل الفروع
+    // التحصيلات السارية اليوم (سندات القبض): للمستخدم المقيد بفرع السندات المسجلة من فرعه (record_voucher يحفظ
+    // فرع من سجّلها)، ولمن يرى كل الفروع كل السندات
     $collect = null;
     if (can('vouchers.view')) {
         $stmt = $pdo->prepare(

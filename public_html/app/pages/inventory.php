@@ -19,7 +19,7 @@ render_header('المخزون', 'inventory');
 <div class="page-head">
   <h1>المخزون</h1>
   <div class="page-actions no-print">
-    <a class="btn btn-receive" href="<?= h(url('receive')) ?>"><?= icon('receive') ?>إضافة وارد</a>
+    <a class="btn btn-primary" href="<?= h(url('receive')) ?>"><?= icon('receive') ?>إضافة وارد</a>
     <a class="btn" href="<?= h(url('sell')) ?>">فاتورة بيع</a>
     <a class="btn" href="<?= h(url('transfer')) ?>">تحويل</a>
   </div>

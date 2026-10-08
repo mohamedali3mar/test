@@ -116,15 +116,15 @@ function render_pos_panel(bool $withPrice): string
     <div class="pos-grid<?= $withPrice ? ' with-price' : '' ?>">
       <div class="field">
         <label for="pos-type">النوع</label>
-        <select id="pos-type" data-pos-type aria-describedby="pos-available"></select>
+        <select id="pos-type" data-pos-type aria-describedby="pos-available pos-error"></select>
       </div>
       <div class="field">
         <label for="pos-size">المقاس (عرض × تخانة)</label>
-        <select id="pos-size" data-pos-size aria-describedby="pos-available"></select>
+        <select id="pos-size" data-pos-size aria-describedby="pos-available pos-error"></select>
       </div>
       <div class="field">
         <label for="pos-length">الطول</label>
-        <select id="pos-length" data-pos-length aria-describedby="pos-available"></select>
+        <select id="pos-length" data-pos-length aria-describedby="pos-available pos-error"></select>
       </div>
       <div class="field">
         <label for="pos-qty">عدد القطع</label>

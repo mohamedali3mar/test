@@ -355,8 +355,12 @@
       }, 350);
     });
     g.addEventListener('pointerenter', function () { clearTimeout(navTimers[i]); });
+    // Tab خارج المجموعة يغلقها. الضغط بالماوس خارجها يغلقه مستمع الضغط في الصفحة، والضغط في فراغ داخلها
+    // (بين الروابط) يبقيها مفتوحة. الإغلاق مؤجل: إغلاق details أثناء ضغط الماوس يُسقط صفحة Chromium.
     g.addEventListener('focusout', function (e) {
-      if (!e.relatedTarget || !g.contains(e.relatedTarget)) { g.open = false; }
+      var to = e.relatedTarget;
+      if (!to || g.contains(to)) { return; }
+      setTimeout(function () { if (g.open && !g.contains(document.activeElement)) { g.open = false; } }, 0);
     });
   });
   document.addEventListener('click', function (e) {
@@ -430,6 +434,10 @@
   var docForm = document.querySelector('form[data-doc-form]');
   var refreshDocForm = function () {};
   var posTpl = docForm ? docForm.querySelector('template[data-pos-template]') : null;
+  if (docForm && posTpl && !hasBigInt) {
+    // متصفح قديم بلا BigInt: الشاشة السريعة لا تعمل، فيبقى المحرر الكلاسيكي كاملًا ومعه زر «أسطر إضافية»
+    docForm.querySelectorAll('[data-nojs-only]').forEach(function (el) { el.removeAttribute('data-nojs-only'); });
+  }
   if (docForm && posTpl && hasBigInt) {
     var section = docForm.querySelector('[data-lines]');
     var withPrice = section.dataset.withPrice === '1';
@@ -542,23 +550,31 @@
       var amountEl = q$('[data-pos-amount]');
       if (amountEl) { setText(amountEl, um3 !== null && p && !p.msg ? C.fmtMoney(C.amountPiasters(um3, p.v)) : '-'); }
     }
-    function showError(msg) {
+    /* الرسالة مع الحقل المسبب لها: aria-invalid عليه وحده */
+    function showError(msg, field) {
       showMessages(errBox, msg ? [msg] : []);
-      qtyEl.setAttribute('aria-invalid', msg ? 'true' : 'false');
+      [typeSel, sizeSel, lenSel, qtyEl, priceIn].forEach(function (el) {
+        if (el) { el.setAttribute('aria-invalid', msg && el === (field || qtyEl) ? 'true' : 'false'); }
+      });
     }
     function describe(r) { return (r.item ? r.item.typeName + '، ' + r.item.wtLabel + '، طول ' + r.item.len : 'صنف'); }
 
     /* «إضافة» أو «حفظ التعديل»: الصنف المكرر بنفس السعر تُجمع كميته في سطره */
     function commit() {
       var item = entryItem();
-      if (!wh()) { showError('اختر المخزن أولًا.'); (whSelect || typeSel).focus(); return; }
-      if (!item) { showError('اختر النوع ثم المقاس ثم الطول.'); (typeSel.value === '' ? typeSel : sizeSel.value === '' ? sizeSel : lenSel).focus(); return; }
+      if (!wh()) { showError('اختر المخزن أولًا.', typeSel); (whSelect || typeSel).focus(); return; }
+      if (!item) {
+        var missing = typeSel.value === '' ? typeSel : sizeSel.value === '' ? sizeSel : lenSel;
+        showError('اختر النوع ثم المقاس ثم الطول.', missing);
+        missing.focus();
+        return;
+      }
       var q = C.parseQuantity(qtyEl.value);
-      if (q.msg) { showError(q.msg); qtyEl.focus(); return; }
+      if (q.msg) { showError(q.msg, qtyEl); qtyEl.focus(); return; }
       var p = { v: null };
       if (withPrice) {
         p = C.parsePrice(priceIn.value);
-        if (p.msg) { showError(p.msg); priceIn.focus(); return; }
+        if (p.msg) { showError(p.msg, priceIn); priceIn.focus(); return; }
       }
       var priceRaw = withPrice ? C.normalize(priceIn.value) : '';
       var target = editing;
@@ -567,7 +583,7 @@
       var qty = q.v;
       if (dup >= 0) {
         if (withPrice && rows[dup].price !== p.v) {
-          showError('هذا الصنف موجود في السطر ' + C.fmtInt(dup + 1) + ' بسعر مختلف. عدّل ذلك السطر بدل إضافته مرة أخرى.');
+          showError('هذا الصنف موجود في السطر ' + C.fmtInt(dup + 1) + ' بسعر مختلف. عدّل ذلك السطر بدل إضافته مرة أخرى.', priceIn);
           return;
         }
         qty += typeof rows[dup].qty === 'number' ? rows[dup].qty : 0;
@@ -585,7 +601,7 @@
       } else if (target >= 0) {
         rows[target] = row;
       } else {
-        if (rows.length >= MAX_LINES) { showError('الحد الأقصى ' + C.fmtInt(MAX_LINES) + ' سطرًا في المستند الواحد.'); return; }
+        if (rows.length >= MAX_LINES) { showError('الحد الأقصى ' + C.fmtInt(MAX_LINES) + ' سطرًا في المستند الواحد.', lenSel); return; }
         rows.push(row);
       }
       setText(posStatus, (target >= 0 ? 'عُدّل: ' : 'أُضيف: ') + describe(row) + '، ' + C.fmtInt(qty) + ' قطعة');
@@ -637,6 +653,9 @@
     }
     /* جدول المستند والحقول المخفية والإجماليات */
     function render() {
+      // التحديث التلقائي يعيد رسم الجدول: يبقى التركيز على نفس زر السطر (لوحة المفاتيح وقارئ الشاشة)
+      var focused = document.activeElement && tbody.contains(document.activeElement) && document.activeElement.dataset.posAction
+        ? [document.activeElement.dataset.posRow, document.activeElement.dataset.posAction] : null;
       while (tbody.firstChild) { tbody.removeChild(tbody.firstChild); }
       while (hiddenBox.firstChild) { hiddenBox.removeChild(hiddenBox.firstChild); }
       var totQty = 0;
@@ -711,6 +730,10 @@
       setText(section.querySelector('[data-total-volume]'), totQty ? C.fmtVolume(totUm3) : '-');
       var ta = section.querySelector('[data-total-amount]');
       if (ta) { setText(ta, totAmount > BigInt(0) ? C.fmtMoney(totAmount) : '-'); }
+      if (focused) {
+        var refocus = tbody.querySelector('[data-pos-row="' + focused[0] + '"][data-pos-action="' + focused[1] + '"]');
+        if (refocus) { refocus.focus(); }
+      }
       var full = rows.length >= MAX_LINES && editing < 0;
       addBtn.disabled = full;
       if (full) { setText(addLabel, 'الحد الأقصى ' + C.fmtInt(MAX_LINES) + ' سطرًا'); } else if (editing < 0) { setText(addLabel, addText); }
@@ -726,7 +749,12 @@
         return;
       }
       var removed = rows.splice(i, 1)[0];
-      if (editing === i) { resetEntry(true); } else if (editing > i) { editing--; }
+      if (editing === i) {
+        resetEntry(true);
+      } else if (editing > i) {
+        editing--;
+        setText(q$('[data-pos-title]'), 'تعديل السطر ' + C.fmtInt(editing + 1));
+      }
       setText(posStatus, 'حُذف: ' + describe(removed));
       render();
       rebuildEntry();
@@ -768,12 +796,18 @@
       }
       if (!rows.length) {
         e.preventDefault();
-        showError('أضف صنفًا واحدًا على الأقل.');
+        showError('أضف صنفًا واحدًا على الأقل.', typeSel);
         (typeSel.disabled ? (whSelect || typeSel) : typeSel).focus();
       }
     });
 
-    refreshDocForm = function () { rebuildEntry(); render(); };
+    /* بعد تحديث الأرصدة تلقائيًا تصبح كائنات الأصناف جديدة: تُربط الأسطر بها حتى يبقى جمع المكرر وفحص المتاح
+     * مع ما في الجدول وتنبيه تجاوز المتاح وتعديل السطر صحيحة */
+    refreshDocForm = function () {
+      rows.forEach(function (r) { if (r.item) { r.item = stock.byId[r.item.id] || r.item; } });
+      rebuildEntry();
+      render();
+    };
     rebuildEntry();
     render();
   }
