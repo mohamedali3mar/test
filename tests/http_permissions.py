@@ -134,7 +134,7 @@ if s == 200 and 'name="install_key"' in html and 'استعادة' not in html:
                                         'warehouse_name': 'المخزن الرئيسي', 'username': ADMIN[0], 'password': ADMIN[1], 'password_confirm': ADMIN[1]})
     check('التثبيت نجح', 'تم التثبيت' in html, s)
 s, h, _ = a.login(*ADMIN)
-check('دخول المدير', s == 303 and 'r=inventory' in (h.get('Location') or ''), s)
+check('دخول المدير', s == 303 and 'r=home' in (h.get('Location') or ''), s)
 _, _, html = a.get('index.php?r=inventory')
 for route in ['monitor', 'users', 'settings']:
     check(f'قائمة المدير فيها رابط {route}', f'href="index.php?r={route}"' in html)
@@ -199,9 +199,12 @@ for route in ['settings', 'users', 'monitor', 'users&edit=1', 'settings&action=m
     check(f'GET {route} للموظف -> 403 برسالة عربية', s == 403 and 'ليست لديك صلاحية' in body, s)
 s, h, body = st.get('index.php?r=monitor', headers={'X-Live': '1'})
 check('التحديث التلقائي لصفحة ممنوعة -> 403 JSON', s == 403 and h.get('Content-Type', '').startswith('application/json'), s)
-for route in ['inventory', 'receive', 'sell', 'transfer', 'documents', f'document&id={admin_doc}', f'print&id={admin_doc}', 'account', 'types', 'warehouses']:
+for route in ['home', 'inventory', 'receive', 'sell', 'transfer', 'documents', f'document&id={admin_doc}', f'print&id={admin_doc}', 'account', 'types', 'warehouses']:
     s, _, body = st.get('index.php?r=' + route)
     check(f'GET {route} للموظف -> 200', s == 200 and 'ليست لديك صلاحية' not in body, s)
+_, _, html = st.get('index.php?r=home')
+check('رئيسية الموظف: أزرار عمله فقط وبلا قسم المدير', 'href="index.php?r=sell"' in html and 'للمدير' not in html
+      and 'href="index.php?r=monitor"' not in html and 'href="index.php?r=dashboard"' not in html)
 s, _, _ = st.get('index.php?r=api&op=version', headers={'X-Live': '1'})
 check('API التحديث التلقائي للموظف -> 200', s == 200, s)
 _, _, html = st.get('index.php?r=types')

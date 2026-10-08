@@ -35,7 +35,7 @@ const VIEWPORTS = [
   { width: 1366, height: 768 },
   { width: 1920, height: 1080 },
 ];
-const NAV_LABELS = ['المخزون', 'إضافة وارد', 'فاتورة بيع', 'تحويل بين المخازن', 'الفواتير والحركات', 'أنواع الخشب', 'المخازن', 'الإعدادات',
+const NAV_LABELS = ['الرئيسية', 'المخزون', 'إضافة وارد', 'فاتورة بيع', 'تحويل بين المخازن', 'الفواتير والحركات', 'أنواع الخشب', 'المخازن', 'الإعدادات',
   'العملاء', 'الموردون', 'السندات', 'الخزائن', 'لوحة التحكم', 'التقارير', 'المراقبة', 'المستخدمون'];
 // القائمة على الكمبيوتر مجمعة (details/summary): المجموعات ظاهرة، والروابط داخلها تظهر عند الفتح
 const NAV_GROUP_LABELS = ['المخزون', 'المبيعات', 'الحسابات', 'التقارير', 'الإدارة'];
@@ -66,7 +66,7 @@ if (await lp.locator('#password').count()) {
   await lp.fill('#password', PASS);
   await lp.click('button:has-text("دخول")');
 }
-if (!lp.url().includes('r=inventory')) {
+if (!lp.url().includes('r=home')) {
   console.log('تعذر الدخول. تأكد من WOOD_UI_BASE وWOOD_UI_USER وWOOD_UI_PASS وأن الموقع مثبت.');
   await browser.close();
   process.exit(2);
@@ -89,6 +89,7 @@ const firstOf = (word) => (docs.find((d) => d.label.includes(word)) || {}).id;
 const doneIds = { receive: firstOf('وارد'), sell: sales[0] && sales[0].id, transfer: firstOf('تحويل') };
 
 const PAGES = [
+  { name: 'home', route: 'home', nav: 'الرئيسية' },
   { name: 'inventory', route: 'inventory', nav: 'المخزون' },
   { name: 'receive', route: 'receive', nav: 'إضافة وارد' },
   { name: 'sell', route: 'sell', nav: 'فاتورة بيع' },
@@ -249,7 +250,8 @@ async function checkMenu(page, vp, pageDef, shot) {
       deskLinks: deskNav ? [...deskNav.querySelectorAll('a')].map((a) => a.textContent.trim()) : [],
       deskGroups: deskNav ? [...deskNav.querySelectorAll('details.nav-group > summary')].filter(vis).map((x) => x.textContent.trim()) : [],
       deskCurrent: deskNav ? [...deskNav.querySelectorAll('a[aria-current="page"]')].map((a) => a.textContent.trim()) : [],
-      deskVisibleLinks: deskNav ? [...deskNav.querySelectorAll('a')].filter(vis).length : 0,
+      // رابط الرئيسية وحده ظاهر خارج المجموعات
+      deskVisibleLinks: deskNav ? [...deskNav.querySelectorAll('a:not(.nav-home)')].filter(vis).length : 0,
       menuLinks: details ? [...details.querySelectorAll('a')].filter(vis).map((a) => a.textContent.trim()) : [],
       current: [...document.querySelectorAll('.site-header a[aria-current="page"]')].filter(vis).map((a) => a.textContent.trim()),
       logout: vis(logout),

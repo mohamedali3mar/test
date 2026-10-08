@@ -52,6 +52,7 @@ const PERMISSIONS = [
  * حتى تُضاف صراحة، فلا تُفتح صفحة إدارية للموظفين بالخطأ.
  */
 const ROUTE_PERMISSIONS = [
+    'home'       => 'app.use',          // الصفحة الرئيسية لكل الأدوار، بأرقام نطاق الفرع فقط
     'inventory'  => 'stock.view',
     'api'        => 'stock.view',
     'receive'    => 'documents.create',

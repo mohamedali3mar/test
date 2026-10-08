@@ -20,6 +20,7 @@ enforce_https();
 const ROUTES = [
     'login'      => ['file' => 'login',      'public' => true],
     'logout'     => ['file' => 'logout',     'public' => true],
+    'home'       => ['file' => 'home',       'public' => false],
     'inventory'  => ['file' => 'inventory',  'public' => false],
     'receive'    => ['file' => 'receive',    'public' => false],
     'sell'       => ['file' => 'sell',       'public' => false],
@@ -58,7 +59,7 @@ const ROUTES = [
 
 $route = input($_GET, 'r');
 if ($route === '') {
-    $route = 'inventory';
+    $route = 'home';
 }
 if (!isset(ROUTES[$route])) {
     start_secure_session();

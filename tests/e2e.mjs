@@ -64,7 +64,7 @@ check('كلمة مرور خاطئة مرفوضة برسالة عربية', (awai
 await page.fill('#username', ADMIN.user);
 await page.fill('#password', ADMIN.pass);
 await page.click('button:has-text("دخول")');
-check('الدخول نجح وفتح المخزون', page.url().includes('r=inventory'));
+check('الدخول نجح وفتح الصفحة الرئيسية', page.url().includes('r=home'));
 
 section('العربية وRTL وخط Cairo');
 check('lang=ar و dir=rtl', (await page.getAttribute('html', 'lang')) === 'ar' && (await page.getAttribute('html', 'dir')) === 'rtl');
@@ -355,7 +355,7 @@ check('تحميل PDF الفاتورة من صفحة الطباعة', readFileSy
 
 /* ---------------------------------------------------------------- */
 section('إمكانية الوصول وقواعد التصميم (كمبيوتر)');
-const pages = ['inventory', 'receive', 'sell', 'transfer', 'documents', 'types', 'warehouses', 'settings', 'document&id=1', 'print&id=' + new URL(saleUrl).searchParams.get('id'),
+const pages = ['home', 'inventory', 'receive', 'sell', 'transfer', 'documents', 'types', 'warehouses', 'settings', 'document&id=1', 'print&id=' + new URL(saleUrl).searchParams.get('id'),
   'account', 'users', 'users&edit=1', 'monitor', 'reports&report=sales_period', 'reports&report=cash_summary', 'dashboard'];
 for (const r of pages) {
   await page.goto(BASE + 'index.php?r=' + r);

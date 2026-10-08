@@ -213,9 +213,10 @@ function render_header(string $title, string $active = '', string $bodyClass = '
 <?php if ($loggedIn): ?>
 <header class="site-header no-print">
   <div class="container header-row">
-    <a class="brand" href="<?= h(url('inventory')) ?>"><?= h($company) ?></a>
-    <?php $navGroups = nav_visible_groups($active); $navCurrent = nav_current_label($navGroups); ?>
+    <a class="brand" href="<?= h(url('home')) ?>"><?= h($company) ?></a>
+    <?php $navGroups = nav_visible_groups($active); $navCurrent = $active === 'home' ? 'الرئيسية' : nav_current_label($navGroups); ?>
     <nav class="main-nav" aria-label="القائمة الرئيسية">
+      <a class="nav-home" href="<?= h(url('home')) ?>"<?= $active === 'home' ? ' aria-current="page"' : '' ?>>الرئيسية</a>
       <?php foreach ($navGroups as $group => $links): $inGroup = in_array(true, array_column($links, 2), true); ?>
         <details class="nav-group<?= $inGroup ? ' is-current' : '' ?>">
           <summary><?= h($group) ?></summary>
@@ -238,6 +239,7 @@ function render_header(string $title, string $active = '', string $bodyClass = '
         <span class="nav-menu-state" aria-hidden="true"></span>
       </summary>
       <nav class="nav-menu-links" aria-label="القائمة الرئيسية">
+        <a href="<?= h(url('home')) ?>"<?= $active === 'home' ? ' aria-current="page"' : '' ?>>الرئيسية</a>
         <?php foreach ($navGroups as $group => $links): ?>
           <p class="nav-menu-group"><?= h($group) ?></p>
           <?php foreach ($links as [$href, $label, $current]): ?>
@@ -290,7 +292,7 @@ function render_simple_error(string $message, int $code = 500): never
     render_header('خطأ');
     echo '<h1>تعذر تنفيذ الطلب</h1>';
     echo '<div class="alert alert-error" role="alert">' . h($message) . '</div>';
-    echo '<p><a class="btn" href="' . h(url('inventory')) . '">العودة إلى المخزون</a></p>';
+    echo '<p><a class="btn" href="' . h(url('home')) . '">العودة إلى الرئيسية</a></p>';
     render_footer();
     exit;
 }

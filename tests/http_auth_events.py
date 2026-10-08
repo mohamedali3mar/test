@@ -132,7 +132,7 @@ if max(migrations) == 2:
     s, _, html = a.login(ADMIN[0], 'wrong-before-migration')
     check('الدخول الخاطئ يعمل برسالته بدون جدول السجل', s == 200 and 'غير صحيحة' in html, s)
     s, h, _ = a.login()
-    check('الدخول الصحيح يعمل بدون جدول السجل', s == 303 and 'r=inventory' in h.get('Location', ''), s)
+    check('الدخول الصحيح يعمل بدون جدول السجل', s == 303 and 'r=home' in h.get('Location', ''), s)
     token, html = a.csrf('index.php?r=settings')
     check('الإعدادات تعرض زر التحديث وملاحظة السجل بدل الخطأ',
           'تحديث قاعدة البيانات مطلوب' in html and 'يبدأ السجل بعد تحديث قاعدة البيانات' in html and 'id="live-auth-events"' in html)
@@ -157,7 +157,7 @@ s, _, html = Client(UA_EVIL).login('<script>alert(1)</script>', 'whatever-123')
 check('اسم خبيث يُرفض برسالة عامة', 'غير صحيحة' in html, s)
 a = Client()
 s, h, _ = a.login()
-check('الدخول الصحيح', s == 303 and 'r=inventory' in h.get('Location', ''), s)
+check('الدخول الصحيح', s == 303 and 'r=home' in h.get('Location', ''), s)
 rows = events_after(marker)
 check('سُجلت فاشلتان ثم الخبيثة ثم الناجحة', [(r[0], r[1]) for r in rows] == [
     ('login_fail', 'admin'), ('login_fail', 'admin'), ('login_fail', '<script>alert(1)</script>'), ('login_ok', 'admin')], rows)

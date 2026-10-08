@@ -223,6 +223,9 @@ check('  إجمالي الفرع (٣٠ - ٤ + ٥ = ٣١ قطعة)', 'عدد ال
 s, html = a.page('index.php?r=branches')
 check('ملخص الفروع: مبيعات الشهر لكل فرع', '١٢٠٫٠٠ جنيه مصري' in html and '٣٠٫٠٠ جنيه مصري' in html and 'عدد الفواتير: ١' in html, s)
 check('  والإجمالي العام', '١٥٠٫٠٠ جنيه مصري' in html and 'عدد الفواتير: ٢' in html)
+s, html = a.page('index.php?r=home')
+check('الرئيسية لكل الفروع: مبيعات اليوم ١٥٠٫٠٠ ومستندات الفرعين', s == 200 and '١٥٠٫٠٠ جنيه مصري' in html and 'كل الفروع' in html
+      and f'id={sale_alex}"' in html and f'id={sale_cairo}"' in html and 'للمدير' in html, s)
 
 # ------------------------------------------------------------------
 section('المدير مقيد بفرع القاهرة (مباشرة في قاعدة البيانات)')
@@ -250,6 +253,10 @@ s, html = a.page(f'index.php?r=documents&branch={alex}&warehouse={wh_alex}')
 check('  تصفية مصطنعة بفرع آخر ومخزنه لا تكشف شيئًا', f'id={sale_alex}"' not in html and select_options(html, 'warehouse') == [wh_cairo], s)
 s, html = a.page(f'index.php?r=inventory&branch={alex}&warehouse={wh_alex}')
 check('المخزون: مخازن القاهرة وأرصدتها فقط', s == 200 and select_options(html, 'warehouse') == [wh_cairo] and 'مخزن الإسكندرية' not in html and 'ملخص الفروع' not in html)
+s, html = a.page('index.php?r=home')
+check('الرئيسية للمقيد: مبيعات القاهرة ومخزونها فقط', s == 200 and 'الفرع: فرع القاهرة' in html and '٣٠٫٠٠ جنيه مصري' in html
+      and '١٥٠٫٠٠' not in html and '١٢٠٫٠٠' not in html and '<dd>٤٣</dd>' in html, s)
+check('  بلا مستندات الفرع الآخر ولا قسم المدير', f'id={sale_alex}"' not in html and f'id={sale_cairo}"' in html and 'للمدير' not in html)
 check('  الإجمالي ٥٠ - ٢ - ٥ = ٤٣ قطعة', 'عدد القطع: ٤٣' in re.sub(r'<[^>]+>', '', html), re.findall(r'عدد القطع: [^<،]*', html))
 s, _, body = a.get('index.php?r=api&op=stock', headers={'X-Live': '1'})
 data = json.loads(body)

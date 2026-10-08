@@ -2,7 +2,7 @@
 defined('APP_ROOT') || exit;
 
 if (current_user_id() > 0) {
-    redirect('inventory');
+    redirect('home');
 }
 
 $pdo = db();
@@ -28,7 +28,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         // الخطوة الثانية: رمز تطبيق المصادقة
         $error = two_factor_login($pdo, input($_POST, 'code'));
         if ($error === null) {
-            redirect('inventory');
+            redirect('home');
         }
     } elseif ($step === 'cancel') {
         two_factor_cancel();
@@ -38,7 +38,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $error = attempt_login($pdo, $username, input($_POST, 'password'));
         if ($error === null) {
             // مع التحقق بخطوتين لم يكتمل الدخول بعد: صفحة الدخول تعرض خانة الرمز
-            redirect(current_user_id() > 0 ? 'inventory' : 'login');
+            redirect(current_user_id() > 0 ? 'home' : 'login');
         }
     }
 }
