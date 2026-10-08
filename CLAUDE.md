@@ -9,7 +9,7 @@ The owner communicates in Egyptian Arabic; reply in Arabic. Code comments and UI
 
 Arabic (RTL) web system for a timber company: inventory by piece count and exact cubic meters, sales and purchases,
 accounting (customers, suppliers, cash boxes, vouchers, statements, weighted average cost), reports, users and roles,
-branches, monitoring, 2FA. Version in `APP_VERSION` (`public_html/app/lib/core.php`), currently 2.0.0.
+branches, monitoring, 2FA. Version in `APP_VERSION` (`public_html/app/lib/core.php`), currently 2.1.0.
 
 - PHP 8.1+ and MySQL/MariaDB via PDO. No framework, no build step, shared hosting (Hostinger). mPDF vendored in `app/vendor`.
 - Entry point `public_html/index.php` (`ROUTES`, `?r=<route>`), pages in `app/pages/`, logic in `app/lib/`.
