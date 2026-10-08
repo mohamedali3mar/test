@@ -138,6 +138,10 @@ function stock_payload(PDO $pdo, ?int $branchId = null): array
             'typeName' => $r['wood_type_name'],
             'key' => $r['wood_type_id'] . ':' . $r['width_um'] . ':' . $r['thickness_um'] . ':' . $r['length_um'],
             'size' => fmt_size($r),
+            // للاختيار بالترتيب في شاشة البيع والتحويل: النوع، ثم العرض × التخانة، ثم الطول
+            'wt' => $r['width_um'] . ':' . $r['thickness_um'],
+            'wtLabel' => "عرض\u{00A0}" . fmt_dim((int) $r['width_um'], $r['width_unit']) . " × تخانة\u{00A0}" . fmt_dim((int) $r['thickness_um'], $r['thickness_unit']),
+            'len' => fmt_dim((int) $r['length_um'], $r['length_unit']),
             'piece' => m3_to_um3((string) $r['piece_volume_m3']),
             'stock' => (object) ($stock[(int) $r['id']] ?? []),
         ];

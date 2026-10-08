@@ -548,3 +548,43 @@ th[aria-sort] .sort-link { color: var(--primary); }
   .sort-state { display: none; }
   .sort-link { color: #000; }
 }
+
+/* ---------- شاشة الإدخال السريع للبيع والتحويل (forms.php: render_pos_panel) ---------- */
+.pos { margin-bottom: 16px; }
+.pos-entry { background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; margin-bottom: 16px; }
+.pos-entry h3 { margin-bottom: 12px; }
+.pos-grid { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1.6fr) minmax(0, 1.1fr) minmax(0, 0.8fr) auto; gap: 12px; align-items: end; }
+.pos-grid.with-price { grid-template-columns: minmax(0, 1.2fr) minmax(0, 1.6fr) minmax(0, 1.1fr) minmax(0, 0.8fr) minmax(0, 1fr) auto; }
+.pos-grid .field { margin-bottom: 0; }
+.pos-buttons { display: flex; gap: 8px; }
+.pos-entry .hint { margin-top: 8px; }
+.pos-preview { display: flex; flex-wrap: wrap; gap: 4px 24px; font-size: var(--fs-14); color: var(--text-2); margin: 8px 0 0; }
+.pos-preview strong { color: var(--text); font-variant-numeric: tabular-nums; }
+.pos-entry .calc-error { margin-top: 8px; }
+.pos-cart .cell-actions { white-space: nowrap; width: 1%; }
+.pos-cart .row-actions { flex-wrap: nowrap; gap: 4px; }
+.pos-cart .row-actions .btn { min-height: 36px; padding: 0 12px; }
+.pos-cart tr.is-editing td { background: var(--surface-2); }
+.pos-cart .pos-row-note td { border-top: 0; padding-top: 0; }
+.btn-danger-quiet { color: var(--error); }
+.btn-danger-quiet:hover { background: var(--error-bg); color: var(--error); }
+.pos-empty { margin-bottom: 16px; }
+
+@media (min-width: 721px) and (max-width: 1023px) {
+  .pos-grid, .pos-grid.with-price { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .pos-buttons { align-self: end; }
+}
+@media (max-width: 720px) {
+  .pos-entry { padding: 12px; }
+  .pos-grid, .pos-grid.with-price { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .pos-grid .field:nth-child(-n+3) { grid-column: 1 / -1; }
+  .pos-buttons { grid-column: 1 / -1; }
+  .pos-buttons .btn { flex: 1 1 auto; }
+  .pos-cart .row-actions .btn { min-height: 44px; flex: 1 1 auto; }
+  .table-stack .pos-cart .cell-actions .row-actions { display: flex; gap: 8px; }
+  .table-stack .pos-row-note { border: 0; background: transparent; padding: 0; margin-top: -4px; }
+  .table-stack .pos-row-note td { display: block; padding: 0 0 8px; }
+}
+@media print {
+  .pos-entry, .pos-cart .cell-actions { display: none !important; }
+}

@@ -323,14 +323,13 @@ for (const vp of VIEWPORTS) {
       if (wh) {
         await page.selectOption('#warehouse_id', wh);
         await page.waitForTimeout(150);
-        for (let i = 0; i < 2; i++) {
-          const line = page.locator('[data-line]').nth(i);
-          if ((await line.locator('[data-line-item] option').count()) > i + 1) {
-            await line.locator('[data-line-item]').selectOption({ index: i + 1 });
-            await line.locator('[data-line-qty]').fill('1');
-            await line.locator('[data-line-price]').fill('15000');
-          }
+        // شاشة الإدخال السريع: أول صنف متاح (النوع ثم المقاس ثم الطول)، ثم إضافته إلى الجدول
+        for (const sel of ['#pos-type', '#pos-size', '#pos-length']) {
+          if (!(await page.inputValue(sel)) && (await page.locator(sel + ' option').count()) > 1) { await page.selectOption(sel, { index: 1 }); }
         }
+        await page.fill('#pos-qty', '1');
+        await page.fill('#pos-price', '15000');
+        await page.click('[data-pos-add]');
         await page.click('button:has-text("مراجعة الفاتورة")');
       }
       check(`${vp.width} sell-review: review page opened`, (await page.locator('h1').first().textContent()).includes('مراجعة'));

@@ -3,8 +3,8 @@ defined('APP_ROOT') || exit;
 
 /*
  * محرر أسطر فاتورة البيع والتحويل.
- * يعمل بدون JavaScript (الخادم يعرض أسطرًا فارغة وزر «أسطر إضافية»)،
- * ومع JavaScript تُضاف الأسطر وتُحذف فورًا وتُحسب الأحجام والقيم وتُفلتر المقاسات حسب المخزن والنوع.
+ * بدون JavaScript: الخادم يعرض أسطرًا فارغة وزر «أسطر إضافية».
+ * مع JavaScript: تحل محلها شاشة الإدخال السريع (render_pos_panel): اختيار بالترتيب وإضافة مباشرة إلى جدول المستند.
  */
 
 const LINE_FIELDS_SALE = ['type_id', 'item_id', 'quantity', 'price'];
@@ -102,7 +102,82 @@ function render_line(int|string $i, array $line, array $errors, bool $withPrice,
     return (string) ob_get_clean();
 }
 
-/** المحرر كاملًا: الأسطر، وقالب سطر جديد، وأزرار الإضافة، والإجماليات */
+/**
+ * شاشة الإدخال السريع (مثل الكاشير) التي يضعها app.js مكان الأسطر عند توفر JavaScript:
+ * لوحة اختيار النوع ثم المقاس (عرض × تخانة) ثم الطول ثم العدد والسعر، وزر «إضافة» يضع السطر في جدول المستند.
+ * حقول اللوحة بلا name فلا تُرسل؛ app.js يكتب أسطر الجدول في حقول مخفية بنفس صيغة الخادم lines[i][...].
+ */
+function render_pos_panel(bool $withPrice): string
+{
+    ob_start(); ?>
+<div class="pos" data-pos>
+  <div class="pos-entry" role="group" aria-labelledby="pos-entry-title">
+    <h3 id="pos-entry-title" data-pos-title>إضافة صنف</h3>
+    <div class="pos-grid<?= $withPrice ? ' with-price' : '' ?>">
+      <div class="field">
+        <label for="pos-type">النوع</label>
+        <select id="pos-type" data-pos-type aria-describedby="pos-available"></select>
+      </div>
+      <div class="field">
+        <label for="pos-size">المقاس (عرض × تخانة)</label>
+        <select id="pos-size" data-pos-size aria-describedby="pos-available"></select>
+      </div>
+      <div class="field">
+        <label for="pos-length">الطول</label>
+        <select id="pos-length" data-pos-length aria-describedby="pos-available"></select>
+      </div>
+      <div class="field">
+        <label for="pos-qty">عدد القطع</label>
+        <input type="text" id="pos-qty" inputmode="numeric" autocomplete="off" maxlength="12" data-pos-qty aria-describedby="pos-available pos-error">
+      </div>
+      <?php if ($withPrice): ?>
+      <div class="field">
+        <label for="pos-price">سعر المتر المكعب</label>
+        <input type="text" id="pos-price" inputmode="decimal" autocomplete="off" maxlength="20" data-pos-price aria-describedby="pos-error">
+      </div>
+      <?php endif; ?>
+      <div class="pos-buttons">
+        <button type="button" class="btn btn-primary" data-pos-add>إضافة</button>
+        <button type="button" class="btn btn-quiet" data-pos-cancel hidden>إلغاء التعديل</button>
+      </div>
+    </div>
+    <p class="hint" id="pos-available" data-pos-available></p>
+    <p class="pos-preview">
+      <span class="nowrap">الحجم: <strong data-pos-volume>-</strong> م³</span>
+      <?php if ($withPrice): ?><span class="nowrap">القيمة: <strong data-pos-amount>-</strong></span><?php endif; ?>
+    </p>
+    <p class="calc-error" id="pos-error" data-pos-error hidden></p>
+  </div>
+  <p class="visually-hidden" role="status" data-pos-status></p>
+  <div class="table-wrap table-stack pos-cart-wrap">
+    <table class="pos-cart" data-pos-cart>
+      <caption class="visually-hidden">أصناف المستند</caption>
+      <thead>
+        <tr>
+          <th scope="col" class="num">م</th>
+          <th scope="col">النوع</th>
+          <th scope="col">المقاس</th>
+          <th scope="col">الطول</th>
+          <th scope="col" class="num">العدد</th>
+          <th scope="col" class="num">الحجم (م³)</th>
+          <?php if ($withPrice): ?>
+          <th scope="col" class="num">سعر المتر المكعب</th>
+          <th scope="col" class="num">القيمة</th>
+          <?php endif; ?>
+          <th scope="col"><span class="visually-hidden">إجراءات</span></th>
+        </tr>
+      </thead>
+      <tbody data-pos-rows></tbody>
+    </table>
+  </div>
+  <p class="empty pos-empty" data-pos-empty>لم تُضف أصناف بعد. اختر النوع ثم المقاس ثم الطول، واكتب العدد<?= $withPrice ? ' والسعر' : '' ?>، ثم اضغط «إضافة».</p>
+  <div data-pos-hidden hidden></div>
+</div>
+<?php
+    return (string) ob_get_clean();
+}
+
+/** المحرر كاملًا: الأسطر، وقالب شاشة الإدخال السريع، وأزرار الإضافة، والإجماليات */
 function render_line_editor(array $lines, array $errors, bool $withPrice, array $types, array $stockData): string
 {
     ob_start(); ?>
@@ -114,9 +189,8 @@ function render_line_editor(array $lines, array $errors, bool $withPrice, array 
       <?= render_line($i, $line, $errors, $withPrice, $types, $stockData) ?>
     <?php endforeach; ?>
   </div>
-  <template data-line-template><?= render_line('__i__', [], [], $withPrice, $types, $stockData) ?></template>
+  <template data-pos-template><?= render_pos_panel($withPrice) ?></template>
   <div class="line-actions">
-    <button type="button" class="btn" data-line-add hidden>إضافة سطر</button>
     <button type="submit" name="action" value="more_lines" class="btn" data-nojs-only formnovalidate>أسطر إضافية</button>
   </div>
   <dl class="facts totals" aria-live="polite">

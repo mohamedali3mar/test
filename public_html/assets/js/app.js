@@ -408,198 +408,358 @@
     refreshReceive();
   }
 
-  /* ---------- محرر أسطر فاتورة البيع والتحويل ---------- */
+  /* ---------- شاشة الإدخال السريع لفاتورة البيع والتحويل (مثل الكاشير) ----------
+   * الخادم يرسم محرر الأسطر الكلاسيكي (يعمل بدون JavaScript) وقالب الشاشة السريعة (forms.php: render_pos_panel).
+   * هنا يحل القالب محل الأسطر: اختيار النوع، ثم المقاس (عرض × تخانة)، ثم الطول، ثم العدد والسعر، ثم «إضافة»
+   * أو Enter، فيُضاف السطر إلى جدول المستند مع تعديل وحذف. الأسطر تُكتب في حقول مخفية بنفس صيغة الخادم
+   * lines[i][type_id|item_id|quantity|price]، فالتحقق والحساب والحفظ على الخادم بلا تغيير.
+   * الأسطر المرسلة سابقًا (خطأ في الحفظ أو «تعديل» من المراجعة) تُقرأ من المحرر الكلاسيكي مع أخطائها. */
   var docForm = document.querySelector('form[data-doc-form]');
   var refreshDocForm = function () {};
-  if (docForm) {
+  var posTpl = docForm ? docForm.querySelector('template[data-pos-template]') : null;
+  if (docForm && posTpl && hasBigInt) {
     var section = docForm.querySelector('[data-lines]');
     var withPrice = section.dataset.withPrice === '1';
-    var list = section.querySelector('[data-line-list]');
-    var template = section.querySelector('template[data-line-template]');
     var whSelect = docForm.querySelector('#warehouse_id');
-    var nextIndex = list.querySelectorAll('[data-line]').length;
+    var MAX_LINES = 50; // مثل MAX_LINES في app/lib/documents.php
+    var rows = [];      // {item, qty, priceRaw, price (BigInt قروش أو null), notes: [رسائل من الخادم]}
+    var editing = -1;   // رقم السطر الجاري تعديله في اللوحة
 
-    section.querySelectorAll('[data-nojs-only]').forEach(function (el) { el.remove(); });
-    var addBtn = section.querySelector('[data-line-add]');
+    // الأسطر المرسلة من قبل (ومعها رسائل أخطاء الخادم لكل سطر)
+    section.querySelectorAll('[data-line]').forEach(function (line) {
+      var item = stock.byId[line.querySelector('[data-line-item]').value];
+      var qRaw = line.querySelector('[data-line-qty]').value.trim();
+      var pEl = line.querySelector('[data-line-price]');
+      var pRaw = pEl ? pEl.value.trim() : '';
+      if (!item && qRaw === '' && pRaw === '') { return; }
+      var q = C.parseQuantity(qRaw);
+      var p = withPrice ? C.parsePrice(pRaw) : { v: null };
+      rows.push({
+        item: item || null, qty: q.msg ? qRaw : q.v, priceRaw: pRaw, price: p.msg ? null : p.v,
+        notes: Array.prototype.map.call(line.querySelectorAll('.field-error'), function (e) { return e.textContent.trim(); })
+      });
+    });
+    var list = section.querySelector('[data-line-list]');
+    list.parentNode.insertBefore(posTpl.content.cloneNode(true), list);
+    list.remove();
+    section.querySelectorAll('.line-actions').forEach(function (el) { el.remove(); });
+    posTpl.remove();
+
+    var pos = section.querySelector('[data-pos]');
+    var q$ = function (sel) { return pos.querySelector(sel); };
+    var typeSel = q$('[data-pos-type]');
+    var sizeSel = q$('[data-pos-size]');
+    var lenSel = q$('[data-pos-length]');
+    var qtyEl = q$('[data-pos-qty]');
+    var priceIn = q$('[data-pos-price]');
+    var addBtn = q$('[data-pos-add]');
+    var cancelBtn = q$('[data-pos-cancel]');
     var addText = addBtn.textContent;
-    var MAX_LINES = 50; // مثل MAX_LINES في app/lib/documents.php: الخادم يرفض المستند إذا زادت الأسطر
-    addBtn.hidden = false;
+    var tbody = q$('[data-pos-rows]');
+    var hiddenBox = q$('[data-pos-hidden]');
+    var errBox = q$('[data-pos-error]');
+    var posStatus = q$('[data-pos-status]');
 
-    var rebuildOptions = function (line) {
-      var typeSel = line.querySelector('[data-line-type]');
-      var itemSel = line.querySelector('[data-line-item]');
-      var selected = itemSel.value;
-      var type = typeSel.value;
-      var wh = whSelect.value;
-      var wanted = [['', 'اختر المقاس']];
-      stock.items.forEach(function (it) {
-        if (type && String(it.type) !== type) { return; }
-        var available = wh ? qtyIn(it, wh) : qtyAll(it);
-        var isSelected = String(it.id) === selected;
-        if (available <= 0 && !isSelected) { return; }
-        var label = (type ? '' : it.typeName + ': ') + it.size;
-        if (available <= 0) { label += ' (غير متاح في هذا المخزن)'; }
-        wanted.push([String(it.id), label]);
+    var wh = function () { return whSelect ? whSelect.value : ''; };
+    var avail = function (item) { return qtyIn(item, wh()); };
+    /* الكمية من صنف في الجدول، بدون السطر الجاري تعديله */
+    function inCart(item, skip) {
+      return rows.reduce(function (s, r, i) { return s + (i !== skip && r.item === item && typeof r.qty === 'number' ? r.qty : 0); }, 0);
+    }
+    function setOptions(sel, wanted, placeholder) {
+      var current = sel.value;
+      var sig = wanted.map(function (w) { return w[0] + '=' + w[1]; }).join('|');
+      if (sel.dataset.signature !== sig) {
+        sel.dataset.signature = sig;
+        while (sel.firstChild) { sel.removeChild(sel.firstChild); }
+        [['', placeholder]].concat(wanted).forEach(function (w) {
+          var o = document.createElement('option');
+          o.value = w[0];
+          o.textContent = w[1];
+          sel.appendChild(o);
+        });
+      }
+      sel.value = current;
+      if (sel.value !== current) { sel.value = ''; }
+      // خيار واحد متاح: يُختار تلقائيًا لتوفير خطوة
+      if (sel.value === '' && wanted.length === 1) { sel.value = wanted[0][0]; }
+      sel.disabled = wanted.length === 0;
+    }
+    /* القوائم الثلاث من الأصناف المتاحة في المخزن المختار (والمختار في اللوحة يبقى ظاهرًا ولو نفد) */
+    function rebuildEntry() {
+      var w = wh();
+      var keep = editing >= 0 && rows[editing] ? rows[editing].item : null;
+      var usable = stock.items.filter(function (it) { return w && (avail(it) > 0 || it === keep); });
+      var types = [];
+      var seenT = {};
+      usable.forEach(function (it) { if (!seenT[it.type]) { seenT[it.type] = 1; types.push([String(it.type), it.typeName]); } });
+      setOptions(typeSel, types, w ? 'اختر النوع' : 'اختر المخزن أولًا');
+      var sizes = [];
+      var seenS = {};
+      usable.forEach(function (it) {
+        if (String(it.type) === typeSel.value && !seenS[it.wt]) { seenS[it.wt] = 1; sizes.push([it.wt, it.wtLabel]); }
       });
-      var signature = wanted.map(function (w) { return w[0] + '=' + w[1]; }).join('|');
-      if (itemSel.dataset.signature === signature) { return; }
-      itemSel.dataset.signature = signature;
-      while (itemSel.firstChild) { itemSel.removeChild(itemSel.firstChild); }
-      wanted.forEach(function (w) {
-        var o = document.createElement('option');
-        o.value = w[0];
-        o.textContent = w[1];
-        itemSel.appendChild(o);
-      });
-      itemSel.value = selected;
-      if (itemSel.value !== selected) { itemSel.value = ''; }
-    };
+      setOptions(sizeSel, sizes, typeSel.value ? 'اختر المقاس' : 'اختر النوع أولًا');
+      var lens = usable.filter(function (it) { return String(it.type) === typeSel.value && it.wt === sizeSel.value; })
+        .map(function (it) { return [String(it.id), it.len + ' (متاح ' + C.fmtInt(Math.max(0, avail(it) - inCart(it, editing))) + ')']; });
+      setOptions(lenSel, lens, sizeSel.value ? 'اختر الطول' : 'اختر المقاس أولًا');
+      refreshEntryFigures();
+    }
+    function entryItem() { return stock.byId[lenSel.value] || null; }
+    function refreshEntryFigures() {
+      var item = entryItem();
+      var availEl = q$('[data-pos-available]');
+      if (!wh()) {
+        setText(availEl, 'اختر المخزن أولًا لعرض الأصناف المتاحة فيه.');
+      } else if (!stock.items.some(function (it) { return avail(it) > 0; })) {
+        setText(availEl, 'لا توجد أصناف متاحة في هذا المخزن.');
+      } else if (item) {
+        var a = avail(item);
+        var used = inCart(item, editing);
+        setText(availEl, 'المتاح في هذا المخزن: ' + C.fmtInt(a) + ' قطعة (' + C.fmtVolume(BigInt(item.piece) * BigInt(a)) + ' م³)'
+          + (used ? '، منها ' + C.fmtInt(used) + ' في هذا المستند' : '') + '. حجم القطعة: ' + C.fmtVolume(BigInt(item.piece)) + ' م³');
+      } else {
+        setText(availEl, '');
+      }
+      var q = qtyEl.value.trim() !== '' ? C.parseQuantity(qtyEl.value) : null;
+      var p = priceIn && priceIn.value.trim() !== '' ? C.parsePrice(priceIn.value) : null;
+      var um3 = item && q && !q.msg ? BigInt(item.piece) * BigInt(q.v) : null;
+      setText(q$('[data-pos-volume]'), um3 !== null ? C.fmtVolume(um3) : '-');
+      var amountEl = q$('[data-pos-amount]');
+      if (amountEl) { setText(amountEl, um3 !== null && p && !p.msg ? C.fmtMoney(C.amountPiasters(um3, p.v)) : '-'); }
+    }
+    function showError(msg) {
+      showMessages(errBox, msg ? [msg] : []);
+      qtyEl.setAttribute('aria-invalid', msg ? 'true' : 'false');
+    }
+    function describe(r) { return (r.item ? r.item.typeName + '، ' + r.item.wtLabel + '، طول ' + r.item.len : 'صنف'); }
 
-    var renumber = function () {
-      var lines = list.querySelectorAll('[data-line]');
-      lines.forEach(function (line, i) {
-        setText(line.querySelector('[data-line-no]'), C.fmtInt(i + 1));
-        var rm = line.querySelector('[data-line-remove]');
-        if (rm) { rm.hidden = false; }
-      });
-      // عند الحد الأقصى يتعطل زر الإضافة ويشرح نصه السبب، ويعود عند حذف سطر
-      var full = lines.length >= MAX_LINES;
-      addBtn.disabled = full;
-      setText(addBtn, full ? 'الحد الأقصى ' + C.fmtInt(MAX_LINES) + ' سطرًا في المستند الواحد' : addText);
-    };
-
-    refreshDocForm = function () {
-      var wh = whSelect.value;
-      var lines = list.querySelectorAll('[data-line]');
-      if (!hasBigInt) {
-        lines.forEach(rebuildOptions);
+    /* «إضافة» أو «حفظ التعديل»: الصنف المكرر بنفس السعر تُجمع كميته في سطره */
+    function commit() {
+      var item = entryItem();
+      if (!wh()) { showError('اختر المخزن أولًا.'); (whSelect || typeSel).focus(); return; }
+      if (!item) { showError('اختر النوع ثم المقاس ثم الطول.'); (typeSel.value === '' ? typeSel : sizeSel.value === '' ? sizeSel : lenSel).focus(); return; }
+      var q = C.parseQuantity(qtyEl.value);
+      if (q.msg) { showError(q.msg); qtyEl.focus(); return; }
+      var p = { v: null };
+      if (withPrice) {
+        p = C.parsePrice(priceIn.value);
+        if (p.msg) { showError(p.msg); priceIn.focus(); return; }
+      }
+      var priceRaw = withPrice ? C.normalize(priceIn.value) : '';
+      var target = editing;
+      var dup = -1;
+      rows.forEach(function (r, i) { if (i !== editing && r.item === item) { dup = i; } });
+      var qty = q.v;
+      if (dup >= 0) {
+        if (withPrice && rows[dup].price !== p.v) {
+          showError('هذا الصنف موجود في السطر ' + C.fmtInt(dup + 1) + ' بسعر مختلف. عدّل ذلك السطر بدل إضافته مرة أخرى.');
+          return;
+        }
+        qty += typeof rows[dup].qty === 'number' ? rows[dup].qty : 0;
+      }
+      var a = avail(item);
+      if (qty > a) {
+        showError('الكمية أكبر من المتاح في المخزن (' + C.fmtInt(a) + ' قطعة' + (dup >= 0 ? '، والسطر ' + C.fmtInt(dup + 1) + ' فيه ' + C.fmtInt(qty - q.v) : '') + ').');
+        qtyEl.focus();
         return;
       }
-      var seen = {};
-      var totQty = 0;
-      var totUm3 = hasBigInt ? BigInt(0) : 0;
-      var totAmount = hasBigInt ? BigInt(0) : 0;
-      lines.forEach(function (line, index) {
-        rebuildOptions(line);
-        var itemSel = line.querySelector('[data-line-item]');
-        var item = stock.byId[itemSel.value];
-        var qInput = line.querySelector('[data-line-qty]');
-        var pInput = line.querySelector('[data-line-price]');
-        var errors = [];
-        var avail = item ? (wh ? qtyIn(item, wh) : null) : null;
-        // المقاس المختار كاملًا تحت القائمة (النص في القائمة يُقص على الشاشات الضيقة)
-        var sizeBox = line.querySelector('[data-line-size]');
-        if (sizeBox) {
-          var opt = itemSel.selectedIndex >= 0 ? itemSel.options[itemSel.selectedIndex] : null;
-          var sizeText = item && opt ? opt.textContent.trim() : '';
-          setText(sizeBox, sizeText);
-          sizeBox.hidden = sizeText === '';
-        }
-
-        if (item && hasBigInt && avail !== null) {
-          setText(line.querySelector('[data-line-available]'),
-            'المتاح في هذا المخزن: ' + C.fmtInt(avail) + ' قطعة (' + C.fmtVolume(BigInt(item.piece) * BigInt(avail)) + ' م³)');
-        } else {
-          setText(line.querySelector('[data-line-available]'), item && !wh ? 'اختر المخزن لعرض المتاح.' : '');
-        }
-        if (item) {
-          if (seen[item.id]) {
-            errors.push('هذا المقاس مكرر في السطر ' + C.fmtInt(seen[item.id]) + '. اجمع الكمية في سطر واحد.');
-          } else {
-            seen[item.id] = index + 1;
-          }
-        }
-        var qty = null;
-        if (qInput.value.trim() !== '') {
-          var q = C.parseQuantity(qInput.value);
-          if (q.msg) { errors.push(q.msg); } else { qty = q.v; }
-        }
-        var price = null;
-        if (withPrice && pInput.value.trim() !== '') {
-          var p = C.parsePrice(pInput.value);
-          if (p.msg) { errors.push(p.msg); } else { price = p.v; }
-        }
-        if (item && qty !== null && avail !== null && qty > avail) {
-          errors.push('الكمية أكبر من المتاح في المخزن (' + C.fmtInt(avail) + ' قطعة).');
-        }
-        var volOut = line.querySelector('[data-line-volume]');
-        var amountOut = line.querySelector('[data-line-amount]');
-        if (item && qty !== null && hasBigInt) {
-          var lineUm3 = BigInt(item.piece) * BigInt(qty);
-          setText(volOut, C.fmtVolume(lineUm3));
-          totQty += qty;
-          totUm3 += lineUm3;
-          if (withPrice) {
-            if (price !== null) {
-              var amt = C.amountPiasters(lineUm3, price);
-              setText(amountOut, C.fmtMoney(amt));
-              totAmount += amt;
-            } else {
-              setText(amountOut, '-');
-            }
-          }
-        } else {
-          setText(volOut, '-');
-          if (amountOut) { setText(amountOut, '-'); }
-        }
-        showMessages(line.querySelector('[data-line-error]'), errors);
-      });
-      if (hasBigInt) {
-        setText(section.querySelector('[data-total-qty]'), totQty ? C.fmtInt(totQty) : '-');
-        setText(section.querySelector('[data-total-volume]'), totQty ? C.fmtVolume(totUm3) : '-');
-        var ta = section.querySelector('[data-total-amount]');
-        if (ta) { setText(ta, totAmount > BigInt(0) ? C.fmtMoney(totAmount) : '-'); }
+      var row = { item: item, qty: qty, priceRaw: priceRaw, price: p.v, notes: [] };
+      if (dup >= 0) {
+        rows[dup] = row;
+        if (target >= 0) { rows.splice(target, 1); }
+      } else if (target >= 0) {
+        rows[target] = row;
+      } else {
+        if (rows.length >= MAX_LINES) { showError('الحد الأقصى ' + C.fmtInt(MAX_LINES) + ' سطرًا في المستند الواحد.'); return; }
+        rows.push(row);
       }
-    };
+      setText(posStatus, (target >= 0 ? 'عُدّل: ' : 'أُضيف: ') + describe(row) + '، ' + C.fmtInt(qty) + ' قطعة');
+      resetEntry(true);
+      render();
+      (sizeSel.disabled ? typeSel : lenSel.disabled ? sizeSel : lenSel).focus();
+    }
+    /* بعد الإضافة يبقى النوع والمقاس (والسعر) لإدخال طول آخر بسرعة */
+    function resetEntry(keepTypeSize) {
+      editing = -1;
+      setText(q$('[data-pos-title]'), 'إضافة صنف');
+      setText(addBtn, addText);
+      cancelBtn.hidden = true;
+      if (!keepTypeSize) { typeSel.value = ''; sizeSel.value = ''; }
+      lenSel.value = '';
+      qtyEl.value = '';
+      showError('');
+      rebuildEntry();
+    }
+    function startEdit(i) {
+      var r = rows[i];
+      editing = i;
+      setText(q$('[data-pos-title]'), 'تعديل السطر ' + C.fmtInt(i + 1));
+      setText(addBtn, 'حفظ التعديل');
+      cancelBtn.hidden = false;
+      if (r.item) {
+        rebuildEntry();
+        typeSel.value = String(r.item.type);
+        rebuildEntry();
+        sizeSel.value = r.item.wt;
+        rebuildEntry();
+        lenSel.value = String(r.item.id);
+      }
+      qtyEl.value = typeof r.qty === 'number' ? String(r.qty) : String(r.qty || '');
+      if (priceIn) { priceIn.value = r.priceRaw; }
+      showError('');
+      rebuildEntry();
+      qtyEl.focus();
+      qtyEl.select();
+    }
 
-    addBtn.addEventListener('click', function () {
-      if (list.querySelectorAll('[data-line]').length >= MAX_LINES) { return; }
-      var frag = template.content.cloneNode(true);
-      var i = String(nextIndex++);
-      frag.querySelectorAll('[id], [name], [for]').forEach(function (el) {
-        ['id', 'name', 'for'].forEach(function (attr) {
-          var v = el.getAttribute(attr);
-          if (v && v.indexOf('__i__') !== -1) { el.setAttribute(attr, v.split('__i__').join(i)); }
+    function cell(tr, label, text, cls) {
+      var td = document.createElement('td');
+      if (cls) { td.className = cls; }
+      td.setAttribute('data-label', label);
+      td.textContent = text;
+      tr.appendChild(td);
+      return td;
+    }
+    /* جدول المستند والحقول المخفية والإجماليات */
+    function render() {
+      while (tbody.firstChild) { tbody.removeChild(tbody.firstChild); }
+      while (hiddenBox.firstChild) { hiddenBox.removeChild(hiddenBox.firstChild); }
+      var totQty = 0;
+      var totUm3 = BigInt(0);
+      var totAmount = BigInt(0);
+      rows.forEach(function (r, i) {
+        var tr = document.createElement('tr');
+        if (i === editing) { tr.className = 'is-editing'; }
+        var qtyOk = typeof r.qty === 'number';
+        var um3 = r.item && qtyOk ? BigInt(r.item.piece) * BigInt(r.qty) : null;
+        cell(tr, 'السطر', C.fmtInt(i + 1), 'num');
+        cell(tr, 'النوع', r.item ? r.item.typeName : '-');
+        cell(tr, 'المقاس', r.item ? r.item.wtLabel : '-');
+        cell(tr, 'الطول', r.item ? r.item.len : '-');
+        cell(tr, 'العدد', qtyOk ? C.fmtInt(r.qty) : String(r.qty || '-'), 'num');
+        cell(tr, 'الحجم (م³)', um3 !== null ? C.fmtVolume(um3) : '-', 'num');
+        if (withPrice) {
+          cell(tr, 'سعر المتر المكعب', r.price !== null ? C.fmtMoney(r.price) : (r.priceRaw || '-'), 'num');
+          var amt = um3 !== null && r.price !== null ? C.amountPiasters(um3, r.price) : null;
+          cell(tr, 'القيمة', amt !== null ? C.fmtMoney(amt) : '-', 'num');
+          if (amt !== null) { totAmount += amt; }
+        }
+        var act = document.createElement('td');
+        act.className = 'cell-actions';
+        var box = document.createElement('div');
+        box.className = 'row-actions';
+        [['تعديل', 'edit'], ['حذف', 'delete']].forEach(function (b) {
+          var btn = document.createElement('button');
+          btn.type = 'button';
+          btn.className = 'btn btn-quiet' + (b[1] === 'delete' ? ' btn-danger-quiet' : '');
+          btn.dataset.posRow = String(i);
+          btn.dataset.posAction = b[1];
+          btn.textContent = b[0];
+          btn.setAttribute('aria-label', b[0] + ' السطر ' + C.fmtInt(i + 1) + ': ' + describe(r));
+          box.appendChild(btn);
+        });
+        act.appendChild(box);
+        tr.appendChild(act);
+        tbody.appendChild(tr);
+        // تنبيهات السطر: رسائل الخادم السابقة، أو كمية أكبر من المتاح بعد تغيير المخزن أو تحديث الأرصدة
+        var notes = r.notes.slice();
+        if (r.item && qtyOk && r.qty > avail(r.item) && wh()) {
+          notes.push('الكمية أكبر من المتاح في هذا المخزن (' + C.fmtInt(avail(r.item)) + ' قطعة).');
+        }
+        if (notes.length) {
+          var ntr = document.createElement('tr');
+          ntr.className = 'pos-row-note';
+          var ntd = document.createElement('td');
+          ntd.colSpan = withPrice ? 9 : 7;
+          ntd.className = 'calc-error';
+          ntd.textContent = 'السطر ' + C.fmtInt(i + 1) + ': ' + notes.join(' ');
+          ntr.appendChild(ntd);
+          tbody.appendChild(ntr);
+        }
+        if (qtyOk) { totQty += r.qty; }
+        if (um3 !== null) { totUm3 += um3; }
+        var fields = { type_id: r.item ? String(r.item.type) : '', item_id: r.item ? String(r.item.id) : '', quantity: String(r.qty) };
+        if (withPrice) { fields.price = r.priceRaw; }
+        Object.keys(fields).forEach(function (f) {
+          var h = document.createElement('input');
+          h.type = 'hidden';
+          h.name = 'lines[' + i + '][' + f + ']';
+          h.value = fields[f];
+          hiddenBox.appendChild(h);
         });
       });
-      var line = frag.querySelector('[data-line]');
-      list.appendChild(frag);
-      renumber();
-      refreshDocForm();
-      var first = line.querySelector('[data-line-type]');
-      if (first) { first.focus(); }
-    });
-    list.addEventListener('click', function (e) {
-      var btn = e.target.closest('[data-line-remove]');
+      q$('[data-pos-empty]').hidden = rows.length > 0;
+      q$('.pos-cart-wrap').hidden = rows.length === 0;
+      setText(section.querySelector('[data-total-qty]'), totQty ? C.fmtInt(totQty) : '-');
+      setText(section.querySelector('[data-total-volume]'), totQty ? C.fmtVolume(totUm3) : '-');
+      var ta = section.querySelector('[data-total-amount]');
+      if (ta) { setText(ta, totAmount > BigInt(0) ? C.fmtMoney(totAmount) : '-'); }
+      var full = rows.length >= MAX_LINES && editing < 0;
+      addBtn.disabled = full;
+      if (full) { setText(addBtn, 'الحد الأقصى ' + C.fmtInt(MAX_LINES) + ' سطرًا'); } else if (editing < 0) { setText(addBtn, addText); }
+    }
+
+    tbody.addEventListener('click', function (e) {
+      var btn = e.target.closest('[data-pos-action]');
       if (!btn) { return; }
-      var line = btn.closest('[data-line]');
-      if (list.querySelectorAll('[data-line]').length > 1) {
-        line.remove();
-      } else {
-        line.querySelectorAll('input').forEach(function (i) { i.value = ''; });
-        line.querySelectorAll('select').forEach(function (s) { s.value = ''; });
+      var i = Number(btn.dataset.posRow);
+      if (btn.dataset.posAction === 'edit') {
+        startEdit(i);
+        render();
+        return;
       }
-      renumber();
-      refreshDocForm();
-      addBtn.focus();
+      var removed = rows.splice(i, 1)[0];
+      if (editing === i) { resetEntry(true); } else if (editing > i) { editing--; }
+      setText(posStatus, 'حُذف: ' + describe(removed));
+      render();
+      rebuildEntry();
+      var next = tbody.querySelector('[data-pos-action="delete"][data-pos-row="' + Math.min(i, rows.length - 1) + '"]');
+      (next || typeSel).focus();
     });
-    /* Enter في حقل سطر لا يرسل النموذج (الزر الافتراضي المخفي كان يحفظ التحويل فورًا)،
-       بل ينقل التركيز إلى الحقل التالي. الملاحظات وأزرار الحفظ الصريحة لا تتأثر */
-    docForm.addEventListener('keydown', function (e) {
-      var el = e.target;
-      if (e.key !== 'Enter' || e.isComposing || el.tagName !== 'INPUT' || !el.closest('[data-line]')) { return; }
-      if (/^(submit|button|reset|image|checkbox|radio|file)$/.test(el.type)) { return; }
-      e.preventDefault();
-      var fields = Array.prototype.filter.call(docForm.elements, function (f) {
-        return /^(INPUT|SELECT|TEXTAREA)$/.test(f.tagName) && f.type !== 'hidden' && !f.disabled && f.getClientRects().length > 0;
+    addBtn.addEventListener('click', commit);
+    cancelBtn.addEventListener('click', function () { resetEntry(false); render(); typeSel.focus(); });
+    typeSel.addEventListener('change', function () { sizeSel.value = ''; lenSel.value = ''; rebuildEntry(); (sizeSel.disabled ? typeSel : sizeSel).focus(); });
+    sizeSel.addEventListener('change', function () { lenSel.value = ''; rebuildEntry(); if (lenSel.value) { qtyEl.focus(); } else { lenSel.focus(); } });
+    lenSel.addEventListener('change', function () { refreshEntryFigures(); if (lenSel.value) { qtyEl.focus(); } });
+    [qtyEl, priceIn].forEach(function (el) {
+      if (!el) { return; }
+      el.addEventListener('input', debounce(refreshEntryFigures, 80));
+      el.addEventListener('change', refreshEntryFigures);
+      // Enter في العدد أو السعر يضيف السطر ولا يرسل النموذج
+      el.addEventListener('keydown', function (e) {
+        if (e.key !== 'Enter' || e.isComposing) { return; }
+        e.preventDefault();
+        if (el === qtyEl && priceIn && priceIn.value.trim() === '') { priceIn.focus(); return; }
+        commit();
       });
-      var next = fields[fields.indexOf(el) + 1];
-      if (next) { next.focus(); }
     });
-    docForm.addEventListener('input', debounce(refreshDocForm, 120));
-    docForm.addEventListener('change', refreshDocForm);
-    renumber();
-    refreshDocForm();
+    [typeSel, sizeSel, lenSel].forEach(function (el) {
+      el.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); } });
+    });
+    if (whSelect) { whSelect.addEventListener('change', function () { rebuildEntry(); render(); }); }
+
+    /* قبل المراجعة أو الحفظ: لا يُرسل مستند فارغ، ولا يضيع صنف مكتوب في اللوحة لم يُضف بعد */
+    docForm.addEventListener('submit', function (e) {
+      var sub = e.submitter || lastSubmitter;
+      if (sub && sub.value === 'more_lines') { return; }
+      // صنف معلق = عدد مكتوب أو تعديل لم يُحفظ (اختيار القوائم وحده تصفح، وقد يُختار الخيار الوحيد تلقائيًا)
+      if (editing >= 0 || qtyEl.value.trim() !== '') {
+        e.preventDefault();
+        showError(editing >= 0 ? 'احفظ تعديل السطر أو ألغه قبل المتابعة.' : 'في لوحة الإدخال صنف لم يُضف بعد. اضغط «إضافة» أو امسح عدد القطع.');
+        qtyEl.focus();
+        return;
+      }
+      if (!rows.length) {
+        e.preventDefault();
+        showError('أضف صنفًا واحدًا على الأقل.');
+        (typeSel.disabled ? (whSelect || typeSel) : typeSel).focus();
+      }
+    });
+
+    refreshDocForm = function () { rebuildEntry(); render(); };
+    rebuildEntry();
+    render();
   }
 
   /* ---------- التحديث التلقائي ----------
