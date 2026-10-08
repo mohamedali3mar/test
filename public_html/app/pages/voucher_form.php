@@ -166,7 +166,7 @@ render_header($title, $kind);
   <?= field_error($errors, 'form') ?>
 
   <div class="actions">
-    <button type="submit" class="btn btn-primary" data-busy-text="جارٍ الحفظ">حفظ <?= h(VOUCHER_KIND_LABELS[$kind]) ?></button>
+    <button type="submit" class="btn <?= h(action_btn_class($kind)) ?>" data-busy-text="جارٍ الحفظ"><?= icon($kind) ?>حفظ <?= h(VOUCHER_KIND_LABELS[$kind]) ?></button>
   </div>
 </form>
 <?php endif; ?>

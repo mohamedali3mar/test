@@ -137,7 +137,7 @@ function render_pos_panel(bool $withPrice): string
       </div>
       <?php endif; ?>
       <div class="pos-buttons">
-        <button type="button" class="btn btn-primary" data-pos-add>إضافة</button>
+        <button type="button" class="btn btn-primary" data-pos-add><?= icon('add') ?><span data-pos-add-label>إضافة</span></button>
         <button type="button" class="btn btn-quiet" data-pos-cancel hidden>إلغاء التعديل</button>
       </div>
     </div>

@@ -241,6 +241,19 @@
   }
 
   function setText(el, text) { if (el && el.textContent !== text) { el.textContent = text; } }
+  // أيقونة من رموز الصفحة (icon_sprite في lib/icons.php)، أو null إن لم تكن موجودة
+  function svgIcon(name) {
+    if (!document.getElementById('i-' + name)) { return null; }
+    var ns = 'http://www.w3.org/2000/svg';
+    var svg = document.createElementNS(ns, 'svg');
+    svg.setAttribute('class', 'icon');
+    svg.setAttribute('aria-hidden', 'true');
+    svg.setAttribute('focusable', 'false');
+    var use = document.createElementNS(ns, 'use');
+    use.setAttribute('href', '#i-' + name);
+    svg.appendChild(use);
+    return svg;
+  }
   function showMessages(el, messages) {
     if (!el) { return; }
     var text = messages.join(' ');
@@ -454,7 +467,8 @@
     var priceIn = q$('[data-pos-price]');
     var addBtn = q$('[data-pos-add]');
     var cancelBtn = q$('[data-pos-cancel]');
-    var addText = addBtn.textContent;
+    var addLabel = addBtn.querySelector('[data-pos-add-label]') || addBtn;
+    var addText = addLabel.textContent;
     var tbody = q$('[data-pos-rows]');
     var hiddenBox = q$('[data-pos-hidden]');
     var errBox = q$('[data-pos-error]');
@@ -583,7 +597,7 @@
     function resetEntry(keepTypeSize) {
       editing = -1;
       setText(q$('[data-pos-title]'), 'إضافة صنف');
-      setText(addBtn, addText);
+      setText(addLabel, addText);
       cancelBtn.hidden = true;
       if (!keepTypeSize) { typeSel.value = ''; sizeSel.value = ''; }
       lenSel.value = '';
@@ -595,7 +609,7 @@
       var r = rows[i];
       editing = i;
       setText(q$('[data-pos-title]'), 'تعديل السطر ' + C.fmtInt(i + 1));
-      setText(addBtn, 'حفظ التعديل');
+      setText(addLabel, 'حفظ التعديل');
       cancelBtn.hidden = false;
       if (r.item) {
         rebuildEntry();
@@ -655,7 +669,9 @@
           btn.className = 'btn btn-quiet' + (b[1] === 'delete' ? ' btn-danger-quiet' : '');
           btn.dataset.posRow = String(i);
           btn.dataset.posAction = b[1];
-          btn.textContent = b[0];
+          var ic = svgIcon(b[1]);
+          if (ic) { btn.appendChild(ic); }
+          btn.appendChild(document.createTextNode(b[0]));
           btn.setAttribute('aria-label', b[0] + ' السطر ' + C.fmtInt(i + 1) + ': ' + describe(r));
           box.appendChild(btn);
         });
@@ -697,7 +713,7 @@
       if (ta) { setText(ta, totAmount > BigInt(0) ? C.fmtMoney(totAmount) : '-'); }
       var full = rows.length >= MAX_LINES && editing < 0;
       addBtn.disabled = full;
-      if (full) { setText(addBtn, 'الحد الأقصى ' + C.fmtInt(MAX_LINES) + ' سطرًا'); } else if (editing < 0) { setText(addBtn, addText); }
+      if (full) { setText(addLabel, 'الحد الأقصى ' + C.fmtInt(MAX_LINES) + ' سطرًا'); } else if (editing < 0) { setText(addLabel, addText); }
     }
 
     tbody.addEventListener('click', function (e) {

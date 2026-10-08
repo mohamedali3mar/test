@@ -13,6 +13,7 @@ defined('APP_ROOT') || exit;
  */
 
 const EXPORT_FORMATS = ['xlsx' => 'Excel', 'csv' => 'CSV', 'pdf' => 'تقرير PDF'];
+const EXPORT_ICONS = ['xlsx' => 'excel', 'csv' => 'csv', 'pdf' => 'pdf'];
 const EXPORT_MAX_ROWS_SHEET = 50000;
 const EXPORT_MAX_ROWS_PDF = 5000;
 const EXPORT_RATE_MAX = 20;          // ملفات لكل جلسة

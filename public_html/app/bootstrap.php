@@ -35,6 +35,7 @@ require APP_ROOT . '/lib/xlsx.php';
 require APP_ROOT . '/lib/db.php';
 require APP_ROOT . '/lib/auth.php';
 require APP_ROOT . '/lib/view.php';
+require APP_ROOT . '/lib/icons.php';
 require APP_ROOT . '/lib/catalog.php';
 require APP_ROOT . '/lib/branches.php';
 require APP_ROOT . '/lib/documents.php';

@@ -178,7 +178,7 @@ render_header('إضافة وارد', 'receive');
   </div>
 
   <div class="actions">
-    <button type="submit" class="btn btn-primary" data-busy-text="جارٍ الحفظ">حفظ الوارد</button>
+    <button type="submit" class="btn btn-receive" data-busy-text="جارٍ الحفظ"><?= icon('receive') ?>حفظ الوارد</button>
   </div>
 </form>
 <?= stock_data_script(stock_payload($pdo, $scope)) ?>

@@ -123,7 +123,7 @@ if ($review) {
       <input type="hidden" name="lines[<?= (int) $i ?>][<?= h($f) ?>]" value="<?= h($line[$f]) ?>">
     <?php endforeach; ?>
   <?php endforeach; ?>
-  <button type="submit" name="action" value="confirm" class="btn btn-primary" data-busy-text="جارٍ الحفظ">تأكيد البيع</button>
+  <button type="submit" name="action" value="confirm" class="btn btn-sale" data-busy-text="جارٍ الحفظ"><?= icon('check') ?>تأكيد البيع</button>
   <button type="submit" name="action" value="edit" class="btn">تعديل</button>
 </form>
 <?php
@@ -163,7 +163,7 @@ render_header('فاتورة بيع', 'sell');
       <?php endif; ?>
     </dl>
     <p class="row-actions">
-      <a class="btn btn-primary" href="<?= h(url('print', ['id' => (int) $done['id']])) ?>">طباعة الفاتورة</a>
+      <a class="btn btn-primary" href="<?= h(url('print', ['id' => (int) $done['id']])) ?>"><?= icon('print') ?>طباعة الفاتورة</a>
       <a href="<?= h(url('document', ['id' => (int) $done['id']])) ?>">تفاصيل الفاتورة</a>
     </p>
   </section>
@@ -206,7 +206,7 @@ render_header('فاتورة بيع', 'sell');
 
   <p class="hint">السعر هو سعر المتر المكعب وليس سعر القطعة. لا تُضاف ضرائب أو شحن أو خصومات.</p>
   <div class="actions">
-    <button type="submit" name="action" value="review" class="btn btn-primary">مراجعة الفاتورة</button>
+    <button type="submit" name="action" value="review" class="btn btn-sale"><?= icon('sale') ?>مراجعة الفاتورة</button>
   </div>
 </form>
 <?= stock_data_script($stockData) ?>

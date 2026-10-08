@@ -182,7 +182,7 @@ function render_table_tools(array $o): void
     <span class="table-export-label" id="export-label-<?= h($slug) ?>">تصدير</span>
     <div class="table-export-buttons" role="group" aria-labelledby="export-label-<?= h($slug) ?>">
       <?php foreach (EXPORT_FORMATS as $fmt => $label): ?>
-      <button type="submit" class="btn" name="format" value="<?= h($fmt) ?>"><?= h($label) ?></button>
+      <button type="submit" class="btn" name="format" value="<?= h($fmt) ?>"><?= icon(EXPORT_ICONS[$fmt] ?? '') ?><?= h($label) ?></button>
       <?php endforeach; ?>
     </div>
   </form>

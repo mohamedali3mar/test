@@ -26,7 +26,7 @@ render_header($title, 'parties', 'page-print');
 <div class="page-head no-print">
   <h1><?= h($title) ?></h1>
   <div class="page-actions">
-    <button type="button" class="btn btn-primary" data-action="print">طباعة</button>
+    <button type="button" class="btn btn-primary" data-action="print"><?= icon('print') ?>طباعة</button>
     <a class="btn btn-quiet" href="<?= h(url('parties', ['kind' => $kind])) ?>"><?= h(PARTY_PLURALS[$kind]) ?></a>
   </div>
 </div>
@@ -51,7 +51,7 @@ render_header($title, 'parties', 'page-print');
 
 <article class="print-doc" id="live-party-statement" data-live aria-label="<?= h($title) ?>">
   <header class="print-head">
-    <p class="print-company"><?= h(app_setting('company_name')) ?></p>
+    <p class="print-company"><?= logo_mark('print-mark') ?><?= h(app_setting('company_name')) ?></p>
     <h2>كشف حساب <?= h(PARTY_NOUNS[$kind]) ?></h2>
   </header>
   <dl class="print-meta">

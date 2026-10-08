@@ -100,7 +100,7 @@ render_header('تحويل بين المخازن', 'transfer');
   </div>
 
   <div class="actions">
-    <button type="submit" name="action" value="save" class="btn btn-primary" data-busy-text="جارٍ الحفظ">حفظ التحويل</button>
+    <button type="submit" name="action" value="save" class="btn btn-transfer" data-busy-text="جارٍ الحفظ"><?= icon('transfer') ?>حفظ التحويل</button>
   </div>
 </form>
 <?= stock_data_script($stockData) ?>

@@ -43,6 +43,21 @@
     return e;
   }
 
+  /* يضع أيقونة النظام قبل نص الزر إن كانت رموز الصفحة موجودة (icon_sprite في lib/icons.php) */
+  function withIcon(node, name) {
+    if (!document.getElementById('i-' + name)) { return node; }
+    var ns = 'http://www.w3.org/2000/svg';
+    var svg = document.createElementNS(ns, 'svg');
+    svg.setAttribute('class', 'icon');
+    svg.setAttribute('aria-hidden', 'true');
+    svg.setAttribute('focusable', 'false');
+    var use = document.createElementNS(ns, 'use');
+    use.setAttribute('href', '#i-' + name);
+    svg.appendChild(use);
+    node.insertBefore(svg, node.firstChild);
+    return node;
+  }
+
   /* يخفي خانات الأعمدة المخفية، ويصغّر الخانات الممتدة (colspan) على عدد أعمدتها الظاهرة */
   function applyColumns(table, hidden) {
     table.querySelectorAll('[data-col]').forEach(function (cell) {
@@ -117,7 +132,7 @@
     // الأعمدة الظاهرة
     if (cols.length > 1) {
       var details = el('details', { 'class': 'table-columns' });
-      details.appendChild(el('summary', { 'class': 'btn' }, 'الأعمدة'));
+      details.appendChild(withIcon(el('summary', { 'class': 'btn' }, 'الأعمدة'), 'columns'));
       var panel = el('fieldset', { 'class': 'table-columns-panel' });
       panel.appendChild(el('legend', {}, 'الأعمدة الظاهرة'));
       cols.forEach(function (c, i) {
@@ -145,7 +160,7 @@
     }
 
     if (tools.dataset.print === '1') {
-      slot.appendChild(el('button', { type: 'button', 'class': 'btn', 'data-action': 'print' }, 'طباعة'));
+      slot.appendChild(withIcon(el('button', { type: 'button', 'class': 'btn', 'data-action': 'print' }, 'طباعة'), 'print'));
     }
 
     tools.appendChild(status);

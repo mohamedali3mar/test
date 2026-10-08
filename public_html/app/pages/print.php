@@ -19,15 +19,15 @@ $rounded = (bool) array_filter($lines, fn ($l) => volume_display_rounded($l['tot
 render_header(doc_print_title($kind) . ' ' . fmt_doc_no((int) $d['doc_no']), 'documents', 'page-print');
 ?>
 <div class="print-toolbar no-print">
-  <button type="button" class="btn btn-primary" data-action="print">طباعة</button>
-  <a class="btn" href="<?= h(url('pdf', ['id' => $id])) ?>">تحميل PDF</a>
+  <button type="button" class="btn btn-primary" data-action="print"><?= icon('print') ?>طباعة</button>
+  <a class="btn" href="<?= h(url('pdf', ['id' => $id])) ?>"><?= icon('pdf') ?>تحميل PDF</a>
   <a class="btn" href="<?= h(url('document', ['id' => $id])) ?>">تفاصيل المستند</a>
   <?php if ($kind === 'sale'): ?><a class="btn btn-quiet" href="<?= h(url('sell')) ?>">فاتورة جديدة</a><?php endif; ?>
 </div>
 
 <article class="print-doc" id="live-print" data-live aria-label="<?= h(doc_print_title($kind)) ?>">
   <header class="print-head">
-    <p class="print-company"><?= h(app_setting('company_name')) ?></p>
+    <p class="print-company"><?= logo_mark('print-mark') ?><?= h(app_setting('company_name')) ?></p>
     <?php if ($d['branch_name'] !== null): ?>
       <p class="print-branch">فرع: <?= h($d['branch_name']) ?></p>
       <?php if ($branch && ($branch['address'] !== '' || $branch['phone'] !== '')): ?>

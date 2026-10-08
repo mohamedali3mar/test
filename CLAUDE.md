@@ -18,8 +18,10 @@ branches, monitoring, 2FA. Version in `APP_VERSION` (`public_html/app/lib/core.p
 
 ## Binding rules (do not break)
 
-- `DESIGN_RULES.md`: one primary color, Cairo font only, font sizes 12/14/16/20/24/32 only, no shadows, no gradients,
-  no emoji or decorative icons, no long dashes in UI text, buttons 36 to 44px (44 on mobile), RTL, labels on every field.
+- `DESIGN_RULES.md`: primary oak brown plus five owner-approved action colors (sale, receive, transfer, cash, reports;
+  only on that action's main button, its home button and document-kind badges), Cairo font only, font sizes 12/14/16/20/24/32
+  only, no shadows, no gradients, the system's own icon set (`app/lib/icons.php`, always next to a text label, never emoji),
+  the Delta logo, no long dashes in UI text, buttons 36 to 44px (44 on mobile), RTL, labels on every field.
   `tests/e2e.mjs` enforces most of them on every page.
 - `ACCOUNTING_SPEC.md`: money as integer piasters, volumes as exact decimals (`Num`, `BigInt` in JS), never float;
   balances change only through ledgers; cancellation by reversal entries, nothing is deleted; fixed lock order.
@@ -40,6 +42,8 @@ branches, monitoring, 2FA. Version in `APP_VERSION` (`public_html/app/lib/core.p
 | Excel/CSV | `app/lib/xlsx.php` |
 | Live updates | `assets/js/app.js` (polls `data_version`, replaces `[data-live]` regions, fires `wood:regions-updated`) |
 | Monitoring | `app/lib/audit.php` (`AUDIT_ACTIONS` must list every action key) |
+| Identity | `app/lib/icons.php` (`icon()`, `icon_sprite()`, `LOGO_MARK`, `ACTION_KINDS`), sources in `design/identity/`, `tools/icons-sync.php` |
+| Home page | `app/lib/home.php` (scoped day figures), `app/pages/home.php` (default route) |
 
 ## Test environment (fresh container)
 

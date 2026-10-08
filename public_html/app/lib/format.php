@@ -172,6 +172,12 @@ function doc_label(array $doc): string
     return kind_label($doc['kind']) . ' رقم ' . fmt_doc_no((int) $doc['doc_no']);
 }
 
+/** اسم المستند في الجداول بعلامة ملونة لنوعه (نفس نص doc_label، والعلامة بلون الإجراء) */
+function doc_label_html(array $doc): string
+{
+    return '<span class="kind-badge kind-' . h((string) $doc['kind']) . '">' . h(kind_label($doc['kind'])) . '</span> رقم ' . h(fmt_doc_no((int) $doc['doc_no']));
+}
+
 /** رقم المستند أو السند بدون فاصل آلاف، حتى لا يُقرأ ١ ٠٠٠ كرقمين */
 function fmt_doc_no(int $n): string
 {

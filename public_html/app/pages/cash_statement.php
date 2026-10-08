@@ -28,7 +28,7 @@ render_header($title, 'cash_boxes', 'page-print');
 <div class="page-head no-print">
   <h1><?= h($title) ?></h1>
   <div class="page-actions">
-    <button type="button" class="btn btn-primary" data-action="print">طباعة</button>
+    <button type="button" class="btn btn-primary" data-action="print"><?= icon('print') ?>طباعة</button>
     <a class="btn btn-quiet" href="<?= h(url('cash_boxes')) ?>">الخزائن</a>
   </div>
 </div>
@@ -53,7 +53,7 @@ render_header($title, 'cash_boxes', 'page-print');
 
 <article class="print-doc" id="live-cash-statement" data-live aria-label="<?= h($title) ?>">
   <header class="print-head">
-    <p class="print-company"><?= h(app_setting('company_name')) ?></p>
+    <p class="print-company"><?= logo_mark('print-mark') ?><?= h(app_setting('company_name')) ?></p>
     <h2>كشف حركة خزنة</h2>
   </header>
   <dl class="print-meta">

@@ -66,6 +66,24 @@ await page.fill('#password', ADMIN.pass);
 await page.click('button:has-text("دخول")');
 check('الدخول نجح وفتح الصفحة الرئيسية', page.url().includes('r=home'));
 
+section('الهوية: الشعار وأيقونة المتصفح والرئيسية');
+{
+  const id = await page.evaluate(() => ({
+    favicon: (document.querySelector('link[rel="icon"]') || {}).href || '',
+    mark: !!document.querySelector('.site-header .brand svg.brand-mark'),
+    sprite: document.querySelectorAll('svg.icon-sprite symbol').length,
+    navIcons: document.querySelectorAll('.main-nav svg.icon').length,
+    actions: [...document.querySelectorAll('.home-actions a')].map((a) => a.className),
+  }));
+  const fav = await page.request.get(id.favicon);
+  check('أيقونة المتصفح SVG من الموقع', fav.status() === 200 && (fav.headers()['content-type'] || '').includes('image/svg+xml'), id.favicon + ' ' + fav.status());
+  check('شعار دلتا في رأس الصفحة', id.mark);
+  check('رموز الأيقونات مرسومة مرة واحدة في الصفحة', id.sprite >= 37, String(id.sprite));
+  check('أيقونات القائمة', id.navIcons >= 6, String(id.navIcons));
+  check('أزرار الرئيسية بألوان الإجراءات', id.actions.some((c) => c.includes('btn-sale')) && id.actions.some((c) => c.includes('btn-receive'))
+    && id.actions.some((c) => c.includes('btn-transfer')), id.actions.join(','));
+}
+
 section('العربية وRTL وخط Cairo');
 check('lang=ar و dir=rtl', (await page.getAttribute('html', 'lang')) === 'ar' && (await page.getAttribute('html', 'dir')) === 'rtl');
 const fontOk = await page.evaluate(async () => {
@@ -381,6 +399,20 @@ for (const r of pages) {
       .filter((el) => !(el.labels && el.labels.length) && !el.getAttribute('aria-label') && !el.getAttribute('aria-labelledby'));
     unlabeled.forEach((el) => out.push(`no label ${el.name || el.id}`));
     if (/[—–]/.test(document.body.innerText)) { out.push('long dash in UI text'); }
+    // الهوية: كل أيقونة تشير إلى رمز موجود في الصفحة، ومخفية عن القارئ الآلي (النص بجانبها يكفي)
+    for (const svg of document.querySelectorAll('svg.icon')) {
+      const ref = (svg.querySelector('use') || { getAttribute: () => '' }).getAttribute('href') || '';
+      if (!ref.startsWith('#i-') || !document.getElementById(ref.slice(1))) { out.push(`broken icon ${ref}`); }
+      if (svg.getAttribute('aria-hidden') !== 'true') { out.push(`icon not aria-hidden ${ref}`); }
+    }
+    // ألوان الإجراءات: تباين النص الأبيض مع خلفية الزر 4.5:1 على الأقل
+    const lum = (c) => { const [r, g, b] = c.match(/\d+/g).slice(0, 3).map((v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }); return 0.2126 * r + 0.7152 * g + 0.0722 * b; };
+    for (const b of document.querySelectorAll('.btn-primary, .btn-sale, .btn-receive, .btn-transfer, .btn-cash, .btn-reports')) {
+      if (!b.getClientRects().length) { continue; }
+      const cs = getComputedStyle(b);
+      const [l1, l2] = [lum(cs.color), lum(cs.backgroundColor)].sort((x, y) => y - x);
+      if ((l1 + 0.05) / (l2 + 0.05) < 4.5) { out.push(`low contrast ${b.className}`); }
+    }
     const main = document.querySelector('main.container');
     if (parseFloat(getComputedStyle(main).maxWidth) > 1280) { out.push('container too wide'); }
     return out;

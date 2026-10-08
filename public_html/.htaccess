@@ -36,10 +36,17 @@ DirectoryIndex index.php
         # روابط CSS و JS تحمل ?v=APP_VERSION فيتغير الرابط مع كل إصدار، والخطوط لا تتغير
         Header set Cache-Control "public, max-age=31536000, immutable"
     </FilesMatch>
+    # الشعار وأيقونة المتصفح (رابطها يحمل ?v=): بلا سكربتات أبدًا حتى لو فُتح الملف مباشرة
+    <FilesMatch "\.svg$">
+        Header set X-Content-Type-Options "nosniff"
+        Header set Content-Security-Policy "default-src 'none'; style-src 'unsafe-inline'"
+        Header set Cache-Control "public, max-age=31536000, immutable"
+    </FilesMatch>
 </IfModule>
 
 <IfModule mod_mime.c>
     AddType font/woff2 .woff2
+    AddType image/svg+xml .svg
 </IfModule>
 
 # بديل فقط إذا لم تتوفر mod_headers، حتى لا تُرسل Cache-Control مرتين
@@ -50,6 +57,7 @@ DirectoryIndex index.php
         ExpiresByType text/css "access plus 1 year"
         ExpiresByType application/javascript "access plus 1 year"
         ExpiresByType text/javascript "access plus 1 year"
+        ExpiresByType image/svg+xml "access plus 1 year"
     </IfModule>
 </IfModule>
 

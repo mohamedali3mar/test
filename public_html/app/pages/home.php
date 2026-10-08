@@ -28,8 +28,8 @@ render_header('الرئيسية', 'home', 'page-home');
 
 <?php $actions = home_actions(); if ($actions): ?>
 <nav class="home-actions" aria-label="إجراءات سريعة">
-  <?php foreach ($actions as [$route, $label, $primary]): ?>
-    <a class="btn<?= $primary ? ' btn-primary' : '' ?>" href="<?= h(url($route)) ?>" data-icon="<?= h($route) ?>"><?= h($label) ?></a>
+  <?php foreach ($actions as [$route, $label, $class, $icon]): ?>
+    <a class="btn<?= $class !== '' ? ' ' . $class : '' ?>" href="<?= h(url($route)) ?>"><?= icon($icon) ?><?= h($label) ?></a>
   <?php endforeach; ?>
 </nav>
 <?php endif; ?>
@@ -115,7 +115,7 @@ render_header('الرئيسية', 'home', 'page-home');
       <tbody>
         <?php foreach ($o['recent'] as $d): $cancelled = $d['status'] === 'cancelled'; ?>
         <tr class="<?= $cancelled ? 'row-cancelled' : '' ?>">
-          <td class="nowrap" data-label="المستند"><a href="<?= h(url('document', ['id' => (int) $d['id']])) ?>"><?= h(doc_label($d)) ?></a></td>
+          <td class="nowrap" data-label="المستند"><a href="<?= h(url('document', ['id' => (int) $d['id']])) ?>"><?= doc_label_html($d) ?></a></td>
           <td class="nowrap" data-label="التاريخ"><?= h(fmt_datetime($d['doc_date'])) ?></td>
           <td data-label="المستخدم"><?= h($names[(int) $d['created_by']] ?? '') ?></td>
           <td data-label="المخزن"><?= h($d['kind'] === 'transfer' ? 'من ' . $d['warehouse_name'] . ' إلى ' . $d['to_warehouse_name'] : (string) $d['warehouse_name']) ?></td>
@@ -136,9 +136,9 @@ render_header('الرئيسية', 'home', 'page-home');
 <section class="section" aria-labelledby="home-admin-title">
   <h2 id="home-admin-title">للمدير</h2>
   <nav class="home-actions" aria-label="صفحات المدير">
-    <?php if (acct_can('dashboard')): ?><a class="btn" href="<?= h(url('dashboard')) ?>" data-icon="dashboard">لوحة التحكم والأرباح</a><?php endif; ?>
-    <?php if (can_open('reports')): ?><a class="btn" href="<?= h(url('reports')) ?>" data-icon="reports">التقارير</a><?php endif; ?>
-    <?php if (can('monitor.view')): ?><a class="btn" href="<?= h(url('monitor')) ?>" data-icon="monitor">المراقبة</a><?php endif; ?>
+    <?php if (acct_can('dashboard')): ?><a class="btn" href="<?= h(url('dashboard')) ?>"><?= icon('dashboard') ?>لوحة التحكم والأرباح</a><?php endif; ?>
+    <?php if (can_open('reports')): ?><a class="btn" href="<?= h(url('reports')) ?>"><?= icon('reports') ?>التقارير</a><?php endif; ?>
+    <?php if (can('monitor.view')): ?><a class="btn" href="<?= h(url('monitor')) ?>"><?= icon('monitor') ?>المراقبة</a><?php endif; ?>
   </nav>
 </section>
 <?php endif; ?>

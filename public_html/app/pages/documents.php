@@ -135,7 +135,7 @@ render_header('الفواتير والحركات', 'documents');
       <tbody>
       <?php foreach ($rows as $d): $cancelled = $d['status'] === 'cancelled'; ?>
         <tr class="<?= $cancelled ? 'row-cancelled' : '' ?>">
-          <td class="nowrap" data-col="doc" data-label="<?= h('المستند') ?>"><a href="<?= h(url('document', ['id' => (int) $d['id']])) ?>"><?= h(doc_label($d)) ?></a></td>
+          <td class="nowrap" data-col="doc" data-label="<?= h('المستند') ?>"><a href="<?= h(url('document', ['id' => (int) $d['id']])) ?>"><?= doc_label_html($d) ?></a></td>
           <td class="nowrap" data-col="date" data-label="<?= h('التاريخ') ?>"><?= h(fmt_datetime($d['doc_date'])) ?></td>
           <td data-col="user" data-label="<?= h('المستخدم') ?>"><?= h($userNames[(int) $d['created_by']] ?? '') ?></td>
           <?php if ($showBranch): ?>

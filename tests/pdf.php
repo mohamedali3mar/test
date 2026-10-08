@@ -207,6 +207,8 @@ $timed = function (string $name, callable $fn) use (&$timings): string {
 section('تحميل المكتبة عند الحاجة فقط');
 check('mPDF غير محمّل بعد bootstrap', !class_exists('Mpdf\Mpdf', false));
 check('دوال PDF معرّفة من bootstrap', function_exists('pdf_document') && function_exists('pdf_report') && function_exists('pdf_send'));
+check('شعار دلتا في الترويسة كـ data URI (mPDF لا يقرأ ملفات محلية)', str_contains(pdf_logo(), 'src="data:image/svg+xml;base64,')
+    && str_contains(base64_decode(explode('"', explode('base64,', pdf_logo())[1])[0]), 'fill="#8a4510"'));
 
 $pdo = fresh_database();
 $ids = pdf_seed_fixtures($pdo);

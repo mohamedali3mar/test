@@ -185,6 +185,7 @@ p { margin: 0; }
 .run-head { width: 100%; border-bottom: 0.75pt solid {$c['primary']}; }
 .run-head td { padding: 0 0 2mm 0; vertical-align: bottom; }
 .run-company { font-size: 12pt; font-weight: bold; color: {$c['text']}; }
+.run-logo { width: 6mm; height: 6mm; vertical-align: middle; }
 .run-title { font-size: 9pt; color: {$c['text2']}; text-align: left; }
 .run-foot { width: 100%; border-top: 0.75pt solid {$c['border']}; }
 .run-foot td { padding: 1.5mm 0 0 0; font-size: 9pt; color: {$c['muted']}; }
@@ -221,11 +222,21 @@ h1 { font-size: 18pt; font-weight: bold; margin: 0 0 1mm 0; color: {$c['text']};
 CSS;
 }
 
-/** ترويسة كل صفحة: اسم الشركة يمينًا وعنوان الملف يسارًا */
+/**
+ * شعار دلتا في الترويسة. الملف يقرؤه النظام نفسه ويمرره كـ data URI،
+ * لأن mPDF ممنوع من قراءة أي ملف محلي (localContentLoader أعلاه). لا شيء إن لم يوجد الملف.
+ */
+function pdf_logo(): string
+{
+    $svg = @file_get_contents(dirname(APP_ROOT) . '/assets/img/logo.svg');
+    return is_string($svg) && $svg !== '' ? '<img class="run-logo" src="data:image/svg+xml;base64,' . base64_encode($svg) . '" alt=""> ' : '';
+}
+
+/** ترويسة كل صفحة: الشعار واسم الشركة يمينًا وعنوان الملف يسارًا */
 function pdf_running_header(string $title): string
 {
     return '<table class="run-head"><tr>'
-        . '<td class="run-company">' . pdf_bdi(app_setting('company_name')) . '</td>'
+        . '<td class="run-company">' . pdf_logo() . pdf_bdi(app_setting('company_name')) . '</td>'
         . '<td class="run-title">' . h($title) . '</td>'
         . '</tr></table>';
 }

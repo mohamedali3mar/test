@@ -51,6 +51,7 @@ render_header('تسجيل الدخول', '', 'page-login');
 if ($pending !== null):
 ?>
 <section class="login-box">
+  <?= logo_mark('login-mark') ?>
   <h1><?= h(app_setting('company_name')) ?></h1>
   <p class="muted">التحقق بخطوتين</p>
   <?php if ($error): ?>
@@ -80,6 +81,7 @@ if ($pending !== null):
 endif;
 ?>
 <section class="login-box">
+  <?= logo_mark('login-mark') ?>
   <h1><?= h(app_setting('company_name')) ?></h1>
   <p class="muted">سجّل الدخول للمتابعة</p>
   <?php if ($error): ?>

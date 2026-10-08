@@ -144,7 +144,7 @@ const NAV_GROUPS = [
 /** صفحات بأرقام الشركة كلها: لا تظهر في القائمة للمستخدم المقيد بفرع (والصفحة نفسها ترفضه) */
 const NAV_ALL_BRANCHES_ROUTES = ['dashboard', 'opening_valuation'];
 
-/** روابط القائمة المسموحة للمستخدم الحالي، مجمعة: [المجموعة => [[url, label, current], ...]] */
+/** روابط القائمة المسموحة للمستخدم الحالي، مجمعة: [المجموعة => [[url, label, current, icon], ...]] */
 function nav_visible_groups(string $active): array
 {
     $kind = (string) ($_GET['kind'] ?? '');
@@ -159,7 +159,7 @@ function nav_visible_groups(string $active): array
                 continue;
             }
             $current = $route === $active && (!isset($params['kind']) || $params['kind'] === $kind);
-            $out[$group][] = [url($route, $params), $label, $current];
+            $out[$group][] = [url($route, $params), $label, $current, route_icon($route, $params)];
         }
     }
     return $out;
@@ -199,6 +199,7 @@ function render_header(string $title, string $active = '', string $bodyClass = '
 <title><?= h($title) ?> | <?= h($company) ?></title>
 <link rel="preload" href="assets/fonts/cairo-arabic-400-normal.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="<?= h(asset('css/app.css')) ?>">
+<link rel="icon" href="<?= h(asset('img/favicon.svg')) ?>" type="image/svg+xml">
 <?php if ($loggedIn): /* السكربت للمستخدمين المسجلين فقط (index.php?r=asset)، وصفحتا الدخول والتثبيت لا تحتاجانه */ ?>
 <script src="<?= h(url('asset', ['f' => 'app.js', 'v' => asset_version('js/app.js')])) ?>" defer></script>
 <?php endif; ?>
@@ -209,20 +210,21 @@ function render_header(string $title, string $active = '', string $bodyClass = '
   data-vol-pad="<?= h(app_setting('volume_pad')) ?>"
   data-currency="<?= h(app_setting('currency')) ?>"
   <?= $loggedIn ? 'data-live-version="' . h($version) . '" data-api="' . h(url('api')) . '" data-login="' . h(url('login')) . '"' : '' ?>>
+<?= icon_sprite() ?>
 <a class="skip-link" href="#main">تخطي إلى المحتوى</a>
 <?php if ($loggedIn): ?>
 <header class="site-header no-print">
   <div class="container header-row">
-    <a class="brand" href="<?= h(url('home')) ?>"><?= h($company) ?></a>
+    <a class="brand" href="<?= h(url('home')) ?>"><?= logo_mark() ?><span class="brand-name"><?= h($company) ?></span></a>
     <?php $navGroups = nav_visible_groups($active); $navCurrent = $active === 'home' ? 'الرئيسية' : nav_current_label($navGroups); ?>
     <nav class="main-nav" aria-label="القائمة الرئيسية">
-      <a class="nav-home" href="<?= h(url('home')) ?>"<?= $active === 'home' ? ' aria-current="page"' : '' ?>>الرئيسية</a>
+      <a class="nav-home" href="<?= h(url('home')) ?>"<?= $active === 'home' ? ' aria-current="page"' : '' ?>><?= icon('home') ?>الرئيسية</a>
       <?php foreach ($navGroups as $group => $links): $inGroup = in_array(true, array_column($links, 2), true); ?>
         <details class="nav-group<?= $inGroup ? ' is-current' : '' ?>">
-          <summary><?= h($group) ?></summary>
+          <summary><?= icon(NAV_GROUP_ICONS[$group] ?? '') ?><?= h($group) ?></summary>
           <div class="nav-group-links">
-            <?php foreach ($links as [$href, $label, $current]): ?>
-              <a href="<?= h($href) ?>"<?= $current ? ' aria-current="page"' : '' ?>><?= h($label) ?></a>
+            <?php foreach ($links as [$href, $label, $current, $icon]): ?>
+              <a href="<?= h($href) ?>"<?= $current ? ' aria-current="page"' : '' ?>><?= icon($icon) ?><?= h($label) ?></a>
             <?php endforeach; ?>
           </div>
         </details>
@@ -239,19 +241,19 @@ function render_header(string $title, string $active = '', string $bodyClass = '
         <span class="nav-menu-state" aria-hidden="true"></span>
       </summary>
       <nav class="nav-menu-links" aria-label="القائمة الرئيسية">
-        <a href="<?= h(url('home')) ?>"<?= $active === 'home' ? ' aria-current="page"' : '' ?>>الرئيسية</a>
+        <a href="<?= h(url('home')) ?>"<?= $active === 'home' ? ' aria-current="page"' : '' ?>><?= icon('home') ?>الرئيسية</a>
         <?php foreach ($navGroups as $group => $links): ?>
           <p class="nav-menu-group"><?= h($group) ?></p>
-          <?php foreach ($links as [$href, $label, $current]): ?>
-            <a href="<?= h($href) ?>"<?= $current ? ' aria-current="page"' : '' ?>><?= h($label) ?></a>
+          <?php foreach ($links as [$href, $label, $current, $icon]): ?>
+            <a href="<?= h($href) ?>"<?= $current ? ' aria-current="page"' : '' ?>><?= icon($icon) ?><?= h($label) ?></a>
           <?php endforeach; ?>
         <?php endforeach; ?>
       </nav>
     </details>
-    <a class="btn btn-quiet header-account" href="<?= h(url('account')) ?>"<?= $active === 'account' ? ' aria-current="page"' : '' ?>><span class="visually-hidden">حسابي: </span><span class="header-account-name"><?= h((string) ($_SESSION['display_name'] ?? current_username())) ?></span></a>
+    <a class="btn btn-quiet header-account" href="<?= h(url('account')) ?>"<?= $active === 'account' ? ' aria-current="page"' : '' ?>><?= icon('account') ?><span class="visually-hidden">حسابي: </span><span class="header-account-name"><?= h((string) ($_SESSION['display_name'] ?? current_username())) ?></span></a>
     <form method="post" action="<?= h(url('logout')) ?>" class="logout-form">
       <?= csrf_field() ?>
-      <button type="submit" class="btn btn-quiet">خروج</button>
+      <button type="submit" class="btn btn-quiet"><?= icon('logout') ?>خروج</button>
     </form>
   </div>
 </header>

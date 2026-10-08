@@ -33,7 +33,8 @@ LIST="$(unzip -Z1 "$UPLOAD")"
 for must in .htaccess app/.htaccess app/storage/.htaccess app/storage/sessions/.htaccess app/migrations/.htaccess \
             index.php install.php app/config.sample.php app/migrations/001_initial.sql app/migrations/003_two_factor.sql \
             app/lib/security.php app/lib/totp.php app/lib/tables.php app/lib/exports.php app/pages/asset.php app/pages/export.php app/pages/pdf.php assets/js/app.js assets/js/tables.js assets/js/twofactor.js assets/js/vendor/qrcode.js assets/css/app.css \
-            assets/fonts/cairo-arabic-400-normal.woff2 assets/fonts/OFL.txt app/storage/logs/index.php robots.txt; do
+            assets/fonts/cairo-arabic-400-normal.woff2 assets/fonts/OFL.txt app/storage/logs/index.php robots.txt \
+            assets/img/favicon.svg app/lib/icons.php app/lib/home.php app/pages/home.php; do
   grep -qx "$must" <<<"$LIST" || fail "missing $must"
 done
 # ما لا يعمل النظام بدونه: مكتبة PDF وخطوطها، وكل ترقيات قاعدة البيانات الموجودة في المصدر

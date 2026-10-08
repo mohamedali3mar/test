@@ -81,17 +81,26 @@ function home_day_label(string $ymd): string
     return $days[(int) $d->format('w')] . ' ' . digits($d->format('j')) . ' ' . $months[(int) $d->format('n') - 1] . ' ' . digits($d->format('Y'));
 }
 
-/** الأزرار السريعة المسموحة للمستخدم: [المسار، التسمية، رئيسي؟] */
+/**
+ * الأزرار السريعة المسموحة للمستخدم: [المسار، التسمية، فئة الزر، الأيقونة].
+ * أزرار الإجراءات بلون نوعها (البيع والوارد والتحويل والنقدية)، وأزرار التصفح محايدة.
+ */
 function home_actions(): array
 {
     $all = [
-        ['sell', 'فاتورة بيع', true],
-        ['receive', 'إضافة وارد', false],
-        ['transfer', 'تحويل بين المخازن', false],
-        ['collect', 'سند قبض', false],
-        ['expense', 'مصروف', false],
-        ['inventory', 'المخزون', false],
-        ['documents', 'الفواتير والحركات', false],
+        ['sell', 'فاتورة بيع', 'sale'],
+        ['receive', 'إضافة وارد', 'receive'],
+        ['transfer', 'تحويل بين المخازن', 'transfer'],
+        ['collect', 'سند قبض', 'collect'],
+        ['expense', 'مصروف', 'expense'],
+        ['inventory', 'المخزون', 'inventory'],
+        ['documents', 'الفواتير والحركات', 'documents'],
     ];
-    return array_values(array_filter($all, fn ($a) => can_open($a[0])));
+    $out = [];
+    foreach ($all as [$route, $label, $icon]) {
+        if (can_open($route)) {
+            $out[] = [$route, $label, isset(ACTION_KINDS[$route]) ? action_btn_class($route) : '', $icon];
+        }
+    }
+    return $out;
 }

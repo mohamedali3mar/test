@@ -109,7 +109,7 @@ render_header($def['title'], 'reports', 'page-report');
 <div class="page-head">
   <h1><?= h($def['title']) ?></h1>
   <div class="page-actions no-print">
-    <button type="button" class="btn btn-primary" data-action="print">طباعة</button>
+    <button type="button" class="btn btn-primary" data-action="print"><?= icon('print') ?>طباعة</button>
     <a class="btn btn-quiet" href="<?= h(url('reports')) ?>">كل التقارير</a>
   </div>
 </div>

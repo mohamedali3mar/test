@@ -18,7 +18,7 @@ $amount = money_to_piasters($v['amount']);
 render_header($title . ' ' . fmt_doc_no((int) $v['doc_no']), 'vouchers', 'page-print print-' . $size);
 ?>
 <div class="print-toolbar no-print">
-  <button type="button" class="btn btn-primary" data-action="print">طباعة</button>
+  <button type="button" class="btn btn-primary" data-action="print"><?= icon('print') ?>طباعة</button>
   <?php if ($size === 'a4'): ?>
     <a class="btn" href="<?= h(url('voucher_print', ['id' => $id, 'size' => 'a5'])) ?>">مقاس A5</a>
   <?php else: ?>
@@ -29,7 +29,7 @@ render_header($title . ' ' . fmt_doc_no((int) $v['doc_no']), 'vouchers', 'page-p
 
 <article class="print-doc" id="live-voucher-print" data-live aria-label="<?= h($title) ?>">
   <header class="print-head">
-    <p class="print-company"><?= h(app_setting('company_name')) ?></p>
+    <p class="print-company"><?= logo_mark('print-mark') ?><?= h(app_setting('company_name')) ?></p>
     <h1><?= h($title) ?></h1>
     <?php if ($v['status'] === 'cancelled'): ?>
       <p class="print-cancelled">ملغى بتاريخ <?= h(fmt_datetime($v['cancelled_at'])) ?></p>
