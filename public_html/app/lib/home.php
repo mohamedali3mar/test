@@ -15,6 +15,23 @@ function home_document_scope(?int $scope): array
     return $scope !== null ? document_branch_condition($scope) : ['1 = 1', []];
 }
 
+/**
+ * استعلام آخر المستندات. للمقيد بفرع: الصادرة من الفرع والتحويلات الواردة إليه من فرع آخر في جزأين، كل جزء
+ * مرتب بالمعرّف ومحدود بعدد الصفوف المعروضة، ثم الأحدث منهما. شرط «فرع = ? أو فرع الوجهة = ?» في استعلام واحد
+ * يجعل قاعدة البيانات تقرأ كل مستندات الفرع وترتبها لتعرض 8 صفوف، وهذه الصفحة تُحدّث مع كل حفظ.
+ * النتيجة نفس صفوف document_branch_condition وترتيبها.
+ */
+function home_recent_sql(?int $scope): string
+{
+    $limit = ' ORDER BY d.id DESC LIMIT ' . HOME_RECENT;
+    if ($scope === null) {
+        return 'SELECT d.* FROM documents d' . $limit;
+    }
+    return 'SELECT x.* FROM ((SELECT d.* FROM documents d WHERE d.branch_id = ?' . $limit . ')
+        UNION ALL (SELECT d.* FROM documents d WHERE d.to_branch_id = ? AND NOT (d.branch_id <=> ?)' . $limit . ')) x
+        ORDER BY x.id DESC LIMIT ' . HOME_RECENT;
+}
+
 function home_overview(PDO $pdo, ?int $scope, ?string $today = null): array
 {
     $day = $today ?? date('Y-m-d');
@@ -53,8 +70,8 @@ function home_overview(PDO $pdo, ?int $scope, ?string $today = null): array
     $stock = ['sizes' => (int) ($st['sizes'] ?? 0), 'empty' => (int) ($st['empty'] ?? 0), 'qty' => (string) ($st['qty'] ?? '0'),
         'volume' => Num::trimDecimal((string) ($st['volume'] ?? '0'))];
 
-    $stmt = $pdo->prepare("SELECT d.* FROM documents d WHERE {$cond} ORDER BY d.id DESC LIMIT " . HOME_RECENT);
-    $stmt->execute($condParams);
+    $stmt = $pdo->prepare(home_recent_sql($scope));
+    $stmt->execute($scope !== null ? [$scope, $scope, $scope] : []);
     $recent = $stmt->fetchAll();
 
     // التحصيلات السارية اليوم (سندات القبض): للمستخدم المقيد بفرع السندات المسجلة من فرعه (record_voucher يحفظ

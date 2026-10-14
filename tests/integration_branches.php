@@ -540,4 +540,44 @@ check_eq('الرئيسية لفرع آخر: لا تحصيلات', [], home_overv
 $_SESSION = [];
 reset_branch_scope_cache();
 
+section('آخر المستندات في الرئيسية: نفس صفوف شرط الفرع وترتيبها');
+$_SESSION = ['user_id' => $bossH, 'role' => 'admin'];
+reset_branch_scope_cache();
+$whMainH = catalog_create($pdoH, 'warehouse', 'مخزن الرئيسي', $mainH);
+$whAlexH = catalog_create($pdoH, 'warehouse', 'مخزن الإسكندرية', $alexH);
+$whAlex2H = catalog_create($pdoH, 'warehouse', 'مخزن الإسكندرية الثاني', $alexH);
+$typeH = catalog_create($pdoH, 'type', 'زان');
+foreach ([$whMainH, $whAlexH] as $w) {
+    record_receipt($pdoH, $bossH, receipt_input($w, $typeH, '10', 'cm', '5', 'cm', '4', 'm', '500'));
+}
+$itemH = item_id_for($pdoH, $typeH, 100000, 50000, 4000000);
+for ($i = 0; $i < 4; $i++) {
+    record_transfer($pdoH, $bossH, transfer_input($whMainH, $whAlexH, [[$itemH, 1]]));   // وارد للإسكندرية من فرع آخر
+    record_sale($pdoH, $bossH, sale_input($whMainH, [[$itemH, 1, '100']]));
+    record_transfer($pdoH, $bossH, transfer_input($whAlexH, $whAlex2H, [[$itemH, 1]]));  // داخل الفرع نفسه
+    record_sale($pdoH, $bossH, sale_input($whAlexH, [[$itemH, 1, '100']]));
+    record_transfer($pdoH, $bossH, transfer_input($whAlexH, $whMainH, [[$itemH, 1]]));   // صادر من الإسكندرية
+}
+// مستند قديم بدون فرع مصدر ووجهته الإسكندرية يظهر لها أيضًا
+$legacyH = (int) $pdoH->query("SELECT id FROM documents WHERE kind = 'transfer' AND to_branch_id = $alexH AND branch_id = $mainH ORDER BY id DESC LIMIT 1")->fetchColumn();
+$pdoH->exec("UPDATE documents SET branch_id = NULL, branch_name = NULL WHERE id = $legacyH");
+$orRecent = function (int $branch) use ($pdoH): array {
+    [$cond, $p] = document_branch_condition($branch);
+    $stmt = $pdoH->prepare("SELECT d.* FROM documents d WHERE {$cond} ORDER BY d.id DESC LIMIT " . HOME_RECENT);
+    $stmt->execute($p);
+    return $stmt->fetchAll();
+};
+foreach (['الإسكندرية' => $alexH, 'الرئيسي' => $mainH] as $label => $br) {
+    $recent = home_overview($pdoH, $br)['recent'];
+    check_eq("آخر مستندات فرع $label: نفس الصفوف والترتيب", $orRecent($br), $recent);
+    check_eq("  عددها " . HOME_RECENT, HOME_RECENT, count($recent));
+}
+$alexIds = array_column(home_overview($pdoH, $alexH)['recent'], 'id');
+check('  الإسكندرية: الوارد من فرع آخر والصادر منها معًا', in_array((string) $legacyH, array_map('strval', $alexIds), true)
+    && count(array_unique(array_map('strval', $alexIds))) === count($alexIds));
+check_eq('لكل الفروع: أحدث المستندات بلا تصفية', array_column($pdoH->query('SELECT id FROM documents ORDER BY id DESC LIMIT ' . HOME_RECENT)->fetchAll(), 'id'),
+    array_column(home_overview($pdoH, null)['recent'], 'id'));
+$_SESSION = [];
+reset_branch_scope_cache();
+
 finish();
