@@ -9,11 +9,13 @@ The owner communicates in Egyptian Arabic; reply in Arabic. Code comments and UI
 
 Arabic (RTL) web system for a timber company: inventory by piece count and exact cubic meters, sales and purchases,
 accounting (customers, suppliers, cash boxes, vouchers, statements, weighted average cost), reports, users and roles,
-branches, monitoring, 2FA. Version in `APP_VERSION` (`public_html/app/lib/core.php`), currently 2.1.0.
+branches, monitoring, 2FA. Version in `APP_VERSION` (`public_html/app/lib/core.php`), currently 2.2.0.
 
 - PHP 8.1+ and MySQL/MariaDB via PDO. No framework, no build step, shared hosting (Hostinger). mPDF vendored in `app/vendor`.
 - Entry point `public_html/index.php` (`ROUTES`, `?r=<route>`), pages in `app/pages/`, logic in `app/lib/`.
-- Permissions: `PERMISSIONS` and `ROUTE_PERMISSIONS` in `app/lib/users.php`; a route missing there is admin only.
+- Permissions: `PERMISSIONS` (role defaults) and `ROUTE_PERMISSIONS` in `app/lib/users.php`; a route missing there is admin only.
+  The admin overrides any `STAFF_GRANTABLE` permission per staff user (`users.permissions` JSON, migration 008, loaded into
+  `$_SESSION['perm_overrides']` on every request); `can()` applies them. User management, settings and upgrades stay admin only.
 - Branch scope: `allowed_branch_id()` in `app/lib/branches.php`; a restricted user sees only their branch.
 
 ## Binding rules (do not break)
@@ -35,7 +37,9 @@ branches, monitoring, 2FA. Version in `APP_VERSION` (`public_html/app/lib/core.p
 
 | Area | Files |
 |---|---|
-| Documents, cancellation | `app/lib/documents.php` |
+| Documents, cancellation | `app/lib/documents.php` (`cancel_document()` takes an optional reversal date) |
+| Editing documents and vouchers | `app/lib/doc_edit.php`: `document_replace()` / `voucher_replace()` cancel the original and record the replacement in ONE transaction (`db_transaction()` nests by passing through); links via `replaces_id` / `replaced_by_id` (migration 009). No hard delete anywhere |
+| Sizes (items) | `app/lib/items.php`, `app/pages/items.php`: hide/show sizes and wood types (`is_hidden`, migration 009), display units |
 | Accounting | `accounting.php`, `costing.php`, `parties.php`, `cashboxes.php`, `vouchers.php`, `acct_reports.php` |
 | Table tools and exports | `app/lib/tables.php` (sorting, toolbar, inventory/log data), `app/lib/exports.php`, `app/pages/export.php`, `assets/js/tables.js` |
 | PDF | `app/lib/pdf.php` (`pdf_document`, `pdf_report`), `app/pages/pdf.php` |
