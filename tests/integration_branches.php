@@ -43,7 +43,9 @@ function run_workers_behind_barrier(PDO $root, array $commands, int $expectWaiti
 /** يحاكي جلسة مستخدم مسجل في سطر الأوامر (0 = بدون جلسة) */
 function act_as(int $userId): void
 {
-    $_SESSION = $userId > 0 ? ['user_id' => $userId] : [];
+    // الدور وصلاحيات المدير من قاعدة البيانات مثل كل طلب حقيقي (require_login)
+    $u = $userId > 0 ? session_user_row(db(), $userId) : null;
+    $_SESSION = $u ? ['user_id' => $userId, 'role' => user_role($u), 'perm_overrides' => user_permission_overrides($u)] : [];
     reset_branch_scope_cache();
 }
 
