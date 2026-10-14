@@ -982,7 +982,11 @@ function record_transfer(PDO $pdo, int $userId, array $in): array
  * يلغي المستند بالكامل مع الاحتفاظ به في السجل.
  * البيع يعيد الكميات، والوارد يخصمها، والتحويل يعكسها، بشرط ألا يصبح أي رصيد سالبًا.
  */
-function cancel_document(PDO $pdo, int $userId, int $docId, string $reasonRaw): array
+/**
+ * $reversalDate: تاريخ القيود العكسية (الافتراضي وقت الإلغاء). تعديل المستند يمرر تاريخ المستند الأصلي، لأن البديل
+ * يُسجل بتاريخه أيضًا، فيبقى كشف الخزنة والعميل في ذلك اليوم: الأصلي ثم عكسه ثم البديل.
+ */
+function cancel_document(PDO $pdo, int $userId, int $docId, string $reasonRaw, ?string $reversalDate = null): array
 {
     $reason = clean_text($reasonRaw);
     if (mb_strlen($reason) > 255) {
@@ -994,7 +998,7 @@ function cancel_document(PDO $pdo, int $userId, int $docId, string $reasonRaw): 
     $sources = ledger_sources_of($pdo, 'document', $docId);
     closing_date();
     $scope = allowed_branch_id($pdo);
-    return db_transaction($pdo, function (PDO $pdo) use ($userId, $docId, $reason, $lines, $sources, $scope) {
+    return db_transaction($pdo, function (PDO $pdo) use ($userId, $docId, $reason, $lines, $sources, $scope, $reversalDate) {
         $stmt = $pdo->prepare('SELECT * FROM documents WHERE id = ? FOR UPDATE');
         $stmt->execute([$docId]);
         $doc = $stmt->fetch();
@@ -1110,7 +1114,7 @@ function cancel_document(PDO $pdo, int $userId, int $docId, string $reasonRaw): 
         }
         // القيود العكسية بتاريخ الإلغاء؛ رد نقدية بيع يُرفض إذا لم يكفِ رصيد الخزنة
         try {
-            reverse_ledgers($pdo, 'document', $docId, $now, 'إلغاء ' . $label);
+            reverse_ledgers($pdo, 'document', $docId, $reversalDate ?? $now, 'إلغاء ' . $label);
         } catch (ValidationException $e) {
             throw new ValidationException(['document' => 'لا يمكن إلغاء هذا المستند: رصيد الخزنة لا يكفي لرد المبلغ. ' . implode(' ', $e->errors)]);
         }

@@ -130,6 +130,24 @@ user_set_permissions($pdo, $admin, $staff, ['stock.view', 'documents.create', 'd
 $as($staff);
 check('بلا صلاحيات التعديل والإلغاء: لا شيء', document_edit_problem($pdo, $doc($adminSale['id'])) !== null && !document_cancel_permitted($doc($adminSale['id'])));
 
+section('تعديل شراء نقدي بتاريخ سابق: القيود العكسية بتاريخ الأصلي');
+$as($admin);
+$box2 = cash_box_create($pdo, $admin, 'خزنة المشتريات', '300');
+$backBuy = date('Y-m-d', strtotime('-4 days'));
+$pdo->exec("UPDATE cash_ledger SET entry_date = '" . date('Y-m-d', strtotime('-10 days')) . " 08:00:00' WHERE cash_box_id = $box2");
+$buy = record_receipt($pdo, $admin, receipt_input($wh1, $mosky, '30', 'cm', '5', 'cm', '2', 'm', '10',
+    ['cost_per_m3' => '1000', 'payment_type' => 'cash', 'cash_box_id' => (string) $box2, 'doc_date' => $backBuy]));
+check_eq('الشراء استهلك رصيد الخزنة (300.00 = 10 × 0.03 × 1000)', 0, money_to_piasters((string) $q("SELECT balance FROM cash_boxes WHERE id = $box2")));
+$fb = document_edit_form($pdo, $doc($buy['id']));
+$fb['quantity'] = '9';
+$nb = document_replace($pdo, $admin, $buy['id'], $fb, 'كمية');
+check('التعديل مسموح (لم يُرفض بسبب رصيد الخزنة في ذلك اليوم)', $doc($nb['id'])['status'] === 'active');
+check_eq('  القيود العكسية بتاريخ الشراء الأصلي، والبديل بنفس اليوم', [$backBuy, $backBuy],
+    [substr((string) $q("SELECT entry_date FROM cash_ledger WHERE cash_box_id = $box2 AND entry_type = 'reversal'"), 0, 10),
+     substr((string) $q("SELECT MAX(entry_date) FROM cash_ledger WHERE cash_box_id = $box2 AND document_id = {$nb['id']}"), 0, 10)]);
+check_eq('  والخزنة بقي فيها 30.00', 3000, money_to_piasters((string) $q("SELECT balance FROM cash_boxes WHERE id = $box2")));
+check_eq('  ولا اختلاف في الأرصدة', [], acct_verify_balances($pdo));
+
 section('الفترة المقفلة');
 $as($admin);
 save_setting($pdo, 'closing_date', date('Y-m-d', strtotime('-2 days')));

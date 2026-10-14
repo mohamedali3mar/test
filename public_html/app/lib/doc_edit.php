@@ -173,7 +173,8 @@ function document_replace(PDO $pdo, int $userId, int $oldId, array $in, string $
     doc_edit_inherited_date(substr((string) $old['doc_date'], 0, 10));
     try {
         return db_transaction($pdo, function (PDO $pdo) use ($userId, $oldId, $old, $in, $reason, $label) {
-            cancel_document($pdo, $userId, $oldId, 'تعديل' . ($reason !== '' ? ': ' . $reason : ''));
+            // القيود العكسية بتاريخ الأصلي (والبديل بنفس التاريخ): كشف ذلك اليوم يبقى متوازنًا، وفحص الخزنة بتاريخ سابق يمر
+            cancel_document($pdo, $userId, $oldId, 'تعديل' . ($reason !== '' ? ': ' . $reason : ''), (string) $old['doc_date']);
             $new = match ($old['kind']) {
                 'in' => record_receipt($pdo, $userId, $in),
                 'sale' => record_sale($pdo, $userId, $in),
