@@ -431,6 +431,8 @@ check_eq('  الجهاز بالعربية', 'سفاري على آيفون', audi
 check_eq('  الملخص', "وارد رقم ١ إلى المخزن الرئيسي: موسكي، عرض\u{00A0}١٠\u{00A0}سم × تخانة\u{00A0}٥٠\u{00A0}مللي × طول\u{00A0}٣\u{00A0}متر، ١٠ قطعة، المورد: مورد الشرق", $row['summary']);
 $d = details_of($row);
 check('  التفاصيل', $d['quantity'] === 10 && $d['warehouse'] === 'المخزن الرئيسي' && $d['volume_m3'] === '0.15' && $d['supplier'] === 'مورد الشرق', json_encode($d, JSON_UNESCAPED_UNICODE));
+check_eq('  تاريخ المستند (اليوم، ليس يدويًا) وبلا دفع لوارد بدون تكلفة', [date('Y-m-d'), false, null, '0.00'],
+    [substr((string) ($d['doc_date'] ?? ''), 0, 10), $d['manual_date'] ?? null, array_key_exists('payment_type', $d) ? $d['payment_type'] : 'missing', $d['paid'] ?? null]);
 $item = item_id_for($pdo, $mosky, 100000, 50000, 3000000);
 
 $a0 = last_audit_id($pdo);
@@ -600,6 +602,36 @@ $row = audit_after($pdo, $a0)[0] ?? [];
 check('بدون جلسة: العملية تُنسب إلى «النظام»', array_key_exists('user_id', $row) && $row['user_id'] === null && $row['username'] === ''
     && audit_actor_name($row + ['user_display_name' => null]) === 'النظام', json_encode($row, JSON_UNESCAPED_UNICODE));
 act_as($pdo, $admin);
+
+section('المستند والسند بتاريخ يدوي يظهران في المراقبة');
+$past = date('Y-m-d', time() - 86400 * 20);
+$a0 = last_audit_id($pdo);
+$mr = record_receipt($pdo, $admin, receipt_input($wh1, $mosky, '10', 'cm', '50', 'mm', '3', 'm', '2', ['doc_date' => $past]));
+$row = expect_one_audit($pdo, 'وارد بتاريخ يدوي', $a0, 'doc.receipt', $admin, 'document', $mr['id']);
+check('  الملخص يذكر التاريخ اليدوي', str_ends_with($row['summary'], '، بتاريخ يدوي ' . digits($past)), $row['summary']);
+$d = details_of($row);
+check_eq('  تاريخ المستند في التفاصيل', [$past, true], [substr((string) ($d['doc_date'] ?? ''), 0, 10), $d['manual_date'] ?? null]);
+$a0 = last_audit_id($pdo);
+$ms = record_sale($pdo, $admin, sale_input($wh1, [[$item, 1, '20000']], ['party_name' => 'عميل نقدي', 'payment_type' => 'cash', 'doc_date' => $past]));
+$row = expect_one_audit($pdo, 'بيع بتاريخ يدوي', $a0, 'doc.sale', $admin, 'document', $ms['id']);
+check('  الملخص يذكر التاريخ اليدوي قبل اسم العميل', str_ends_with($row['summary'], '، بتاريخ يدوي ' . digits($past) . '، العميل: عميل نقدي'), $row['summary']);
+$d = details_of($row);
+$saleBox = (int) $pdo->query('SELECT cash_box_id FROM documents WHERE id = ' . (int) $ms['id'])->fetchColumn();
+check_eq('  تفاصيل التاريخ والدفع', [$past, true, 'cash', '300.00', '300.00', '0.00', null, $saleBox],
+    [substr((string) ($d['doc_date'] ?? ''), 0, 10), $d['manual_date'] ?? null, $d['payment_type'] ?? null, $d['total'] ?? null,
+        $d['paid'] ?? null, $d['remaining'] ?? null, array_key_exists('party_id', $d) ? $d['party_id'] : 'missing', $d['cash_box_id'] ?? null]);
+$a0 = last_audit_id($pdo);
+$typedToday = record_sale($pdo, $admin, sale_input($wh1, [[$item, 1, '20000']], ['doc_date' => date('Y-m-d')]));
+$row = expect_one_audit($pdo, 'بيع بتاريخ اليوم مكتوبًا', $a0, 'doc.sale', $admin, 'document', $typedToday['id']);
+check('  تاريخ اليوم المكتوب ليس تاريخًا يدويًا', !str_contains($row['summary'], 'بتاريخ يدوي') && details_of($row)['manual_date'] === false, $row['summary']);
+$rentCat = (int) $pdo->query('SELECT id FROM expense_categories ORDER BY id LIMIT 1')->fetchColumn();
+record_voucher($pdo, $admin, 'expense', ['category_id' => (string) $rentCat, 'cash_box_id' => (string) $saleBox, 'amount' => '10',
+    'notes' => 'مصروف قديم', 'reference' => '', 'voucher_date' => $past, 'request_token' => new_request_token()]);
+$ids = array_map(fn ($u) => (int) $u['id'], users_all($pdo));
+$manual = audit_search($pdo, audit_filters(['q' => 'بتاريخ يدوي'], $ids), 1, 1000);
+$manualActions = array_column($manual['rows'], 'action');
+sort($manualActions);
+check_eq('البحث بعبارة «بتاريخ يدوي» يجد الوارد والبيع والسند بتاريخ سابق فقط', ['doc.receipt', 'doc.sale', 'voucher.create'], $manualActions);
 
 /* ---------------------------------------------------------------- */
 section('صفحة المراقبة: التصفية والبحث والصفحات');

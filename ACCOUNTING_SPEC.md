@@ -4,7 +4,7 @@ Customer decisions (binding):
 - Phase 2 ships together with Phase 1.
 - Costing uses the **moving weighted average**.
 - Sale invoices are **cash, credit, or partial**, with the customer chosen from a list.
-- The document date is **automatic**. **Only an admin** may enter a past date, and it is audited.
+- The document date is **automatic**. **Only an admin** may enter a past date, and it is audited: the audit summary of the receipt, sale or voucher contains «بتاريخ يدوي <date>» (searchable in the monitor) and the details hold `doc_date` (or `voucher_date`) and the payment fields.
 
 Foundation already on the branch (do not redesign it, build on it):
 - `public_html/app/migrations/006_accounting.sql`: all accounting tables and columns. Do not add new migrations without the lead's approval.
