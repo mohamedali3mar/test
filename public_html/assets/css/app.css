@@ -515,6 +515,14 @@ th.align-end, td.align-end { text-align: end; }
 input.input-ltr { direction: ltr; text-align: right; }
 .actions-nowrap { flex-wrap: nowrap; white-space: nowrap; }
 
+/* كل جداول البيانات على A4 (المخزون والسجل والتقارير والمراقبة): الخانات وعناوين الأعمدة تلتف بين الكلمات
+   وحشوها أقل، فلا يتجاوز الجدول عرض الصفحة فيُقص عمود الحالة أو القيمة على حافتها اليسرى.
+   break-word وليس anywhere: الكلمة لا تُقسم على حروف إلا إن كانت أعرض من عمودها (التاريخ واسم المستخدم يبقيان كاملين). */
+@media print {
+  .table-wrap th, .table-wrap td { white-space: normal; padding: 4px; overflow-wrap: break-word; }
+  td.split, td.audit-summary, td.audit-device { min-width: 0; }
+}
+
 /* الفاتورة على A4: الجدول يلتف ويصغر قليلًا حتى لا يُقص عمود المبالغ على حافة الصفحة (فاتورة عدة أسطر بمقاسات طويلة) */
 @media print {
   .print-table { width: 100%; table-layout: auto; font-size: 10pt; }
