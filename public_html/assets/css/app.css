@@ -191,6 +191,9 @@ html.js [data-nojs-only] { display: none; }
 .field-check { display: flex; align-items: center; gap: 8px; }
 .field-check label { margin: 0; font-weight: 400; font-size: var(--fs-16); }
 .field-check input { width: 20px; height: 20px; margin: 0; accent-color: var(--primary); }
+/* صلاحيات الموظف في صفحة المستخدمين: عمودان على الشاشات الواسعة */
+.perm-group { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 4px 24px; }
+.perm-group legend { grid-column: 1 / -1; }
 .payment-type label { display: inline-flex; align-items: center; gap: 8px; min-height: 40px; margin: 0 0 0 24px; font-weight: 400; font-size: var(--fs-16); cursor: pointer; }
 .payment-type input[type="radio"] { width: 20px; height: 20px; margin: 0; accent-color: var(--primary); }
 

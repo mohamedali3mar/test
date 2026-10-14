@@ -366,6 +366,7 @@ function complete_login(PDO $pdo, array $user, string $username): void
         'username' => $user['username'],
         'auth_version' => (int) $user['auth_version'],
         'role' => user_role($user),
+        'perm_overrides' => user_permission_overrides($user),
         'display_name' => user_display_name($user),
         'csrf' => bin2hex(random_bytes(32)),
         'last_activity' => time(),
@@ -434,6 +435,10 @@ function logout(): void
 /** قواعد كلمة المرور عند الإنشاء والتغيير */
 function password_problem(string $password, string $confirm, string $username): ?string
 {
+    // رمز NUL يرفضه password_hash بخطأ غير معالج (صفحة خطأ عامة)، فيُرفض هنا برسالة واضحة
+    if (str_contains($password, "\0") || !mb_check_encoding($password, 'UTF-8')) {
+        return 'كلمة المرور تحتوي على رموز غير مسموحة. استخدم الحروف والأرقام والرموز العادية.';
+    }
     if (mb_strlen($password) < 10) {
         return 'كلمة المرور يجب ألا تقل عن 10 أحرف.';
     }

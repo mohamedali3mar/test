@@ -35,11 +35,12 @@ function act_as(PDO $pdo, int $id): void
     $_SESSION['username'] = (string) $u['username'];
     $_SESSION['auth_version'] = (int) $u['auth_version'];
     $_SESSION['role'] = user_role($u);
+    $_SESSION['perm_overrides'] = user_permission_overrides($u);
 }
 
 function act_as_nobody(): void
 {
-    unset($_SESSION['user_id'], $_SESSION['username'], $_SESSION['role'], $_SESSION['auth_version']);
+    unset($_SESSION['user_id'], $_SESSION['username'], $_SESSION['role'], $_SESSION['auth_version'], $_SESSION['perm_overrides']);
 }
 
 function last_audit_id(PDO $pdo): int
@@ -211,7 +212,7 @@ check_eq('  الاسم المعروض بعد التنظيف', 'أحمد محمو
 check('  كلمة المرور محفوظة كتجزئة', password_verify('Staff-Pass-001', $s['password_hash']));
 $row = expect_one_audit($pdo, 'إضافة مستخدم', $a0, 'user.create', $admin, 'user', $staff);
 check_eq('  اسم المنفذ لقطة في السجل', 'admin', $row['username']);
-check_eq('  التفاصيل', ['username' => 'ahmed', 'display_name' => 'أحمد محمود', 'role' => 'staff'], details_of($row));
+check_eq('  التفاصيل', ['username' => 'ahmed', 'display_name' => 'أحمد محمود', 'role' => 'staff', 'branch_id' => null], details_of($row));
 check('  لا كلمة مرور ولا تجزئة في السجل', !preg_match('/Staff-Pass|\$2y\$|password/i', $row['summary'] . $row['details']));
 check_eq('  عنوان IP', '203.0.113.7', $row['ip']);
 check('  وصف المتصفح', str_starts_with($row['user_agent'], 'Mozilla/5.0 (Windows NT 10.0'));
@@ -392,6 +393,49 @@ check('المدير يملك كل الصلاحيات', !in_array(false, array_ma
 check('المدير يفتح الصفحة غير المسجلة', can_open('not_registered_route'));
 act_as_nobody();
 check('بدون دخول لا صلاحية', !can('stock.view'));
+
+/* ---------------------------------------------------------------- */
+section('صلاحيات يحددها المدير لكل موظف');
+act_as($pdo, $staff);
+check('افتراضيًا: الموظف لا يصرف لمورد ولا يلغي المستندات، ويحصّل', !can('vouchers.pay') && !can('documents.cancel') && can('vouchers.collect'));
+act_as($pdo, $admin);
+$a0 = last_audit_id($pdo);
+$granted = ['stock.view', 'documents.create', 'documents.view', 'documents.cancel', 'catalog.view', 'parties.view', 'parties.create',
+    'statements.view', 'vouchers.view', 'vouchers.pay', 'vouchers.expense', 'users.manage', 'settings.manage', 'not.a.permission'];
+$changes = user_set_permissions($pdo, $admin, $staff, $granted);
+check_eq('ما تغير: منح الإلغاء والصرف، وسحب التحصيل (ولا أثر لصلاحيات الإدارة أو صلاحية مجهولة)',
+    ['documents.cancel' => ['old' => false, 'new' => true], 'vouchers.collect' => ['old' => true, 'new' => false], 'vouchers.pay' => ['old' => false, 'new' => true]],
+    (function () use ($changes) { ksort($changes); return $changes; })());
+check_eq('  يُحفظ ما يختلف عن الافتراضي فقط', ['documents.cancel' => true, 'vouchers.collect' => false, 'vouchers.pay' => true],
+    (function () use ($pdo, $staff) { $o = json_decode((string) user_find($pdo, $staff)['permissions'], true); ksort($o); return $o; })());
+$row = expect_one_audit($pdo, '  سطر في المراقبة', $a0, 'user.permissions', $admin, 'user', $staff);
+check('  الملخص بالأسماء العربية', str_contains($row['summary'], 'منح: إلغاء المستندات') && str_contains($row['summary'], 'سحب: سند قبض'), $row['summary']);
+act_as($pdo, $staff);
+check('بعد التحديد: الموظف يلغي ويصرف ولا يحصّل', can('documents.cancel') && can('vouchers.pay') && !can('vouchers.collect') && can_open('pay') && !can_open('collect'));
+check('  ولا يحصل على إدارة المستخدمين ولا الإعدادات أبدًا', !can('users.manage') && !can('settings.manage') && !can('migrate.run'));
+check('  وصلاحياته الأخرى كما هي', can('documents.create') && can('stock.view') && !can('reports.profit'));
+check_eq('حفظ نفس الصلاحيات مرة أخرى: لا تغيير ولا سطر', [], user_set_permissions($pdo, $admin, $staff, $granted));
+expect_validation('موظف لا يحدد الصلاحيات (فحص داخل المعاملة)', fn () => user_set_permissions($pdo, $staff, $staff, array_keys(PERMISSIONS)));
+check('  ولم تتغير صلاحياته', !can('reports.profit'));
+expect_validation('المدير لا تُحدد صلاحياته (يملك كل شيء)', fn () => user_set_permissions($pdo, $admin, $admin2, []));
+$pdo->exec("UPDATE users SET role = 'admin' WHERE id = $staff");
+act_as($pdo, $staff);
+check('إذا صار مديرًا يملك كل الصلاحيات (التحديد للموظف فقط)', !in_array(false, array_map('can', array_keys(PERMISSIONS)), true));
+$pdo->exec("UPDATE users SET role = 'staff' WHERE id = $staff");
+act_as($pdo, $staff);
+check('  وإذا عاد موظفًا عادت صلاحياته المحددة', can('vouchers.pay') && !can('vouchers.collect'));
+$_SERVER['REQUEST_METHOD'] = 'GET';
+$pdo->exec("UPDATE users SET permissions = '{\"vouchers.pay\":false,\"users.manage\":true,\"x\":1}' WHERE id = $staff");
+user_session_refresh($pdo, session_user_row($pdo, $staff));
+check('التغيير يسري في الطلب التالي (يُقرأ من القاعدة في كل طلب)، والقيم غير المسموحة تُتجاهل', !can('vouchers.pay') && !can('users.manage'));
+$staffDefaults = array_keys(array_filter(array_map(fn ($r) => in_array('staff', $r, true), PERMISSIONS)));
+act_as($pdo, $admin);
+user_set_permissions($pdo, $admin, $staff, [...$staffDefaults, 'documents.cancel']);
+user_set_permissions($pdo, $admin, $staff, $staffDefaults);
+check_eq('العودة للافتراضي تمسح التحديد', null, user_find($pdo, $staff)['permissions']);
+act_as($pdo, $staff);
+check('  وصلاحيات الموظف الافتراضية عادت', can('vouchers.collect') && !can('vouchers.pay') && !can('documents.cancel'));
+act_as_nobody();
 
 /* ---------------------------------------------------------------- */
 section('آخر ظهور والمتصلون الآن');
@@ -692,6 +736,68 @@ check_eq('المستخدم بدون اسم معروض يظهر باسم الدخ
     $pdo->prepare("UPDATE users SET display_name = '' WHERE id = ?")->execute([$admin2]);
     return users_name_map($pdo)[$admin2] ?? null;
 })());
+
+/* ---------------------------------------------------------------- */
+section('الفروع وإدارة المستخدمين: للمدير الذي يرى كل الفروع فقط');
+act_as($pdo, $staff);
+$errors = expect_validation('الموظف (غير المقيد بفرع) لا يضيف فرعًا', fn () => branch_create($pdo, ['name' => 'فرع من موظف']));
+check('  رسالة الصلاحية', str_contains($errors['name'] ?? '', 'صلاحية'), json_encode($errors, JSON_UNESCAPED_UNICODE));
+check('  لم يُضف', (int) $pdo->query("SELECT COUNT(*) FROM branches WHERE name = 'فرع من موظف'")->fetchColumn() === 0);
+$mainBranch = (int) $pdo->query('SELECT id FROM branches ORDER BY id LIMIT 1')->fetchColumn();
+expect_validation('  ولا يعدل فرعًا', fn () => branch_update($pdo, $mainBranch, ['name' => 'اسم من موظف']));
+expect_validation('  ولا يحذف فرعًا', fn () => branch_delete($pdo, $mainBranch));
+act_as($pdo, $admin);
+$cairo = branch_create($pdo, ['name' => 'فرع القاهرة', 'address' => 'شارع 1', 'phone' => '0100']);
+check('المدير يضيف فرعًا', $cairo > 0);
+$a0 = last_audit_id($pdo);
+branch_update($pdo, $cairo, ['name' => 'فرع القاهرة الجديدة', 'address' => 'شارع 1', 'phone' => '0111']);
+$row = expect_one_audit($pdo, 'تعديل الفرع يُسجل القيم القديمة والجديدة', $a0, 'branch.update', $admin, 'branch', $cairo);
+check_eq('  ما تغير فقط', ['name' => ['old' => 'فرع القاهرة', 'new' => 'فرع القاهرة الجديدة'], 'phone' => ['old' => '0100', 'new' => '0111']], details_of($row));
+
+$cairoAdmin = user_create($pdo, $admin, ['display_name' => 'مدير القاهرة', 'username' => 'cairo_admin', 'role' => 'admin',
+    'password' => 'Cairo-Pass-001', 'password_confirm' => 'Cairo-Pass-001', 'branch_id' => (string) $cairo]);
+check_eq('إضافة مستخدم مع فرعه من نفس النموذج', $cairo, (int) user_find($pdo, $cairoAdmin)['branch_id']);
+expect_validation('  فرع غير موجود مرفوض', fn () => user_create($pdo, $admin, ['display_name' => 'س', 'username' => 'no_branch', 'role' => 'staff',
+    'password' => 'Some-Pass-0001', 'password_confirm' => 'Some-Pass-0001', 'branch_id' => '999']));
+act_as($pdo, $cairoAdmin);
+$errors = expect_validation('المدير المقيد بفرع لا يرفع تقييده عن نفسه', fn () => user_update($pdo, $cairoAdmin, $cairoAdmin,
+    ['display_name' => 'مدير القاهرة', 'role' => 'admin', 'branch_id' => '']));
+check('  رسالة واضحة', str_contains($errors['user'] ?? '', 'كل الفروع'), json_encode($errors, JSON_UNESCAPED_UNICODE));
+check_eq('  وما زال مقيدًا', $cairo, (int) user_find($pdo, $cairoAdmin)['branch_id']);
+expect_validation('  ولا ينشئ مديرًا بلا تقييد', fn () => user_create($pdo, $cairoAdmin, ['display_name' => 'جانبي', 'username' => 'side_admin',
+    'role' => 'admin', 'password' => 'Side-Pass-0001', 'password_confirm' => 'Side-Pass-0001']));
+expect_validation('  ولا يقيد المالك بفرع', fn () => user_update($pdo, $cairoAdmin, $admin, ['display_name' => 'admin', 'role' => 'admin', 'branch_id' => (string) $cairo]));
+expect_validation('  ولا يعين كلمة مرور لغيره', fn () => user_reset_password($pdo, $cairoAdmin, $admin, 'Taken-Over-001', 'Taken-Over-001'));
+expect_validation('  ولا يحدد صلاحيات الموظفين', fn () => user_set_permissions($pdo, $cairoAdmin, $staff, array_keys(PERMISSIONS)));
+expect_validation('  ولا يضيف فرعًا', fn () => branch_create($pdo, ['name' => 'فرع من مدير مقيد']));
+
+act_as($pdo, $admin);
+$solo = $pdo;
+$soloAdmin = $admin;
+$soloBranch = $mainBranch;
+$soloOther = user_create($solo, $soloAdmin, ['display_name' => 'مدير الفرع', 'username' => 'branch_admin', 'role' => 'admin',
+    'password' => 'Branch-Pass-01', 'password_confirm' => 'Branch-Pass-01', 'branch_id' => (string) $soloBranch]);
+$soloStaff = user_create($solo, $soloAdmin, ['display_name' => 'موظف', 'username' => 'solo_staff', 'role' => 'staff',
+    'password' => 'Staff-Pass-777', 'password_confirm' => 'Staff-Pass-777']);
+user_update($solo, $soloAdmin, $soloOther, ['display_name' => 'مدير الفرع', 'role' => 'admin', 'branch_id' => '']);
+check('المدير الذي يرى كل الفروع يرفع تقييد مدير آخر', user_find($solo, $soloOther)['branch_id'] === null);
+user_update($solo, $soloAdmin, $soloOther, ['display_name' => 'مدير الفرع', 'role' => 'admin', 'branch_id' => (string) $soloBranch]);
+check_eq('  ويقيده من جديد ما دام هو يرى كل الفروع', $soloBranch, (int) user_find($solo, $soloOther)['branch_id']);
+check('  ومدير واحد على الأقل يرى كل الفروع يبقى دائمًا', (int) $solo->query("SELECT COUNT(*) FROM users WHERE role = 'admin' AND is_active = 1 AND branch_id IS NULL")->fetchColumn() >= 1);
+
+section('تعيين كلمة مرور يوقف التحقق بخطوتين للموظف الذي ضاع هاتفه');
+$solo->exec("UPDATE users SET totp_secret = 'JBSWY3DPEHPK3PXP', totp_enabled = 1 WHERE id = $soloStaff");
+$off = user_reset_password($solo, $soloAdmin, $soloStaff, 'Staff-Pass-888', 'Staff-Pass-888');
+$su = user_find($solo, $soloStaff);
+check('أُوقف التحقق بخطوتين ومُسح السر', $off === true && (int) $su['totp_enabled'] === 0 && $su['totp_secret'] === null);
+check('  وكلمة المرور الجديدة تعمل', password_verify('Staff-Pass-888', $su['password_hash']));
+check('  والسجل يذكر الإيقاف', str_contains((string) $solo->query("SELECT summary FROM audit_log WHERE action = 'user.password_reset' ORDER BY id DESC LIMIT 1")->fetchColumn(), 'إيقاف التحقق بخطوتين'));
+check_eq('كلمة مرور بلا تحقق مفعل: لا إيقاف', false, user_reset_password($solo, $soloAdmin, $soloStaff, 'Staff-Pass-999', 'Staff-Pass-999'));
+
+section('كلمة مرور فيها رمز NUL: رسالة واضحة بدل صفحة خطأ');
+check('password_problem يرفضها برسالة', str_contains((string) password_problem("Abcdef\0ghijk", "Abcdef\0ghijk", 'x'), 'رموز غير مسموحة'));
+$errors = expect_validation('  وتعيينها لمستخدم مرفوض بلا خطأ غير معالج', fn () => user_reset_password($solo, $soloAdmin, $soloStaff, "Abcdef\0ghijk", "Abcdef\0ghijk"));
+act_as($pdo, $admin);
 
 section('لا تحذيرات PHP أثناء الاختبار');
 clearstatcache();

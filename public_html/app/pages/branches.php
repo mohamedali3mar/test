@@ -4,12 +4,12 @@ defined('APP_ROOT') || exit;
 /*
  * صفحة الفروع: الإضافة والتعديل (الاسم والعنوان والهاتف) والحذف، وملخص كل فرع:
  * عدد المخازن والأرصدة الحالية ومبيعات الشهر الحالي لكل عملة.
- * المستخدم المقيد بفرع يرى ملخص فرعه فقط بدون إدارة.
+ * المستخدم المقيد بفرع يرى ملخص فرعه فقط بدون إدارة. الموظف يرى الملخص فقط (الإدارة للمدير: catalog.manage).
  */
 
 $pdo = db();
 $scope = allowed_branch_id($pdo);
-$canManage = $scope === null;
+$canManage = can('catalog.manage') && $scope === null;
 $addErrors = [];
 $editErrors = [];
 $topErrors = []; // أخطاء الحذف، وأي خطأ لا يظهر نموذجه في الصفحة (مثل محاولة إدارة من مستخدم مقيد بفرع)
@@ -17,6 +17,7 @@ $addForm = ['name' => '', 'address' => '', 'phone' => ''];
 $editForm = null;
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    require_permission('catalog.manage');
     verify_csrf();
     $action = input($_POST, 'action');
     $posted = string_inputs($_POST, ['name', 'address', 'phone']);

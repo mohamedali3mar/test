@@ -57,6 +57,13 @@ if ($posted) {
         }
         $values['closing_date'] = $closing;
         if (!$errors) {
+            // يُحفظ فقط ما غيّره المستخدم في هذا النموذج: كل قيمة تُقارن بالقيمة التي عُرضت له (الحقل المخفي orig_*).
+            // فنموذج فُتح قبل أن يغير مدير آخر الإعدادات (مثل تاريخ الإقفال) لا يعيد القيم القديمة دون قصد.
+            foreach (array_keys($values) as $k) {
+                if (array_key_exists('orig_' . $k, $_POST) && input($_POST, 'orig_' . $k) === $values[$k]) {
+                    unset($values[$k]);
+                }
+            }
             // يحفظ ويسجل في سجل المراقبة الإعدادات التي تغيرت فقط (القديم والجديد)
             settings_save_audited($pdo, $values);
             flash('success', 'تم حفظ الإعدادات. تغيير العملة لا يغير الفواتير السابقة.');
@@ -74,6 +81,9 @@ if ($posted) {
 }
 
 $current = fn (string $k) => $errors ? input($_POST, $k) : app_setting($k);
+// القيمة كما عُرضت عند فتح النموذج (تبقى كما هي عند إعادة عرضه بسبب خطأ)
+$original = fn (string $k) => $errors ? input($_POST, 'orig_' . $k) : app_setting($k);
+$generalKeys = ['company_name', 'currency', 'unit_width', 'unit_thickness', 'unit_length', 'digits', 'volume_decimals', 'volume_pad', 'closing_date'];
 $pending = pending_migrations($pdo);
 $authLog = auth_events_overview($pdo, 50);
 
@@ -99,6 +109,9 @@ render_header('الإعدادات', 'settings');
   <form method="post" action="<?= h(url('settings')) ?>" class="form" novalidate>
     <?= csrf_field() ?>
     <input type="hidden" name="action" value="general">
+    <?php foreach ($generalKeys as $k): ?>
+      <input type="hidden" name="orig_<?= h($k) ?>" value="<?= h($original($k)) ?>">
+    <?php endforeach; ?>
     <div class="field">
       <label for="company_name">اسم الشركة (يظهر في الفواتير)</label>
       <input type="text" id="company_name" name="company_name" value="<?= h($current('company_name')) ?>" maxlength="120" required<?= field_attrs($errors, 'company_name') ?>>
@@ -161,7 +174,7 @@ render_header('الإعدادات', 'settings');
   </form>
 </section>
 
-<p>تغيير كلمة المرور من صفحة <a href="<?= h(url('account')) ?>">حسابي</a>، وإدارة حسابات الموظفين من صفحة <a href="<?= h(url('users')) ?>">المستخدمون</a>.</p>
+<p>تغيير كلمة المرور من صفحة <a href="<?= h(url('account')) ?>">حسابي</a><?php if (acct_branch_scope($pdo) === null): ?>، وإدارة حسابات الموظفين من صفحة <a href="<?= h(url('users')) ?>">المستخدمون</a><?php endif; ?>.</p>
 
 <section class="section" aria-labelledby="auth-log-title">
   <h2 id="auth-log-title">سجل الدخول والأمان</h2>

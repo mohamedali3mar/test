@@ -1,10 +1,14 @@
 <?php
 defined('APP_ROOT') || exit;
 
-/* كشف حركة خزنة لفترة، مع ملخص «حركة اليوم» لكل يوم (قابل للطباعة) */
+/*
+ * كشف حركة خزنة لفترة، مع ملخص «حركة اليوم» لكل يوم (قابل للطباعة).
+ * الخزائن العامة تستقبل حركات كل الفروع، فالكشف لا يُفتح للمستخدم المقيد بفرع (مثل تقرير ملخص الخزائن).
+ */
 
 acct_require('statements.view');
 $pdo = db();
+acct_require_all_branches($pdo);
 $id = (int) input($_GET, 'id');
 $box = cash_box_find($pdo, $id);
 if (!$box || !cash_box_in_scope($box, acct_branch_scope($pdo))) {

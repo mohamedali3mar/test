@@ -8,7 +8,8 @@ defined('APP_ROOT') || exit;
  *    والمستندات السابقة تحتفظ باسم الفرع كما سُجل وقتها (documents.branch_name و to_branch_name).
  *  - نطاق المستخدم users.branch_id: NULL = كل الفروع. المستخدم المقيد بفرع يرى مخازن فرعه وأرصدتها
  *    ومستنداتها فقط، ويسجل الوارد والبيع والتحويل من مخازن فرعه فقط (التحويل إلى مخزن في أي فرع مسموح)،
- *    ولا يدير الفروع ولا المخازن. التحقق يتم في الخدمات نفسها على الخادم، وليس في الواجهة فقط.
+ *    ولا يدير الفروع ولا المخازن. وإدارة الفروع ونقل المخازن تتطلب أيضًا صلاحية catalog.manage (المدير).
+ *    التحقق يتم في الخدمات نفسها على الخادم، وليس في الواجهة فقط.
  *  - ترتيب الأقفال: صفوف warehouses قبل صفوف branches دائمًا (كلٌّ مرتب تصاعديًا).
  *      المستندات: warehouses ثم branches (مشترك) ← ثم ترتيب المستندات المعتاد (انظر documents.php).
  *      نقل مخزن: صف المخزن (حصري) ثم صف الفرع الجديد (مشترك).
@@ -18,6 +19,7 @@ defined('APP_ROOT') || exit;
 
 const BRANCH_NO_ACCESS = 'لا تملك صلاحية على هذا المخزن.';
 const BRANCH_ADMIN_ONLY = 'إضافة الفروع والمخازن وتعديلها وحذفها متاحة فقط لمستخدم يرى كل الفروع.';
+const BRANCH_MANAGE_DENIED = 'ليست لديك صلاحية إضافة الفروع أو تعديلها أو حذفها أو نقل المخازن بينها.';
 const BRANCH_DEFAULT_NAME = 'الفرع الرئيسي';
 
 /* ===================== نطاق المستخدم ===================== */
@@ -94,6 +96,18 @@ function require_all_branches(PDO $pdo, string $field = 'name'): void
 {
     if (allowed_branch_id($pdo) !== null) {
         throw new ValidationException([$field => BRANCH_ADMIN_ONLY]);
+    }
+}
+
+/**
+ * إدارة الفروع ونقل المخازن: لمستخدم يرى كل الفروع ويملك صلاحية catalog.manage (المدير).
+ * الفحص في الخدمة نفسها وليس في الصفحة فقط. سطر الأوامر بلا مستخدم يعمل كالنظام (acct_can).
+ */
+function require_branch_manager(PDO $pdo, string $field = 'name'): void
+{
+    require_all_branches($pdo, $field);
+    if (!acct_can('catalog.manage')) {
+        throw new ValidationException([$field => BRANCH_MANAGE_DENIED]);
     }
 }
 
@@ -244,14 +258,14 @@ function branch_validate(array $in): array
 /** @param array{name?:string,address?:string,phone?:string} $in */
 function branch_create(PDO $pdo, array $in): int
 {
-    require_all_branches($pdo);
+    require_branch_manager($pdo);
     [$name, $key, $address, $phone] = branch_validate($in);
     try {
         return db_transaction($pdo, function (PDO $pdo) use ($name, $key, $address, $phone) {
             $pdo->prepare('INSERT INTO branches (name, name_key, address, phone, created_at) VALUES (?, ?, ?, ?, ?)')
                 ->execute([$name, $key, $address, $phone, now()]);
             $id = (int) $pdo->lastInsertId();
-            acct_audit($pdo, 'branch.create', 'إضافة فرع: ' . $name, 'branch', $id);
+            acct_audit($pdo, 'branch.create', 'إضافة فرع: ' . $name, 'branch', $id, ['name' => $name, 'address' => $address, 'phone' => $phone]);
             data_version_bump($pdo);
             return $id;
         });
@@ -263,21 +277,37 @@ function branch_create(PDO $pdo, array $in): int
     }
 }
 
-/** تعديل الاسم والعنوان والهاتف. المستندات السابقة تحتفظ باسم الفرع وقت الحركة. */
+/**
+ * تعديل الاسم والعنوان والهاتف. المستندات السابقة تحتفظ باسم الفرع وقت الحركة.
+ * سطر المراقبة يذكر ما تغير فعلًا بقيمته القديمة والجديدة (العنوان والهاتف يُطبعان في الفواتير).
+ */
 function branch_update(PDO $pdo, int $id, array $in): void
 {
-    require_all_branches($pdo);
+    require_branch_manager($pdo);
     [$name, $key, $address, $phone] = branch_validate($in);
     try {
         db_transaction($pdo, function (PDO $pdo) use ($id, $name, $key, $address, $phone) {
-            $stmt = $pdo->prepare('SELECT id FROM branches WHERE id = ? FOR UPDATE');
+            $stmt = $pdo->prepare('SELECT id, name, address, phone FROM branches WHERE id = ? FOR UPDATE');
             $stmt->execute([$id]);
-            if (!$stmt->fetch()) {
+            $old = $stmt->fetch();
+            if (!$old) {
                 throw new ValidationException(['name' => CATALOGS['branch']['missing']]);
             }
             $pdo->prepare('UPDATE branches SET name = ?, name_key = ?, address = ?, phone = ? WHERE id = ?')
                 ->execute([$name, $key, $address, $phone, $id]);
-            acct_audit($pdo, 'branch.update', 'تعديل بيانات الفرع: ' . $name, 'branch', $id);
+            $labels = ['name' => 'الاسم', 'address' => 'العنوان', 'phone' => 'الهاتف'];
+            $new = ['name' => $name, 'address' => $address, 'phone' => $phone];
+            $details = [];
+            $parts = [];
+            foreach ($labels as $k => $label) {
+                if ((string) $old[$k] !== $new[$k]) {
+                    $details[$k] = ['old' => (string) $old[$k], 'new' => $new[$k]];
+                    $parts[] = sprintf('%s من «%s» إلى «%s»', $label, $old[$k] === '' ? 'بدون' : (string) $old[$k], $new[$k] === '' ? 'بدون' : $new[$k]);
+                }
+            }
+            if ($details) {
+                acct_audit($pdo, 'branch.update', 'تعديل بيانات الفرع «' . $old['name'] . '»: ' . implode('، ', $parts), 'branch', $id, $details);
+            }
             data_version_bump($pdo);
         });
     } catch (PDOException $e) {
@@ -291,11 +321,13 @@ function branch_update(PDO $pdo, int $id, array $in): void
 /** الحذف مسموح فقط لفرع بلا مخازن ولا مستندات ولا مستخدمين، ويبقى فرع واحد على الأقل */
 function branch_delete(PDO $pdo, int $id): void
 {
-    require_all_branches($pdo);
+    require_branch_manager($pdo);
     try {
         db_transaction($pdo, function (PDO $pdo) use ($id) {
-            // قفل كل صفوف الفروع بترتيب ثابت قبل العد: حذفان متزامنان لفرعين لا يتركان النظام بلا فروع
-            $ids = array_map('intval', $pdo->query('SELECT id FROM branches ORDER BY id FOR UPDATE')->fetchAll(PDO::FETCH_COLUMN));
+            // قفل كل صفوف الفروع بترتيب ثابت قبل العد: حذفان متزامنان لفرعين لا يتركان النظام بلا فروع.
+            // بيانات الفرع المحذوف (للسجل) من نفس القراءة المقفلة
+            $locked = array_column($pdo->query('SELECT id, name, address, phone FROM branches ORDER BY id FOR UPDATE')->fetchAll(), null, 'id');
+            $ids = array_map('intval', array_keys($locked));
             if (!in_array($id, $ids, true)) {
                 throw new ValidationException(['name' => CATALOGS['branch']['missing']]);
             }
@@ -318,8 +350,10 @@ function branch_delete(PDO $pdo, int $id): void
             if ($users > 0) {
                 throw new ValidationException(['name' => 'لا يمكن حذف فرع مرتبط بمستخدمين. غيّر فرع هؤلاء المستخدمين أولًا.']);
             }
+            $old = $locked[$id];
             $pdo->prepare('DELETE FROM branches WHERE id = ?')->execute([$id]);
-            acct_audit($pdo, 'branch.delete', 'حذف فرع رقم ' . $id, 'branch', $id);
+            acct_audit($pdo, 'branch.delete', 'حذف الفرع «' . $old['name'] . '»', 'branch', $id,
+                ['name' => (string) $old['name'], 'address' => (string) $old['address'], 'phone' => (string) $old['phone']]);
             data_version_bump($pdo);
         });
     } catch (PDOException $e) {
@@ -336,7 +370,7 @@ function branch_delete(PDO $pdo, int $id): void
  */
 function warehouse_move(PDO $pdo, int $warehouseId, int $branchId): string
 {
-    require_all_branches($pdo, 'branch_id');
+    require_branch_manager($pdo, 'branch_id');
     return db_transaction($pdo, function (PDO $pdo) use ($warehouseId, $branchId) {
         $stmt = $pdo->prepare('SELECT id, name, branch_id FROM warehouses WHERE id = ? FOR UPDATE');
         $stmt->execute([$warehouseId]);
@@ -353,8 +387,14 @@ function warehouse_move(PDO $pdo, int $warehouseId, int $branchId): string
         if ((int) $wh['branch_id'] === (int) $branch['id']) {
             throw new ValidationException(['branch_id' => 'المخزن يتبع هذا الفرع بالفعل. اختر فرعًا آخر.']);
         }
+        // اسم الفرع القديم للسجل فقط: صف المخزن مقفل حصريًا فلا يتغير فرعه، وقراءة اسم الفرع بدون قفل
+        // لا تغير ترتيب الأقفال (المخزن ثم الفرع الجديد)
+        $stmt = $pdo->prepare('SELECT name FROM branches WHERE id = ?');
+        $stmt->execute([(int) $wh['branch_id']]);
+        $oldName = (string) $stmt->fetchColumn();
         $pdo->prepare('UPDATE warehouses SET branch_id = ? WHERE id = ?')->execute([(int) $branch['id'], $warehouseId]);
-        acct_audit($pdo, 'warehouse.move', 'نقل المخزن «' . $wh['name'] . '» إلى فرع ' . $branch['name'], 'warehouse', $warehouseId);
+        acct_audit($pdo, 'warehouse.move', 'نقل المخزن «' . $wh['name'] . '» من «' . $oldName . '» إلى «' . $branch['name'] . '»', 'warehouse', $warehouseId,
+            ['branch_id' => ['old' => (int) $wh['branch_id'], 'new' => (int) $branch['id']], 'branch_name' => ['old' => $oldName, 'new' => (string) $branch['name']]]);
         data_version_bump($pdo);
         return (string) $branch['name'];
     });

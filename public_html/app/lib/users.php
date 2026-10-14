@@ -8,7 +8,9 @@ defined('APP_ROOT') || exit;
  *  - الدور وحالة التفعيل يُقرآن من قاعدة البيانات في كل طلب داخل require_login (نفس استعلام
  *    auth_version)، والجلسة تحتفظ بالدور كنسخة مؤقتة تتحدث مع كل طلب.
  *  - خدمات إدارة المستخدمين تعمل داخل معاملة تقفل كل صفوف المستخدمين بترتيب ثابت قبل أي فحص،
- *    فعمليتان متزامنتان لا تتركان النظام بلا مدير نشط. كل عملية تُسجل في سجل المراقبة.
+ *    فعمليتان متزامنتان لا تتركان النظام بلا مدير نشط يرى كل الفروع. كل عملية تُسجل في سجل المراقبة.
+ *  - إدارة المستخدمين لمدير نشط يرى كل الفروع فقط: المدير المقيد بفرع لا يستطيع رفع تقييده
+ *    ولا إنشاء حساب بلا تقييد ولا تعديل حسابات الآخرين (فحص داخل المعاملة على الصفوف المقفلة).
  */
 
 const ROLE_LABELS = ['admin' => 'مدير', 'staff' => 'موظف'];
@@ -46,6 +48,66 @@ const PERMISSIONS = [
     'dashboard'              => ['admin'],
     'admin.only'       => ['admin'],
 ];
+
+/**
+ * الصلاحيات التي يحددها المدير لكل موظف (صفحة المستخدمين ← تعديل ← الصلاحيات)، مجمعة بأسمائها العربية.
+ * القيمة الافتراضية لكل موظف من PERMISSIONS أعلاه، والمدير يضيف أو يسحب أيًّا منها لموظف بعينه.
+ * المدير يملك كل الصلاحيات دائمًا. إدارة المستخدمين والإعدادات وتحديث قاعدة البيانات ليست هنا عمدًا:
+ * تبقى للمدير وحده، وإلا استطاع موظف رفع صلاحياته أو تغيير تاريخ الإقفال.
+ */
+const STAFF_GRANTABLE = [
+    'المخزون والمستندات' => [
+        'stock.view'       => 'عرض المخزون',
+        'documents.create' => 'تسجيل الوارد والبيع والتحويل',
+        'documents.view'   => 'عرض الفواتير والحركات وطباعتها وتصديرها',
+        'documents.cancel' => 'إلغاء المستندات',
+        'manual_date'      => 'تسجيل مستند أو سند بتاريخ سابق',
+        'catalog.view'     => 'عرض أنواع الخشب والمخازن والفروع',
+        'catalog.manage'   => 'إضافة وتعديل وحذف الأنواع والمخازن والفروع',
+    ],
+    'الحسابات' => [
+        'parties.view'           => 'عرض العملاء والموردين',
+        'parties.create'         => 'إضافة عميل أو مورد',
+        'parties.manage'         => 'تعديل العملاء والموردين وأرصدتهم الافتتاحية وإيقافهم وحذفهم',
+        'statements.view'        => 'كشوف حساب العملاء والموردين',
+        'vouchers.view'          => 'عرض السندات وطباعتها',
+        'vouchers.collect'       => 'سند قبض',
+        'vouchers.expense'       => 'مصروف',
+        'vouchers.pay'           => 'سند صرف لمورد',
+        'vouchers.cash_transfer' => 'تحويل نقدية بين الخزائن',
+        'vouchers.cancel'        => 'إلغاء السندات',
+        'cash.manage'            => 'الخزائن وكشوفها وتصنيفات المصروفات',
+    ],
+    'التقارير والمراقبة' => [
+        'reports.sales'     => 'تقارير المبيعات',
+        'reports.profit'    => 'الأرباح والتكلفة (وفي تفاصيل المستند)',
+        'reports.valuation' => 'تقييم المخزون والتقييم الافتتاحي',
+        'dashboard'         => 'لوحة التحكم',
+        'monitor.view'      => 'المراقبة وسجل العمليات',
+    ],
+];
+
+/** هل يحدد المدير هذه الصلاحية لكل موظف؟ */
+function permission_grantable(string $perm): bool
+{
+    foreach (STAFF_GRANTABLE as $perms) {
+        if (isset($perms[$perm])) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/** الاسم العربي لصلاحية قابلة للتحديد */
+function permission_label(string $perm): string
+{
+    foreach (STAFF_GRANTABLE as $perms) {
+        if (isset($perms[$perm])) {
+            return $perms[$perm];
+        }
+    }
+    return $perm;
+}
 
 /**
  * صلاحية فتح كل صفحة. أي صفحة غير مسجلة هنا (مثل صفحة جديدة تُضاف لاحقًا) تكون للمدير فقط
@@ -101,7 +163,49 @@ function current_role(): string
 
 function can(string $perm): bool
 {
-    return current_user_id() > 0 && in_array(current_role(), PERMISSIONS[$perm] ?? [], true);
+    if (current_user_id() <= 0) {
+        return false;
+    }
+    $role = current_role();
+    // ما حدده المدير لهذا الموظف (يُقرأ من قاعدة البيانات في كل طلب داخل require_login)
+    if ($role === 'staff' && permission_grantable($perm)) {
+        $override = $_SESSION['perm_overrides'][$perm] ?? null;
+        if (is_bool($override)) {
+            return $override;
+        }
+    }
+    return in_array($role, PERMISSIONS[$perm] ?? [], true);
+}
+
+/**
+ * ما يختلف عن الافتراضي من صلاحيات الحساب: [الصلاحية => مسموح؟]. للموظف فقط (المدير يملك كل شيء)،
+ * ولا يُقبل إلا الصلاحيات القابلة للتحديد. قبل الترقية 008 لا يوجد العمود فلا اختلاف.
+ * @return array<string,bool>
+ */
+function user_permission_overrides(array $u): array
+{
+    $raw = $u['permissions'] ?? null;
+    if (!is_string($raw) || $raw === '' || user_role($u) !== 'staff') {
+        return [];
+    }
+    $data = json_decode($raw, true);
+    $out = [];
+    foreach (is_array($data) ? $data : [] as $perm => $allowed) {
+        if (is_string($perm) && permission_grantable($perm) && is_bool($allowed)) {
+            $out[$perm] = $allowed;
+        }
+    }
+    return $out;
+}
+
+/** هل تشمل صلاحيات الحساب (بعد ما حدده المدير) هذه الصلاحية؟ */
+function user_has_permission(array $u, string $perm): bool
+{
+    $overrides = user_permission_overrides($u);
+    if (isset($overrides[$perm])) {
+        return $overrides[$perm];
+    }
+    return in_array(user_role($u), PERMISSIONS[$perm] ?? [], true);
 }
 
 /** يوقف الطلب برسالة 403 عربية (أو JSON للتحديث التلقائي) إذا لم تكن للمستخدم الصلاحية */
@@ -165,6 +269,7 @@ function user_display_name(array $u): string
 function user_session_refresh(PDO $pdo, array $user): void
 {
     $_SESSION['role'] = user_role($user);
+    $_SESSION['perm_overrides'] = user_permission_overrides($user);
     $_SESSION['display_name'] = user_display_name($user);
     if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         app_setting('digits');
@@ -283,25 +388,61 @@ function users_lock_all(PDO $pdo): array
     return $out;
 }
 
-/** المنفذ يجب أن يكون مديرًا نشطًا لحظة التنفيذ (وليس فقط عند فتح الصفحة) */
+const USERS_ALL_BRANCHES_ONLY = 'إدارة المستخدمين متاحة فقط لمدير يرى كل الفروع. إذا كنت تحتاجها راجع مدير النظام.';
+const USERS_LAST_ADMIN = 'يجب أن يبقى مدير واحد نشط على الأقل يرى كل الفروع.';
+
+/** هل الحساب غير مقيد بفرع؟ (قبل ترقية الفروع 005 لا يوجد العمود، فكل الحسابات ترى كل الفروع) */
+function user_sees_all_branches(array $u): bool
+{
+    return ($u['branch_id'] ?? null) === null;
+}
+
+/**
+ * المنفذ يجب أن يكون مديرًا نشطًا يرى كل الفروع لحظة التنفيذ (وليس فقط عند فتح الصفحة).
+ * المدير المقيد بفرع لا يدير المستخدمين، وإلا استطاع رفع تقييده أو إنشاء مدير بلا تقييد.
+ */
 function users_assert_actor(array $rows, int $actorId): void
 {
     $actor = $rows[$actorId] ?? null;
     if (!$actor || user_role($actor) !== 'admin' || !user_is_active($actor)) {
         throw new ValidationException(['user' => 'ليست لديك صلاحية إدارة المستخدمين.']);
     }
+    if (!user_sees_all_branches($actor)) {
+        throw new ValidationException(['user' => USERS_ALL_BRANCHES_ONLY]);
+    }
 }
 
-/** عدد المديرين النشطين بعد استبعاد مستخدم معين */
+/** عدد المديرين النشطين الذين يرون كل الفروع بعد استبعاد مستخدم معين (أساس قاعدة آخر مدير) */
 function users_other_active_admins(array $rows, int $excludeId): int
 {
     $n = 0;
     foreach ($rows as $id => $u) {
-        if ($id !== $excludeId && user_role($u) === 'admin' && user_is_active($u)) {
+        if ($id !== $excludeId && user_role($u) === 'admin' && user_is_active($u) && user_sees_all_branches($u)) {
             $n++;
         }
     }
     return $n;
+}
+
+/** رسالة خطأ لقيمة الفرع المرسلة، أو null: '' = كل الفروع، أو رقم فرع (وجوده يُفحص داخل المعاملة) */
+function user_validate_branch_raw(?string $raw): ?string
+{
+    return $raw !== null && $raw !== '' && !preg_match('/^[1-9]\d{0,9}\z/', $raw) ? 'اختر الفرع من القائمة.' : null;
+}
+
+/** اسم الفرع مع قفل مشترك حتى نهاية المعاملة (بعد قفل صفوف المستخدمين)، أو «كل الفروع» لـ null */
+function user_lock_branch_name(PDO $pdo, ?int $branchId): string
+{
+    if ($branchId === null) {
+        return 'كل الفروع';
+    }
+    $b = $pdo->prepare('SELECT name FROM branches WHERE id = ? LOCK IN SHARE MODE');
+    $b->execute([$branchId]);
+    $name = $b->fetchColumn();
+    if ($name === false) {
+        throw new ValidationException(['branch_id' => 'الفرع غير موجود.']);
+    }
+    return (string) $name;
 }
 
 function users_target(array $rows, int $id): array
@@ -313,7 +454,8 @@ function users_target(array $rows, int $id): array
 }
 
 /**
- * يضيف مستخدمًا. $in: display_name, username, role, password, password_confirm
+ * يضيف مستخدمًا. $in: display_name, username, role, password, password_confirm، و branch_id اختياريًا
+ * ('' أو غيابه = كل الفروع، أو رقم فرع موجود).
  * @return int معرف المستخدم الجديد
  */
 function user_create(PDO $pdo, int $actorId, array $in): int
@@ -335,19 +477,41 @@ function user_create(PDO $pdo, int $actorId, array $in): int
     if ($username !== null && ($err = password_problem($password, input($in, 'password_confirm'), $username))) {
         $errors['password'] = $err;
     }
+    $branchRaw = array_key_exists('branch_id', $in) ? input($in, 'branch_id') : null;
+    if ($err = user_validate_branch_raw($branchRaw)) {
+        $errors['branch_id'] = $err;
+    }
     if ($errors) {
         throw new ValidationException($errors);
     }
+    $branchId = $branchRaw === null || $branchRaw === '' ? null : (int) $branchRaw;
     $hash = password_hash($password, PASSWORD_DEFAULT);
     try {
-        return db_transaction($pdo, function (PDO $pdo) use ($actorId, $name, $username, $role, $hash) {
-            users_assert_actor(users_lock_all($pdo), $actorId);
-            $pdo->prepare(
-                'INSERT INTO users (username, password_hash, role, is_active, display_name, created_at) VALUES (?, ?, ?, 1, ?, ?)'
-            )->execute([$username, $hash, $role, $name, now()]);
+        return db_transaction($pdo, function (PDO $pdo) use ($actorId, $name, $username, $role, $hash, $branchId) {
+            $rows = users_lock_all($pdo);
+            users_assert_actor($rows, $actorId);
+            // عمود الفرع موجود بعد الترقية 005 فقط (صف المنفذ من SELECT *)
+            $hasBranch = array_key_exists('branch_id', $rows[$actorId]);
+            if (!$hasBranch && $branchId !== null) {
+                throw new ValidationException(['branch_id' => 'حدّث قاعدة البيانات أولًا من صفحة الإعدادات، ثم حدد فرع المستخدم.']);
+            }
+            $branchName = user_lock_branch_name($pdo, $branchId);
+            if ($hasBranch) {
+                $pdo->prepare(
+                    'INSERT INTO users (username, password_hash, role, is_active, display_name, branch_id, created_at) VALUES (?, ?, ?, 1, ?, ?, ?)'
+                )->execute([$username, $hash, $role, $name, $branchId, now()]);
+            } else {
+                $pdo->prepare(
+                    'INSERT INTO users (username, password_hash, role, is_active, display_name, created_at) VALUES (?, ?, ?, 1, ?, ?)'
+                )->execute([$username, $hash, $role, $name, now()]);
+            }
             $id = (int) $pdo->lastInsertId();
-            audit_record($pdo, 'user.create', sprintf('إضافة المستخدم %s (%s) بدور %s', $username, $name, ROLE_LABELS[$role]),
-                'user', $id, ['username' => $username, 'display_name' => $name, 'role' => $role]);
+            $details = ['username' => $username, 'display_name' => $name, 'role' => $role];
+            if ($hasBranch) {
+                $details['branch_id'] = $branchId;
+            }
+            audit_record($pdo, 'user.create', sprintf('إضافة المستخدم %s (%s) بدور %s', $username, $name, ROLE_LABELS[$role])
+                . ($hasBranch ? '، الفرع: ' . $branchName : ''), 'user', $id, $details);
             data_version_bump($pdo);
             return $id;
         });
@@ -376,8 +540,8 @@ function user_update(PDO $pdo, int $actorId, int $id, array $in): array
     }
     // الفرع: '' = كل الفروع، أو رقم فرع موجود (يُتحقق منه داخل المعاملة). غياب الحقل = بلا تغيير
     $branchRaw = array_key_exists('branch_id', $in) ? input($in, 'branch_id') : null;
-    if ($branchRaw !== null && $branchRaw !== '' && !preg_match('/^[1-9]\d{0,9}\z/', $branchRaw)) {
-        $errors['branch_id'] = 'اختر الفرع من القائمة.';
+    if ($err = user_validate_branch_raw($branchRaw)) {
+        $errors['branch_id'] = $err;
     }
     if ($errors) {
         throw new ValidationException($errors);
@@ -388,19 +552,16 @@ function user_update(PDO $pdo, int $actorId, int $id, array $in): array
         $changes = [];
         if ($branchRaw !== null && array_key_exists('branch_id', $u)) {
             $newBranch = $branchRaw === '' ? null : (int) $branchRaw;
-            $branchName = 'كل الفروع';
-            if ($newBranch !== null) {
-                $b = $pdo->prepare('SELECT name FROM branches WHERE id = ? LOCK IN SHARE MODE');
-                $b->execute([$newBranch]);
-                $branchName = $b->fetchColumn();
-                if ($branchName === false) {
-                    throw new ValidationException(['branch_id' => 'الفرع غير موجود.']);
-                }
-            }
+            $branchName = user_lock_branch_name($pdo, $newBranch);
             if ($newBranch !== null && $id === $actorId) {
                 throw new ValidationException(['branch_id' => 'لا يمكنك تقييد حسابك أنت بفرع. يفعلها مدير آخر إذا لزم.']);
             }
             $oldBranch = $u['branch_id'] === null ? null : (int) $u['branch_id'];
+            // تقييد آخر مدير نشط يرى كل الفروع يترك النظام بلا من يدير المستخدمين والفروع
+            if ($oldBranch === null && $newBranch !== null && user_role($u) === 'admin' && user_is_active($u)
+                && users_other_active_admins($rows, $id) < 1) {
+                throw new ValidationException(['branch_id' => USERS_LAST_ADMIN]);
+            }
             if ($oldBranch !== $newBranch) {
                 $pdo->prepare('UPDATE users SET branch_id = ? WHERE id = ?')->execute([$newBranch, $id]);
                 audit_record($pdo, 'user.branch', sprintf('تحديد فرع المستخدم %s: %s', $u['username'], (string) $branchName), 'user', $id,
@@ -415,8 +576,8 @@ function user_update(PDO $pdo, int $actorId, int $id, array $in): array
             if ($id === $actorId) {
                 throw new ValidationException(['role' => 'لا يمكنك تغيير دورك أنت. يغيره مدير آخر إذا لزم.']);
             }
-            if (user_role($u) === 'admin' && user_is_active($u) && users_other_active_admins($rows, $id) < 1) {
-                throw new ValidationException(['role' => 'يجب أن يبقى مدير واحد نشط على الأقل.']);
+            if (user_role($u) === 'admin' && user_is_active($u) && user_sees_all_branches($u) && users_other_active_admins($rows, $id) < 1) {
+                throw new ValidationException(['role' => USERS_LAST_ADMIN]);
             }
             $changes['role'] = ['old' => user_role($u), 'new' => $role];
         }
@@ -460,8 +621,8 @@ function user_set_active(PDO $pdo, int $actorId, int $id, bool $active): bool
             if ($id === $actorId) {
                 throw new ValidationException(['user' => 'لا يمكنك تعطيل حسابك أنت.']);
             }
-            if (user_role($u) === 'admin' && users_other_active_admins($rows, $id) < 1) {
-                throw new ValidationException(['user' => 'يجب أن يبقى مدير واحد نشط على الأقل.']);
+            if (user_role($u) === 'admin' && user_sees_all_branches($u) && users_other_active_admins($rows, $id) < 1) {
+                throw new ValidationException(['user' => USERS_LAST_ADMIN]);
             }
         }
         users_assert_actor($rows, $actorId);
@@ -476,10 +637,61 @@ function user_set_active(PDO $pdo, int $actorId, int $id, bool $active): bool
 }
 
 /**
- * المدير يعين كلمة مرور جديدة لمستخدم آخر (مثلًا عند نسيانها). تنتهي كل جلسات المستخدم،
- * وتُمسح محاولات دخوله الفاشلة. المدير يغير كلمة مروره هو من صفحة «حسابي».
+ * المدير يحدد صلاحيات موظف: $granted قائمة الصلاحيات المسموحة له من STAFF_GRANTABLE (ما ليس فيها ممنوع).
+ * يُحفظ فقط ما يختلف عن صلاحيات الموظف الافتراضية، فإذا تغيرت الافتراضية في إصدار لاحق تتبعها باقي الصلاحيات.
+ * للموظفين فقط (المدير يملك كل الصلاحيات)، ومن مدير نشط يرى كل الفروع. يُسجل في المراقبة بالتغييرات.
+ * @param string[] $granted
+ * @return array<string,array{old:bool,new:bool}> ما تغير
  */
-function user_reset_password(PDO $pdo, int $actorId, int $id, string $password, string $confirm): void
+function user_set_permissions(PDO $pdo, int $actorId, int $id, array $granted): array
+{
+    $granted = array_values(array_unique(array_filter(array_map('strval', $granted), 'permission_grantable')));
+    return db_transaction($pdo, function (PDO $pdo) use ($actorId, $id, $granted) {
+        $rows = users_lock_all($pdo);
+        $u = users_target($rows, $id);
+        users_assert_actor($rows, $actorId);
+        if (!array_key_exists('permissions', $u)) {
+            throw new ValidationException(['permissions' => 'حدّث قاعدة البيانات أولًا من صفحة الإعدادات، ثم حدد صلاحيات الموظف.']);
+        }
+        if (user_role($u) !== 'staff') {
+            throw new ValidationException(['permissions' => 'المدير يملك كل الصلاحيات. لتحديد صلاحيات حساب اجعل دوره «موظف» أولًا.']);
+        }
+        $overrides = [];
+        $changes = [];
+        foreach (STAFF_GRANTABLE as $perms) {
+            foreach (array_keys($perms) as $perm) {
+                $want = in_array($perm, $granted, true);
+                if ($want !== in_array('staff', PERMISSIONS[$perm] ?? [], true)) {
+                    $overrides[$perm] = $want;
+                }
+                $had = user_has_permission($u, $perm);
+                if ($had !== $want) {
+                    $changes[$perm] = ['old' => $had, 'new' => $want];
+                }
+            }
+        }
+        if (!$changes) {
+            return [];
+        }
+        $pdo->prepare('UPDATE users SET permissions = ? WHERE id = ?')
+            ->execute([$overrides ? json_encode($overrides, JSON_UNESCAPED_UNICODE) : null, $id]);
+        $parts = [];
+        foreach ($changes as $perm => $c) {
+            $parts[] = ($c['new'] ? 'منح: ' : 'سحب: ') . permission_label($perm);
+        }
+        audit_record($pdo, 'user.permissions', sprintf('صلاحيات المستخدم %s: %s', $u['username'], implode('، ', $parts)), 'user', $id, $changes);
+        data_version_bump($pdo);
+        return $changes;
+    });
+}
+
+/**
+ * المدير يعين كلمة مرور جديدة لمستخدم آخر (مثلًا عند نسيانها أو ضياع هاتفه). تنتهي كل جلسات المستخدم،
+ * وتُمسح محاولات دخوله الفاشلة، ويُوقف التحقق بخطوتين لحسابه إن كان مفعلًا (وإلا بقي خارج النظام
+ * إذا ضاع هاتفه)، ويفعّله صاحب الحساب من جديد من «حسابي». المدير يغير كلمة مروره هو من صفحة «حسابي».
+ * @return bool true إذا أُوقف التحقق بخطوتين للحساب
+ */
+function user_reset_password(PDO $pdo, int $actorId, int $id, string $password, string $confirm): bool
 {
     if ($id === $actorId) {
         throw new ValidationException(['password' => 'لتغيير كلمة مرورك استخدم صفحة «حسابي».']);
@@ -492,13 +704,20 @@ function user_reset_password(PDO $pdo, int $actorId, int $id, string $password, 
         throw new ValidationException(['password' => $err]);
     }
     $hash = password_hash($password, PASSWORD_DEFAULT);
-    db_transaction($pdo, function (PDO $pdo) use ($actorId, $id, $hash) {
+    return db_transaction($pdo, function (PDO $pdo) use ($actorId, $id, $hash) {
         $rows = users_lock_all($pdo);
         $u = users_target($rows, $id);
         users_assert_actor($rows, $actorId);
         $pdo->prepare('UPDATE users SET password_hash = ?, auth_version = auth_version + 1 WHERE id = ?')->execute([$hash, $id]);
+        // عمود totp_enabled موجود بعد الترقية 003 فقط (الصف المقفل من SELECT *)
+        $tfaOff = (int) ($u['totp_enabled'] ?? 0) === 1;
+        if ($tfaOff) {
+            two_factor_disable($pdo, $id);
+        }
         $pdo->prepare('DELETE FROM login_attempts WHERE username = ?')->execute([$u['username']]);
-        audit_record($pdo, 'user.password_reset', sprintf('تعيين كلمة مرور جديدة للمستخدم %s', $u['username']), 'user', $id);
+        audit_record($pdo, 'user.password_reset', sprintf('تعيين كلمة مرور جديدة للمستخدم %s', $u['username'])
+            . ($tfaOff ? ' وإيقاف التحقق بخطوتين لحسابه' : ''), 'user', $id, $tfaOff ? ['totp_enabled' => ['old' => 1, 'new' => 0]] : null);
         data_version_bump($pdo);
+        return $tfaOff;
     });
 }

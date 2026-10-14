@@ -141,8 +141,8 @@ const NAV_GROUPS = [
     ],
 ];
 
-/** صفحات بأرقام الشركة كلها: لا تظهر في القائمة للمستخدم المقيد بفرع (والصفحة نفسها ترفضه) */
-const NAV_ALL_BRANCHES_ROUTES = ['dashboard', 'opening_valuation'];
+/** صفحات بأرقام الشركة كلها أو بإدارتها: لا تظهر في القائمة للمستخدم المقيد بفرع (والصفحة نفسها ترفضه) */
+const NAV_ALL_BRANCHES_ROUTES = ['dashboard', 'opening_valuation', 'monitor', 'users', 'cash_boxes'];
 
 /** روابط القائمة المسموحة للمستخدم الحالي، مجمعة: [المجموعة => [[url, label, current, icon], ...]] */
 function nav_visible_groups(string $active): array

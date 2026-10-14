@@ -117,10 +117,18 @@ if ($locked) {
                     }
                     $pdo->prepare('UPDATE users SET password_hash = ?, auth_version = auth_version + 1 WHERE id = ?')->execute([$hash, $userId]);
                 }
+                // ويرى كل الفروع، وإلا بقي المالك المستعاد بلا طريق لإدارة المستخدمين والفروع
+                try {
+                    $pdo->prepare('UPDATE users SET branch_id = NULL WHERE id = ?')->execute([$userId]);
+                } catch (PDOException $e) {
+                    if (audit_db_error_code($e) !== 1054) { // قبل الترقية 005 لا يوجد عمود الفرع
+                        throw $e;
+                    }
+                }
                 // الاستعادة توقف التحقق بخطوتين أيضًا (مثلًا عند ضياع الهاتف)
                 two_factor_disable($pdo, $userId);
                 $pdo->prepare('DELETE FROM login_attempts WHERE username = ?')->execute([$username]);
-                audit_record($pdo, 'user.password_reset', sprintf('استعادة كلمة مرور المدير %s من صفحة التثبيت (حساب مدير نشط)', $username), 'user', $userId);
+                audit_record($pdo, 'user.password_reset', sprintf('استعادة كلمة مرور المدير %s من صفحة التثبيت (حساب مدير نشط يرى كل الفروع)', $username), 'user', $userId);
                 data_version_bump($pdo);
             });
             // قبل تحديث قاعدة البيانات لا يوجد جدول السجل، وauth_event لا يوقف الاستعادة عندها

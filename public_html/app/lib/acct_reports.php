@@ -974,14 +974,17 @@ function acct_reports_visible(): array
         ARRAY_FILTER_USE_BOTH);
 }
 
-/** يوقف الطلب برسالة 403 إذا كان المستخدم مقيدًا بفرع (للوحة التحكم وتقارير الشركة كلها والتقييم الافتتاحي) */
-function acct_require_all_branches(PDO $pdo): void
+/**
+ * يوقف الطلب برسالة 403 إذا كان المستخدم مقيدًا بفرع (للوحة التحكم وتقارير الشركة كلها والتقييم الافتتاحي
+ * والمراقبة والخزائن وكشوفها وإدارة المستخدمين)
+ */
+function acct_require_all_branches(PDO $pdo, string $message = ACCT_ALL_BRANCHES_ONLY): void
 {
     if (acct_branch_scope($pdo) !== null) {
         if (is_live_request()) {
             json_response(['error' => 'forbidden'], 403);
         }
-        render_simple_error(ACCT_ALL_BRANCHES_ONLY, 403);
+        render_simple_error($message, 403);
     }
 }
 

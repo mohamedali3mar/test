@@ -289,7 +289,9 @@ function two_factor_redirect(): never
 
 /**
  * إجراءات قسم «التحقق بخطوتين» في الإعدادات (الطلب تحقق من CSRF قبلها).
- * السر الجديد يبقى في الجلسة فقط حتى يؤكده المستخدم برمز صحيح.
+ * السر الجديد يبقى في الجلسة فقط حتى يؤكده المستخدم بكلمة المرور الحالية ورمز صحيح.
+ * التفعيل والإيقاف يتطلبان كلمة المرور الحالية (جلسة مفتوحة وحدها لا تكفي لحبس صاحب الحساب خارجه)،
+ * وكلٌّ منهما معاملة واحدة مع سطره في سجل المراقبة ثم رفع رقم إصدار البيانات.
  * @return array<string,string> أخطاء الحقول (عند النجاح يُعاد التوجيه ولا تعود الدالة)
  */
 function two_factor_settings_post(PDO $pdo, string $action): array
@@ -317,11 +319,19 @@ function two_factor_settings_post(PDO $pdo, string $action): array
             unset($_SESSION['tfa_setup']);
             two_factor_redirect();
         }
+        // كلمة المرور الحالية أولًا (نفس حدود محاولات الدخول)، ثم رمز التطبيق
+        if ($problem = verify_current_password($pdo, input($_POST, 'tfa_password'))) {
+            return ['tfa_password' => $problem];
+        }
         if (!totp_verify($secret, input($_POST, 'tfa_code'), $step)) {
             return ['tfa_code' => 'الرمز غير صحيح. اكتب الرمز الظاهر الآن في التطبيق (يتغير كل 30 ثانية)، وتأكد أن وقت الهاتف مضبوط تلقائيًا.'];
         }
-        $pdo->prepare('UPDATE users SET totp_secret = ?, totp_enabled = 1, totp_last_step = ?, auth_version = auth_version + 1 WHERE id = ?')
-            ->execute([$secret, $step, $uid]);
+        db_transaction($pdo, function (PDO $pdo) use ($secret, $step, $uid) {
+            $pdo->prepare('UPDATE users SET totp_secret = ?, totp_enabled = 1, totp_last_step = ?, auth_version = auth_version + 1 WHERE id = ?')
+                ->execute([$secret, $step, $uid]);
+            audit_record($pdo, 'account.2fa_enable', 'تفعيل التحقق بخطوتين من صفحة «حسابي»', 'user', $uid);
+            data_version_bump($pdo);
+        });
         unset($_SESSION['tfa_setup']);
         two_factor_keep_session($pdo, $uid);
         flash('success', 'تم تفعيل التحقق بخطوتين، وانتهت الجلسات المفتوحة على الأجهزة الأخرى. سيُطلب الرمز عند كل تسجيل دخول.');
@@ -347,8 +357,12 @@ function two_factor_settings_post(PDO $pdo, string $action): array
             return ['tfa_code' => 'رمز التحقق غير صحيح أو استُخدم من قبل. اكتب الرمز الظاهر الآن في التطبيق.'];
         }
         throttle_clear($pdo, current_username());
-        $pdo->prepare('UPDATE users SET totp_secret = NULL, totp_enabled = 0, totp_last_step = NULL, auth_version = auth_version + 1 WHERE id = ?')
-            ->execute([$uid]);
+        db_transaction($pdo, function (PDO $pdo) use ($uid) {
+            $pdo->prepare('UPDATE users SET totp_secret = NULL, totp_enabled = 0, totp_last_step = NULL, auth_version = auth_version + 1 WHERE id = ?')
+                ->execute([$uid]);
+            audit_record($pdo, 'account.2fa_disable', 'إيقاف التحقق بخطوتين من صفحة «حسابي»', 'user', $uid);
+            data_version_bump($pdo);
+        });
         two_factor_keep_session($pdo, $uid);
         flash('success', 'تم إيقاف التحقق بخطوتين، وانتهت الجلسات المفتوحة على الأجهزة الأخرى.');
         two_factor_redirect();

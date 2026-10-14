@@ -127,6 +127,12 @@ $tfaSecret = (!$tfaEnabled && is_string($_SESSION['tfa_setup'] ?? null)) ? $_SES
     <form method="post" action="<?= h(url('account')) ?>" class="form" novalidate>
       <?= csrf_field() ?>
       <input type="hidden" name="action" value="tfa_confirm">
+      <input type="text" name="username" value="<?= h(current_username()) ?>" autocomplete="username" hidden>
+      <div class="field">
+        <label for="tfa_password">كلمة المرور الحالية</label>
+        <input type="password" id="tfa_password" name="tfa_password" autocomplete="current-password" required<?= field_attrs($tfaErrors, 'tfa_password') ?>>
+        <?= field_error($tfaErrors, 'tfa_password') ?>
+      </div>
       <div class="field field-narrow">
         <label for="tfa_code">رمز التحقق من تطبيق المصادقة</label>
         <input type="text" id="tfa_code" name="tfa_code" inputmode="numeric" autocomplete="one-time-code" maxlength="12" required<?= field_attrs($tfaErrors, 'tfa_code', 'hint-tfa-on') ?>>

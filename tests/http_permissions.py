@@ -232,6 +232,9 @@ forbidden = [
                'password': 'Intruder-Pass-1', 'password_confirm': 'Intruder-Pass-1'}),
     ('users', {'action': 'update', 'id': staff_id, 'display_name': staff_name, 'role': 'admin'}),
     ('monitor', {'x': '1'}),
+    ('branches', {'action': 'create', 'name': 'فرع من موظف ' + RUN}),
+    ('branches', {'action': 'update', 'id': '1', 'name': 'فرع معدل من موظف', 'address': 'عنوان مزيف', 'phone': '0999'}),
+    ('branches', {'action': 'delete', 'id': '1'}),
 ]
 for route, data in forbidden:
     s, _, body = st.post('index.php?r=' + route, dict(data, csrf=token))
@@ -246,6 +249,10 @@ if DB:
     check('قاعدة البيانات: الأنواع والإعدادات والمستخدمون كما هي', sql('SELECT COUNT(*), GROUP_CONCAT(name ORDER BY id) FROM wood_types') == types_before
           and sql(f"SELECT role FROM users WHERE username = '{staff_user}'") == 'staff'
           and sql("SELECT value FROM settings WHERE name = 'company_name'") != 'اختراق')
+    check('قاعدة البيانات: الفروع كما هي (الموظف لا يدير الفروع)', sql("SELECT COUNT(*) FROM branches WHERE name LIKE '%من موظف%' OR address = 'عنوان مزيف'") == '0'
+          and sql('SELECT COUNT(*) FROM branches WHERE id = 1') == '1')
+_, _, html = st.get('index.php?r=branches')
+check('صفحة الفروع للموظف بلا نماذج إدارة', 'value="create"' not in html and 'value="delete"' not in html)
 
 section('الموظف: الوارد والبيع والتحويل')
 _, html = st.csrf('index.php?r=receive')
@@ -325,6 +332,30 @@ s, _, html = a.post('index.php?r=users', {'csrf': token, 'action': 'update', 'id
 check('المدير لا يخفض نفسه (طلب مباشر)', s == 200 and 'لا يمكنك تغيير دورك' in html, s)
 _, _, html = a.get('index.php?r=inventory')
 check('المدير ما زال مديرًا', 'href="index.php?r=monitor"' in html)
+
+section('المدير يحدد صلاحيات الموظف')
+token, html = a.csrf(f'index.php?r=users&edit={staff_id}')
+check('قسم «الصلاحيات» في تعديل الموظف', 'id="perm-title"' in html and 'name="perms[]"' in html and 'value="vouchers.pay"' in html)
+check('  إدارة المستخدمين والإعدادات ليست ضمن ما يُمنح', 'value="users.manage"' not in html and 'value="settings.manage"' not in html)
+s, _, _ = st.get('index.php?r=pay')
+check('قبل المنح: سند صرف للموظف 403', s == 403, s)
+current = re.findall(r'name="perms\[\]" value="([a-z_.]+)" checked', html)
+granted = [p for p in current if p != 'vouchers.collect'] + ['vouchers.pay']
+s, _, _ = a.post('index.php?r=users', {'csrf': token, 'action': 'permissions', 'id': staff_id, 'perms[]': granted})
+check('حفظ الصلاحيات -> تحويل', s == 303, s)
+s, _, _ = st.get('index.php?r=pay')
+check('بعد المنح: سند صرف للموظف 200 فورًا (نفس الجلسة)', s == 200, s)
+s, _, _ = st.get('index.php?r=collect')
+check('  وسند القبض المسحوب منه 403', s == 403, s)
+_, _, html = st.get('index.php?r=home')
+check('  وقائمته تتبع صلاحياته', 'href="index.php?r=pay"' in html and 'href="index.php?r=collect"' not in html)
+s, _, body = st.post('index.php?r=users', {'csrf': st.csrf('index.php?r=home')[0], 'action': 'permissions', 'id': staff_id, 'perms[]': ['users.manage']})
+check('الموظف لا يحدد صلاحياته بنفسه -> 403', s == 403, s)
+_, _, html = a.get('index.php?r=monitor&group=users')
+check('المراقبة فيها «صلاحيات المستخدم»', 'صلاحيات المستخدم' in html)
+s, _, _ = a.post('index.php?r=users', {'csrf': token, 'action': 'permissions', 'id': staff_id, 'perms[]': current})
+_, _, html = a.get(f'index.php?r=users&edit={staff_id}')
+check('إعادة الصلاحيات كما كانت', sorted(re.findall(r'name="perms\[\]" value="([a-z_.]+)" checked', html)) == sorted(current))
 
 section('تعطيل الموظف ينهي جلساته فورًا')
 s, h, html = a.follow(a.post('index.php?r=users', {'csrf': token, 'action': 'disable', 'id': staff_id}))

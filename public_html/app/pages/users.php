@@ -2,19 +2,25 @@
 defined('APP_ROOT') || exit;
 
 /*
- * إدارة المستخدمين (للمدير فقط): الإضافة، والاسم المعروض والدور، والتعطيل والتفعيل، وتعيين كلمة مرور.
- * قواعد الأمان (لا تعطيل أو تخفيض للنفس، ومدير نشط واحد على الأقل) في lib/users.php داخل معاملات.
+ * إدارة المستخدمين (للمدير الذي يرى كل الفروع فقط): الإضافة مع الفرع، والاسم المعروض والدور والفرع،
+ * والتعطيل والتفعيل، وتعيين كلمة مرور (يوقف التحقق بخطوتين للحساب).
+ * قواعد الأمان (لا تعطيل أو تخفيض للنفس، ومدير نشط واحد على الأقل يرى كل الفروع، والمدير المقيد بفرع
+ * لا يدير المستخدمين) في lib/users.php داخل معاملات.
  */
 
 $pdo = db();
 if (!users_audit_ready($pdo)) {
     render_migration_needed('المستخدمون', 'users');
 }
+// المدير المقيد بفرع لا يدير المستخدمين، وإلا استطاع رفع تقييده (الخدمات تفحص ذلك أيضًا داخل المعاملة)
+acct_require_all_branches($pdo, USERS_ALL_BRANCHES_ONLY);
 
 $createErrors = [];
 $editErrors = [];
 $pwErrors = [];
-$createForm = ['display_name' => '', 'username' => '', 'role' => 'staff'];
+$permErrors = [];
+$permPosted = null; // الصلاحيات المرسلة عند إعادة عرض النموذج بخطأ
+$createForm = ['display_name' => '', 'username' => '', 'role' => 'staff', 'branch_id' => ''];
 $editForm = null;
 $editId = (int) input($_GET, 'edit');
 
@@ -24,7 +30,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $id = (int) input($_POST, 'id');
     try {
         if ($action === 'create') {
-            $createForm = string_inputs($_POST, ['display_name', 'username', 'role']);
+            $createForm = string_inputs($_POST, ['display_name', 'username', 'role', 'branch_id']);
             user_create($pdo, current_user_id(), $_POST);
             flash('success', sprintf('تمت إضافة المستخدم %s. يدخل باسم المستخدم وكلمة المرور التي حددتها، ويمكنه تغييرها من «حسابي».', clean_text($createForm['username'])));
             redirect('users');
@@ -36,9 +42,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             redirect('users');
         } elseif ($action === 'password') {
             $editId = $id;
-            user_reset_password($pdo, current_user_id(), $id, input($_POST, 'password'), input($_POST, 'password_confirm'));
-            flash('success', 'تم تعيين كلمة المرور الجديدة وانتهت جلسات المستخدم المفتوحة. أبلغه بها ليدخل ثم يغيرها من «حسابي».');
+            $tfaOff = user_reset_password($pdo, current_user_id(), $id, input($_POST, 'password'), input($_POST, 'password_confirm'));
+            flash('success', 'تم تعيين كلمة المرور الجديدة وانتهت جلسات المستخدم المفتوحة'
+                . ($tfaOff ? '، وأُوقف التحقق بخطوتين لحسابه فيدخل بكلمة المرور وحدها ثم يفعّله من جديد من «حسابي»' : '')
+                . '. أبلغه بها ليدخل ثم يغيرها من «حسابي».');
             redirect('users');
+        } elseif ($action === 'permissions') {
+            $editId = $id;
+            $permPosted = array_values(array_filter((array) ($_POST['perms'] ?? []), 'is_string'));
+            $changes = user_set_permissions($pdo, current_user_id(), $id, $permPosted);
+            flash($changes ? 'success' : 'warning', $changes
+                ? 'تم حفظ صلاحيات الموظف، وتسري من أول صفحة يفتحها.' : 'لم تتغير الصلاحيات.');
+            redirect('users', ['edit' => $id]);
         } elseif ($action === 'disable' || $action === 'enable') {
             $editId = $id;
             $changed = user_set_active($pdo, current_user_id(), $id, $action === 'enable');
@@ -53,6 +68,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $createErrors = $e->errors;
         } elseif ($action === 'password') {
             $pwErrors = $e->errors;
+        } elseif ($action === 'permissions') {
+            $permErrors = $e->errors;
         } else {
             $editErrors = $e->errors;
         }
@@ -60,6 +77,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 $users = users_all($pdo);
+$hasBranches = db_has_column($pdo, 'users', 'branch_id');
+$allBranches = $hasBranches ? catalog_all($pdo, 'branch') : [];
 $editUser = null;
 foreach ($users as $u) {
     if ((int) $u['id'] === $editId) {
@@ -106,12 +125,12 @@ render_header('المستخدمون', 'users');
               <option value="<?= h($r) ?>"<?= $editForm['role'] === $r ? ' selected' : '' ?>><?= h($label) ?></option>
             <?php endforeach; ?>
           </select>
-          <p class="hint" id="hint-edit-role">المدير يملك كل الصلاحيات. الموظف يسجل الوارد والبيع والتحويل ويطبع، ولا يلغي المستندات ولا يفتح الإعدادات.</p>
+          <p class="hint" id="hint-edit-role">المدير يملك كل الصلاحيات. صلاحيات الموظف تحددها أنت من قسم «الصلاحيات» أسفل هذه الصفحة.</p>
           <?= field_error($editErrors, 'role') ?>
         <?php endif; ?>
       </div>
     </div>
-    <?php if (array_key_exists('branch_id', $editUser) && !$editSelf): $allBranches = catalog_all($pdo, 'branch'); ?>
+    <?php if (array_key_exists('branch_id', $editUser) && !$editSelf): ?>
       <div class="field">
         <label for="edit-branch">الفرع</label>
         <select id="edit-branch" name="branch_id"<?= field_attrs($editErrors, 'branch_id', 'hint-edit-branch') ?>>
@@ -130,10 +149,43 @@ render_header('المستخدمون', 'users');
     </div>
   </form>
 
+  <?php if (!$editSelf && array_key_exists('permissions', $editUser)): ?>
+    <h3 id="perm-title">الصلاحيات</h3>
+    <?php if (user_role($editUser) !== 'staff'): ?>
+      <p class="muted">المدير يملك كل الصلاحيات. لتحديد ما يستطيعه هذا الحساب اجعل دوره «موظف» ثم اختر صلاحياته هنا.</p>
+    <?php else: $permNow = $permPosted ?? array_values(array_filter(
+        array_merge(...array_map('array_keys', array_values(STAFF_GRANTABLE))), fn ($p) => user_has_permission($editUser, $p))); ?>
+      <?= errors_summary($permErrors) ?>
+      <form method="post" action="<?= h(url('users', ['edit' => $uid])) ?>" class="form perm-form" novalidate>
+        <?= csrf_field() ?>
+        <input type="hidden" name="action" value="permissions">
+        <input type="hidden" name="id" value="<?= $uid ?>">
+        <p class="hint">اختر ما يستطيعه هذا الموظف. التغيير يسري من أول صفحة يفتحها، ويُسجل في المراقبة. إدارة المستخدمين والإعدادات للمدير وحده.</p>
+        <?php foreach (STAFF_GRANTABLE as $group => $perms): ?>
+          <fieldset class="perm-group">
+            <legend><?= h($group) ?></legend>
+            <?php foreach ($perms as $perm => $label): $pid = 'perm-' . str_replace(['.', '_'], '-', $perm); ?>
+              <div class="field field-check">
+                <input type="checkbox" id="<?= h($pid) ?>" name="perms[]" value="<?= h($perm) ?>"<?= in_array($perm, $permNow, true) ? ' checked' : '' ?>>
+                <label for="<?= h($pid) ?>"><?= h($label) ?></label>
+              </div>
+            <?php endforeach; ?>
+          </fieldset>
+        <?php endforeach; ?>
+        <div class="actions">
+          <button type="submit" class="btn btn-primary">حفظ الصلاحيات</button>
+        </div>
+      </form>
+    <?php endif; ?>
+  <?php endif; ?>
+
   <?php if ($editSelf): ?>
     <p class="muted">لتغيير كلمة مرورك افتح <a href="<?= h(url('account')) ?>">حسابي</a>. لا يمكنك تعطيل حسابك أنت.</p>
   <?php else: ?>
     <h3>تعيين كلمة مرور جديدة</h3>
+    <?php if ((int) ($editUser['totp_enabled'] ?? 0) === 1): ?>
+      <p>التحقق بخطوتين مفعل لهذا الحساب. تعيين كلمة مرور جديدة يوقفه أيضًا (مثلًا عند ضياع الهاتف)، فيدخل صاحب الحساب بكلمة المرور وحدها ثم يفعّله من جديد من «حسابي».</p>
+    <?php endif; ?>
     <?= errors_summary($pwErrors) ?>
     <form method="post" action="<?= h(url('users', ['edit' => $uid])) ?>" class="form" autocomplete="off" novalidate>
       <?= csrf_field() ?>
@@ -143,7 +195,7 @@ render_header('المستخدمون', 'users');
         <div class="field">
           <label for="reset-password">كلمة المرور الجديدة</label>
           <input type="password" id="reset-password" name="password" minlength="10" required autocomplete="new-password"<?= field_attrs($pwErrors, 'password', 'hint-reset') ?>>
-          <p class="hint" id="hint-reset"><?= h(fmt_int(10)) ?> أحرف على الأقل. تنتهي جلسات المستخدم المفتوحة فورًا.</p>
+          <p class="hint" id="hint-reset"><?= h(fmt_int(10)) ?> أحرف على الأقل. تنتهي جلسات المستخدم المفتوحة فورًا، ويُوقف التحقق بخطوتين لحسابه إن كان مفعلًا.</p>
           <?= field_error($pwErrors, 'password') ?>
         </div>
         <div class="field">
@@ -247,6 +299,19 @@ render_header('المستخدمون', 'users');
       <p class="hint" id="hint-role">الموظف يسجل الوارد والبيع والتحويل ويطبع. المدير يملك كل الصلاحيات.</p>
       <?= field_error($createErrors, 'role') ?>
     </div>
+    <?php if ($hasBranches): ?>
+    <div class="field field-narrow">
+      <label for="branch_id">الفرع</label>
+      <select id="branch_id" name="branch_id"<?= field_attrs($createErrors, 'branch_id', 'hint-branch') ?>>
+        <option value="">كل الفروع</option>
+        <?php foreach ($allBranches as $b): ?>
+          <option value="<?= (int) $b['id'] ?>"<?= (string) $createForm['branch_id'] === (string) $b['id'] ? ' selected' : '' ?>><?= h($b['name']) ?></option>
+        <?php endforeach; ?>
+      </select>
+      <p class="hint" id="hint-branch">المستخدم المقيد بفرع يرى مخازن فرعه ومستنداته فقط، ويسجل الوارد والبيع منها. «كل الفروع» يرى بيانات الشركة كلها.</p>
+      <?= field_error($createErrors, 'branch_id') ?>
+    </div>
+    <?php endif; ?>
     <div class="field-row">
       <div class="field">
         <label for="password">كلمة المرور</label>
