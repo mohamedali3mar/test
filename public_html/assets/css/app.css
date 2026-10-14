@@ -552,7 +552,8 @@ input.input-ltr { direction: ltr; text-align: right; }
 .table-export-label { font-size: var(--fs-14); font-weight: 600; color: var(--text-2); }
 .table-export-buttons { display: flex; flex-wrap: wrap; gap: 8px; }
 .table-sort { display: none; }
-.table-search-status { flex: 1 1 100%; margin: 0; }
+/* سطر البحث السريع بعد شريط الأدوات (لا داخله) حتى يُطبع مع الجدول */
+.table-search-status { margin: 0 0 12px; }
 .sort-link { color: inherit; text-decoration: none; }
 .sort-link:hover { color: var(--primary); text-decoration: underline; }
 th[aria-sort] .sort-link { color: var(--primary); }
@@ -579,6 +580,7 @@ th[aria-sort] .sort-link { color: var(--primary); }
   .filters, .page-actions, .pager, .cell-actions, .table-tools { display: none !important; }
   .print-heading { margin-bottom: 8px; }
   .print-heading p { margin: 0 0 4px; }
+  .table-search-status { color: #000; }
   .sort-state { display: none; }
   .sort-link { color: #000; }
 }
