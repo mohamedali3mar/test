@@ -81,6 +81,17 @@ $as($staff);
 expect_validation('المقيد بفرع لا يخفي (الإخفاء للشركة كلها)', fn () => item_set_hidden($pdo, $item, true));
 $as($uid);
 
+section('الوارد يظهر المقاس المخفي، والنوع المخفي لا يُستقبل');
+$as($uid);
+item_set_hidden($pdo, $item, true);
+record_receipt($pdo, $uid, receipt_input($wh, $mosky, '10', 'cm', '50', 'mm', '3', 'm', '4'));
+check('أول وارد للمقاس المخفي يظهره', (int) $pdo->query("SELECT is_hidden FROM items WHERE id = $item")->fetchColumn() === 0);
+$errors = expect_validation('لا يُخفى بعد أن صار له رصيد', fn () => item_set_hidden($pdo, $item, true));
+$third = catalog_create($pdo, 'type', 'سويد');
+type_set_hidden($pdo, $third, true);
+$errors = expect_validation('وارد لنوع مخفي مرفوض على الخادم', fn () => record_receipt($pdo, $uid, receipt_input($wh, $third, '10', 'cm', '5', 'cm', '2', 'm', '1')));
+check('  رسالة تدل على صفحة المقاسات', str_contains($errors['wood_type_id'] ?? '', 'المقاسات'), json_encode($errors, JSON_UNESCAPED_UNICODE));
+
 section('الترقية 009 آمنة لإعادة التنفيذ');
 $ok = true;
 foreach (split_sql((string) file_get_contents(APP_ROOT . '/migrations/009_items_hidden_doc_edit.sql')) as $stmt) {

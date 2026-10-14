@@ -410,6 +410,8 @@ function validate_receipt(PDO $pdo, array $in): array
     $type = catalog_find($pdo, 'type', (int) ($in['wood_type_id'] ?? 0));
     if (!$type) {
         $errors['wood_type_id'] = 'اختر نوع الخشب.';
+    } elseif (type_is_hidden($pdo, (int) $type['id'])) {
+        $errors['wood_type_id'] = 'هذا النوع مخفي من نموذج الوارد. أظهره من صفحة «المقاسات» أولًا، أو راجع مدير النظام.';
     }
     $dims = [];
     foreach (DIMENSIONS as $key => $label) {
@@ -515,6 +517,14 @@ function record_receipt(PDO $pdo, int $userId, array $in): array
             }
             // قيمة المخزون الحالية V وكل القطع Q (قراءة مقفلة بعد قفل الصنف)
             $cost = costing_lock_items($pdo, [$itemId])[$itemId];
+            // مقاس مخفي (صفحة المقاسات) يظهر من جديد مع أول وارد له. قبل الترقية 009 لا يوجد العمود
+            try {
+                $pdo->prepare('UPDATE items SET is_hidden = 0 WHERE id = ? AND is_hidden = 1')->execute([$itemId]);
+            } catch (PDOException $e) {
+                if (audit_db_error_code($e) !== 1054) {
+                    throw $e;
+                }
+            }
 
             $bal = lock_stock_rows($pdo, [[$itemId, $wid]], true);
             $before = (int) $bal[$itemId . ':' . $wid];
