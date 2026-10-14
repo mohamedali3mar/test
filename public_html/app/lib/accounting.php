@@ -346,16 +346,24 @@ function cash_check_backdated_outflow(PDO $pdo, int $boxId, string $boxName, int
  * يعكس كل قيود مستند أو سند (عند إلغائه) بقيود عكسية بتاريخ $date.
  * يجب أن تكون صفوف الأطراف والخزائن المعنية مقفلة مسبقًا (استخدم ledger_sources_of أولًا لمعرفتها).
  * القيود الداخلة للخزنة تُعكس كخروج، فيُرفض الإلغاء إذا لم يكفِ رصيد الخزنة.
+ * $part للتعديل (إلغاء الأصل وتسجيل البديل معًا): 'first' قيود الأطراف وما يرد للخزنة (قبل البديل)،
+ * و'last' ما يخرج من الخزنة (بعد البديل، فيُحسب ما أدخله البديل). 'all' الكل.
  */
-function reverse_ledgers(PDO $pdo, string $source, int $id, string $date, string $description): void
+function reverse_ledgers(PDO $pdo, string $source, int $id, string $date, string $description, string $part = 'all'): void
 {
     $col = $source === 'voucher' ? 'voucher_id' : 'document_id';
     foreach (['party' => 'party_ledger', 'cash' => 'cash_ledger'] as $kind => $table) {
+        if ($kind === 'party' && $part === 'last') {
+            continue;
+        }
         $stmt = $pdo->prepare("SELECT id, " . ($kind === 'party' ? 'party_id' : 'cash_box_id') . " AS owner, amount
             FROM {$table} WHERE {$col} = ? AND entry_type <> 'reversal' ORDER BY id FOR UPDATE");
         $stmt->execute([$id]);
         foreach ($stmt->fetchAll() as $e) {
             $amount = -money_to_piasters($e['amount']);
+            if ($kind === 'cash' && (($part === 'first' && $amount < 0) || ($part === 'last' && $amount > 0))) {
+                continue;
+            }
             $docId = $source === 'voucher' ? null : $id;
             $vId = $source === 'voucher' ? $id : null;
             if ($kind === 'party') {

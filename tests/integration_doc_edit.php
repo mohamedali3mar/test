@@ -183,6 +183,30 @@ cancel_voucher($pdo, $staffV, $own['id'], 'خطأ');
 check('  وإلغاء سنده نجح', $vrow($own['id'])['status'] === 'cancelled');
 $as($admin);
 
+section('تعديل سند قبض نُقلت نقديته من الخزنة');
+$as($admin);
+$boxB = cash_box_create($pdo, $admin, 'خزنة المحصل', '0');
+$boxC = cash_box_create($pdo, $admin, 'خزنة الإدارة', '0');
+$balOf = fn (int $id): int => money_to_piasters((string) $q("SELECT balance FROM cash_boxes WHERE id = $id"));
+$colB = record_voucher($pdo, $admin, 'collect', $vin(['party_id' => (string) $custV, 'cash_box_id' => (string) $boxB, 'amount' => '100']));
+record_voucher($pdo, $admin, 'cash_transfer', $vin(['cash_box_id' => (string) $boxB, 'to_cash_box_id' => (string) $boxC, 'amount' => '100']));
+check_eq('النقدية نُقلت: خزنة المحصل صفر', 0, $balOf($boxB));
+$fb = voucher_edit_form(find_voucher($pdo, $colB['id']));
+$fb['amount'] = '120';
+$nb = voucher_replace($pdo, $admin, $colB['id'], $fb, 'المبلغ 120');
+check_eq('زيادة المبلغ تُحفظ: البديل يدخل 120.00 قبل رد 100.00، فالخزنة 20.00', 2000, $balOf($boxB));
+check_eq('  والعميل عليه 130.00', 13000, party_balance($pdo, $custV));
+$fb2 = voucher_edit_form(find_voucher($pdo, $nb['id']));
+$fb2['amount'] = '80';
+$errors = expect_validation('إنقاص المبلغ إلى 80.00 يحتاج خصم 40.00 والخزنة فيها 20.00: مرفوض', fn () => voucher_replace($pdo, $admin, $nb['id'], $fb2, ''));
+check('  برسالة حفظ التعديل ورصيد الخزنة', str_contains($errors['voucher'] ?? '', 'لا يمكن حفظ التعديل') && str_contains($errors['voucher'] ?? '', 'خزنة المحصل'),
+    json_encode($errors, JSON_UNESCAPED_UNICODE));
+check('  ولم يتغير شيء', $vrow($nb['id'])['status'] === 'active' && $balOf($boxB) === 2000 && party_balance($pdo, $custV) === 13000);
+$fb2['amount'] = '100';
+voucher_replace($pdo, $admin, $nb['id'], $fb2, '');
+check_eq('إنقاصه إلى 100.00 (يكفي رصيد الخزنة) يُحفظ: الخزنة صفر', 0, $balOf($boxB));
+check_eq('  ولا اختلاف في الأرصدة', [], acct_verify_balances($pdo));
+
 section('الفترة المقفلة');
 $as($admin);
 save_setting($pdo, 'closing_date', date('Y-m-d', strtotime('-2 days')));

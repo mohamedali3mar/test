@@ -374,11 +374,15 @@ function voucher_replace(PDO $pdo, int $userId, int $oldId, array $in, string $r
     doc_edit_inherited_date(substr((string) $old['voucher_date'], 0, 10));
     try {
         return db_transaction($pdo, function (PDO $pdo) use ($userId, $oldId, $old, $in, $reason, $label) {
-            cancel_voucher($pdo, $userId, $oldId, 'تعديل' . ($reason !== '' ? ': ' . $reason : ''), (string) $old['voucher_date'], true);
-            $new = record_voucher($pdo, $userId, (string) $old['kind'], $in);
-            if ($new['duplicate']) {
-                throw new ValidationException(['form' => 'هذا النموذج سُجل من قبل. افتح السند من جديد ثم عدّله.']);
-            }
+            // البديل يُسجل بين عكس ما يرد للخزنة وعكس ما يخرج منها: نقدية سند قبض نُقلت من الخزنة لا تمنع تعديله
+            $new = null;
+            cancel_voucher($pdo, $userId, $oldId, 'تعديل' . ($reason !== '' ? ': ' . $reason : ''), (string) $old['voucher_date'], true,
+                function (PDO $pdo) use ($userId, $old, $in, &$new) {
+                    $new = record_voucher($pdo, $userId, (string) $old['kind'], $in);
+                    if ($new['duplicate']) {
+                        throw new ValidationException(['form' => 'هذا النموذج سُجل من قبل. افتح السند من جديد ثم عدّله.']);
+                    }
+                });
             $newLabel = VOUCHER_KIND_LABELS[$new['kind']] . ' رقم ' . $new['doc_no'];
             $pdo->prepare('UPDATE vouchers SET replaces_id = ? WHERE id = ?')->execute([$oldId, $new['id']]);
             $pdo->prepare('UPDATE vouchers SET replaced_by_id = ?, cancel_reason = ? WHERE id = ?')

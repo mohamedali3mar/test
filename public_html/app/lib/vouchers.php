@@ -271,7 +271,12 @@ function voucher_owned_today(array $v): bool
  * يلغي سندًا بقيود عكسية. $reversalDate: تاريخ القيود العكسية (الافتراضي وقت الإلغاء)، وتعديل السند يمرر
  * تاريخ الأصلي. $permissionChecked: تعديل السند يفحص صلاحية التعديل بنفسه (voucher_replace).
  */
-function cancel_voucher(PDO $pdo, int $userId, int $id, string $reasonRaw, ?string $reversalDate = null, bool $permissionChecked = false): array
+/**
+ * يلغي سندًا بقيود عكسية. $between (للتعديل) تُنفذ داخل نفس المعاملة بعد عكس قيود الأطراف وما يرد للخزنة
+ * وقبل عكس ما يخرج منها، فيُفحص رصيد الخزنة بعد أن يُدخل البديل نقديته.
+ */
+function cancel_voucher(PDO $pdo, int $userId, int $id, string $reasonRaw, ?string $reversalDate = null, bool $permissionChecked = false,
+    ?callable $between = null): array
 {
     if (!$permissionChecked) {
         $pre = find_voucher($pdo, $id);
@@ -283,7 +288,7 @@ function cancel_voucher(PDO $pdo, int $userId, int $id, string $reasonRaw, ?stri
     if (mb_strlen($reason) > 255) {
         throw new ValidationException(['reason' => 'سبب الإلغاء أطول من المسموح (' . fmt_int(255) . ' حرفًا).']);
     }
-    return db_transaction($pdo, function (PDO $pdo) use ($userId, $id, $reason, $reversalDate) {
+    return db_transaction($pdo, function (PDO $pdo) use ($userId, $id, $reason, $reversalDate, $between) {
         $stmt = $pdo->prepare('SELECT * FROM vouchers WHERE id = ? FOR UPDATE');
         $stmt->execute([$id]);
         $v = $stmt->fetch();
@@ -310,16 +315,24 @@ function cancel_voucher(PDO $pdo, int $userId, int $id, string $reasonRaw, ?stri
         }
         lock_cash_boxes($pdo, $src['cash_boxes'], false);
         $label = VOUCHER_KIND_LABELS[$v['kind']] . ' رقم ' . $v['doc_no'];
-        try {
-            reverse_ledgers($pdo, 'voucher', $id, $reversalDate ?? $now, 'إلغاء ' . $label);
-        } catch (ValidationException $e) {
-            throw new ValidationException(['voucher' => 'لا يمكن إلغاء السند: ' . implode(' ', $e->errors)]);
-        }
         $upd = $pdo->prepare("UPDATE vouchers SET status = 'cancelled', cancelled_at = ?, cancelled_by = ?, cancel_reason = ?
             WHERE id = ? AND status = 'active'");
         $upd->execute([$now, $userId, $reason !== '' ? $reason : null, $id]);
         if ($upd->rowCount() !== 1) {
             throw new RuntimeException('Cancel update affected no rows');
+        }
+        try {
+            reverse_ledgers($pdo, 'voucher', $id, $reversalDate ?? $now, 'إلغاء ' . $label, $between ? 'first' : 'all');
+        } catch (ValidationException $e) {
+            throw new ValidationException(['voucher' => 'لا يمكن إلغاء السند: ' . implode(' ', $e->errors)]);
+        }
+        if ($between) {
+            $between($pdo);
+            try {
+                reverse_ledgers($pdo, 'voucher', $id, $reversalDate ?? $now, 'إلغاء ' . $label, 'last');
+            } catch (ValidationException $e) {
+                throw new ValidationException(['voucher' => 'لا يمكن حفظ التعديل: ' . implode(' ', $e->errors)]);
+            }
         }
         acct_audit($pdo, 'voucher.cancel', 'إلغاء ' . $label . ($reason !== '' ? ': ' . $reason : ''), 'voucher', $id, [
             'kind' => $v['kind'], 'doc_no' => (int) $v['doc_no'], 'amount' => (string) $v['amount'],
