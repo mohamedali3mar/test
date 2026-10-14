@@ -56,6 +56,7 @@ require APP_ROOT . '/lib/pdf.php'; // دوال فقط؛ مكتبة mPDF تُحم
 require APP_ROOT . '/lib/tables.php';
 require APP_ROOT . '/lib/exports.php';
 require APP_ROOT . '/lib/home.php';
+require APP_ROOT . '/lib/items.php';
 
 set_exception_handler(function (Throwable $e): void {
     error_log('[wood] ' . get_class($e) . ': ' . $e->getMessage() . ' in ' . $e->getFile() . ':' . $e->getLine());

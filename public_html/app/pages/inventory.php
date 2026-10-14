@@ -50,6 +50,10 @@ render_header('المخزون', 'inventory');
     <input type="checkbox" id="hide_empty" name="hide_empty" value="1"<?= $hideEmpty ? ' checked' : '' ?>>
     <label for="hide_empty">إخفاء المقاسات النافدة</label>
   </div>
+  <div class="field field-check">
+    <input type="checkbox" id="show_hidden" name="show_hidden" value="1"<?= $req['show_hidden'] ? ' checked' : '' ?>>
+    <label for="show_hidden">إظهار المقاسات المخفية</label>
+  </div>
   <div class="filter-actions">
     <button type="submit" class="btn">عرض</button>
     <?php if ($filtered): ?><a class="btn btn-quiet" href="<?= h(url('inventory')) ?>">مسح التصفية</a><?php endif; ?>

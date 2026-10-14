@@ -33,6 +33,7 @@ const ROUTES = [
     'types'      => ['file' => 'catalog',    'public' => false, 'catalog' => 'type'],
     'branches'   => ['file' => 'branches',   'public' => false],
     'warehouses' => ['file' => 'catalog',    'public' => false, 'catalog' => 'warehouse'],
+    'items'      => ['file' => 'items',      'public' => false],
     'settings'   => ['file' => 'settings',   'public' => false],
     'api'        => ['file' => 'api',        'public' => false],
     'asset'      => ['file' => 'asset',      'public' => false],

@@ -97,7 +97,7 @@ function icon_sprite(): string
 }
 
 /** صفحات اسم أيقونتها غير اسم مسارها */
-const ROUTE_ICON_NAMES = ['sell' => 'sale'];
+const ROUTE_ICON_NAMES = ['sell' => 'sale', 'items' => 'columns'];
 
 /** أيقونة صفحة في القائمة. العملاء والموردون صفحة واحدة بنوعين */
 function route_icon(string $route, array $params = []): string

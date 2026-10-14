@@ -33,9 +33,13 @@ function warehouse_summary(PDO $pdo, ?int $branchId = null): array
  * $warehouseId = 0 يعني كل المخازن (الكمية = مجموع المخازن، مع التوزيع).
  * $branchId يقصر الأرصدة والإجماليات على مخازن فرع واحد (null = كل الفروع).
  */
-function inventory_view(PDO $pdo, string $q, int $typeId, int $warehouseId, bool $hideEmpty, ?int $branchId = null): array
+function inventory_view(PDO $pdo, string $q, int $typeId, int $warehouseId, bool $hideEmpty, ?int $branchId = null, bool $showHidden = false): array
 {
     $where = [];
+    if (!$showHidden) {
+        // المقاسات المخفية (رصيدها صفر، صفحة المقاسات) لا تظهر إلا عند طلبها
+        $where[] = 'i.is_hidden = 0';
+    }
     $params = [];
     if ($q !== '') {
         $where[] = 't.name LIKE ?';

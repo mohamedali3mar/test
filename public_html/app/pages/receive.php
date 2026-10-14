@@ -48,7 +48,8 @@ if ($posted) {
     $form['request_token'] = refresh_token_if_needed($form, $errors);
 }
 
-$types = catalog_all($pdo, 'type');
+// الأنواع المخفية (صفحة المقاسات) لا تُعرض في نموذج الوارد
+$types = $pdo->query('SELECT id, name FROM wood_types WHERE is_hidden = 0 ORDER BY name, id')->fetchAll();
 $scope = allowed_branch_id($pdo);
 $warehouses = scoped_warehouses($pdo, $scope);
 $done = (int) input($_GET, 'done') > 0 ? find_document_scoped($pdo, (int) input($_GET, 'done')) : null;

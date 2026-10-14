@@ -41,7 +41,8 @@ function home_overview(PDO $pdo, ?int $scope, ?string $today = null): array
     $cancelled = (int) $stmt->fetchColumn();
 
     // المخزون في مخازن النطاق: مقاسات متاحة ونافدة والقطع والحجم
-    $whCond = $scope !== null ? ' WHERE s.warehouse_id IN (SELECT id FROM warehouses WHERE branch_id = ?)' : '';
+    // المقاسات المخفية (رصيدها صفر، صفحة المقاسات) لا تُحسب ضمن «مقاسات نافدة»
+    $whCond = ' WHERE i.is_hidden = 0' . ($scope !== null ? ' AND s.warehouse_id IN (SELECT id FROM warehouses WHERE branch_id = ?)' : '');
     $stmt = $pdo->prepare(
         'SELECT COUNT(*) AS items, COALESCE(SUM(CASE WHEN q > 0 THEN 1 ELSE 0 END), 0) AS sizes,
                 COALESCE(SUM(CASE WHEN q = 0 THEN 1 ELSE 0 END), 0) AS empty, COALESCE(SUM(q), 0) AS qty, COALESCE(SUM(vol), 0) AS volume

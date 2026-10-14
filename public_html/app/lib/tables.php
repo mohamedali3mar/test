@@ -268,6 +268,7 @@ function inventory_request(PDO $pdo, array $get): array
     $typeId = (int) input($get, 'type');
     $warehouseId = (int) input($get, 'warehouse');
     $hideEmpty = input($get, 'hide_empty') === '1';
+    $showHidden = input($get, 'show_hidden') === '1';
 
     $types = catalog_all($pdo, 'type');
     $typeNames = array_column($types, 'name', 'id');
@@ -287,15 +288,15 @@ function inventory_request(PDO $pdo, array $get): array
     if ($warehouseId > 0 && !isset($whNames[$warehouseId])) {
         $warehouseId = 0;
     }
-    $view = inventory_view($pdo, $q, $typeId, $warehouseId, $hideEmpty, $branchFilter);
+    $view = inventory_view($pdo, $q, $typeId, $warehouseId, $hideEmpty, $branchFilter, $showHidden);
     $sort = table_sort($get, INVENTORY_SORT);
     if ($sort !== null) {
         $view['groups'] = inventory_sorted_groups($view['groups'], $sort);
     }
-    $filtered = $q !== '' || $typeId > 0 || $warehouseId > 0 || $hideEmpty || ($scope === null && $branchFilter !== null);
+    $filtered = $q !== '' || $typeId > 0 || $warehouseId > 0 || $hideEmpty || $showHidden || ($scope === null && $branchFilter !== null);
     $query = array_filter([
         'r' => 'inventory', 'q' => $q, 'type' => $typeId ?: '', 'branch' => $scope === null && $branchFilter !== null ? $branchFilter : '',
-        'warehouse' => $warehouseId ?: '', 'hide_empty' => $hideEmpty ? '1' : '',
+        'warehouse' => $warehouseId ?: '', 'hide_empty' => $hideEmpty ? '1' : '', 'show_hidden' => $showHidden ? '1' : '',
     ], fn ($v) => $v !== '');
 
     $parts = [];
@@ -315,9 +316,12 @@ function inventory_request(PDO $pdo, array $get): array
     if ($hideEmpty) {
         $parts[] = 'بدون المقاسات النافدة';
     }
+    if ($showHidden) {
+        $parts[] = 'مع المقاسات المخفية';
+    }
 
     return [
-        'q' => $q, 'type' => $typeId, 'warehouse' => $warehouseId, 'hide_empty' => $hideEmpty,
+        'q' => $q, 'type' => $typeId, 'warehouse' => $warehouseId, 'hide_empty' => $hideEmpty, 'show_hidden' => $showHidden,
         'types' => $types, 'scope' => $scope, 'branches' => $branches, 'branch_names' => $branchNames,
         'branch' => $branchId, 'branch_filter' => $branchFilter, 'warehouses' => $warehouses, 'wh_names' => $whNames,
         'view' => $view, 'sort' => $sort, 'filtered' => $filtered, 'query' => $query,
