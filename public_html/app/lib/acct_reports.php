@@ -385,8 +385,10 @@ function acct_date_where(string $col, ?string $from, ?string $to): array
         $p[] = $from . ' 00:00:00';
     }
     if ($to !== null) {
-        $w[] = "{$col} < ?";
-        $p[] = (new DateTimeImmutable($to))->modify('+1 day')->format('Y-m-d 00:00:00');
+        // حتى آخر ثانية في يوم النهاية (أعمدة التاريخ DATETIME بدون كسور ثوانٍ). لا يُحسب «اليوم التالي»:
+        // لتاريخ 9999-12-31 يصبح سنة 10000 فلا يطابق أي صف وتظهر التقارير فارغة بدون تنبيه
+        $w[] = "{$col} <= ?";
+        $p[] = $to . ' 23:59:59';
     }
     return [$w, $p];
 }
