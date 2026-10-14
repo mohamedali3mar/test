@@ -61,8 +61,12 @@ function document_edit_problem(PDO $pdo, array $doc): ?string
         return can('documents.edit_own') ? 'تعدّل فقط المستندات التي سجلتها أنت اليوم. لتعديل غيرها راجع مدير النظام.'
             : 'ليست لديك صلاحية تعديل المستندات. راجع مدير النظام.';
     }
-    if (!document_cancellable($doc, allowed_branch_id($pdo))) {
+    $scope = allowed_branch_id($pdo);
+    if (!document_cancellable($doc, $scope)) {
         return 'لا يمكنك تعديل هذا المستند لأن أحد طرفيه في فرع آخر.';
+    }
+    if (($moved = document_moved_warehouse($pdo, $doc, $scope)) !== null) {
+        return sprintf('لا يمكنك تعديل هذا المستند لأن المخزن «%s» نُقل إلى فرع آخر بعد حفظه. اطلب تعديله من المدير (مستخدم يرى كل الفروع).', $moved);
     }
     if (!period_is_open((string) $doc['doc_date'])) {
         return sprintf('لا يمكن تعديل هذا المستند: تاريخه %s يقع في فترة مقفلة (حتى %s).',
