@@ -96,7 +96,7 @@ render_header('المراقبة', 'monitor');
   </div>
   <div class="field">
     <label for="q">بحث في التفاصيل</label>
-    <input type="search" id="q" name="q" value="<?= h($f['q']) ?>" maxlength="100" placeholder="عميل، مخزن، نوع، سبب">
+    <input type="search" id="q" name="q" value="<?= h($f['q']) ?>" maxlength="100" placeholder="عميل، مخزن، نوع، سبب، بتاريخ يدوي">
   </div>
   <div class="field">
     <label for="doc">رقم المستند</label>

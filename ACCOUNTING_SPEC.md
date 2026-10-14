@@ -4,7 +4,7 @@ Customer decisions (binding):
 - Phase 2 ships together with Phase 1.
 - Costing uses the **moving weighted average**.
 - Sale invoices are **cash, credit, or partial**, with the customer chosen from a list.
-- The document date is **automatic**. **Only an admin** may enter a past date, and it is audited.
+- The document date is **automatic**. **Only an admin** may enter a past date, and it is audited: the audit summary of the receipt, sale or voucher contains «بتاريخ يدوي <date>» (searchable in the monitor) and the details hold `doc_date` (or `voucher_date`) and the payment fields.
 
 Foundation already on the branch (do not redesign it, build on it):
 - `public_html/app/migrations/006_accounting.sql`: all accounting tables and columns. Do not add new migrations without the lead's approval.
@@ -25,6 +25,7 @@ Foundation already on the branch (do not redesign it, build on it):
    - For the party ledger, a positive amount increases what is owed. For a customer that is what the customer owes us; for a supplier, what we owe the supplier.
    - For the cash ledger, positive means money in and negative means money out.
    - A cash box can never go negative: `ledger_cash` throws a `ValidationException`, and the DB also has a CHECK.
+     A back-dated outflow (admin manual date) must also keep the running balance ≥ 0 at its own date and at every later entry (locked read of the later `cash_ledger` rows), so the cash statement never shows a negative day.
 4. **Cancellation:** never delete or update ledger rows. Call `reverse_ledgers()` with the cancellation date.
    - Lock the parties and cash boxes from `ledger_sources_of()` **before** reversing, in the lock order.
    - Cancellation is refused if the original doc date is in a closed period (`period_is_open`).
@@ -103,8 +104,8 @@ Review/confirm page shows customer, payment type, paid, remaining and new custom
 **Parties.** Route `parties&kind=customer|supplier`, with NAV labels «العملاء» / «الموردون».
 - **List:** name, phone, balance (`fmt_party_balance`), credit limit, status, and a link to the statement.
 - **Create** (staff may create): name with `name_key` uniqueness per kind, phone, address, notes, opening balance (≥ 0, with direction «عليه/له»), credit limit.
-- **Edit** (admin only): opening balance edits shift `balance` by the delta under the party row lock. Audited.
-- **Deactivate/activate** (admin): deactivate instead of delete. Delete is allowed only when there are no ledger rows and no documents.
+- **Edit** (admin only): opening balance edits shift `balance` by the delta under the party row lock. Audited. Refused while a closing date is set (the opening balance has no date, so it is inside every closed period); the admin clears the closing date, edits, then sets it again.
+- **Deactivate/activate** (admin): deactivate instead of delete. Delete is allowed only when there are no ledger rows and no documents. An inactive party cannot be used on a new invoice, but collect and pay still accept it to settle its balance: their party list (`parties_for_select(..., settle: true)`) also shows inactive parties with a non-zero balance, marked «(موقوف)».
 
 **Statement** `party_statement&id=N&from&to`:
 - An opening line: opening_balance + SUM(amount) before `from`.

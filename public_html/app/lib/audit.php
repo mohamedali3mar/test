@@ -208,6 +208,39 @@ function audit_lines_details(array $lines, bool $withPrice): array
     return $out;
 }
 
+/**
+ * يوم التاريخ اليدوي (Y-m-d) لمستند سجله المدير بتاريخ سابق، أو '' إذا كان بتاريخ اليوم.
+ * $pay من payment_fields(): date_key فارغ عندما يُترك التاريخ لليوم.
+ */
+function audit_manual_day(array $pay): string
+{
+    $day = (string) ($pay['date_key'] ?? '');
+    return $day !== '' && $day !== substr(now(), 0, 10) ? $day : '';
+}
+
+/** نص الملخص للتاريخ اليدوي (يُبحث عنه في المراقبة بعبارة «بتاريخ يدوي»)، أو '' */
+function audit_manual_phrase(array $pay): string
+{
+    $day = audit_manual_day($pay);
+    return $day === '' ? '' : '، بتاريخ يدوي ' . digits($day);
+}
+
+/** تاريخ المستند وتفاصيل الدفع للتفاصيل (مثل السندات التي تسجل تاريخها) */
+function audit_payment_details(array $pay): array
+{
+    return [
+        'doc_date' => (string) $pay['doc_date'],
+        'manual_date' => audit_manual_day($pay) !== '',
+        'payment_type' => $pay['payment_type'],
+        'total' => $pay['total'] !== null ? piasters_to_money((int) $pay['total']) : null,
+        'paid' => piasters_to_money((int) $pay['paid']),
+        'remaining' => piasters_to_money((int) $pay['remaining']),
+        'party_id' => $pay['party'] ? (int) $pay['party']['id'] : null,
+        'cash_box_id' => $pay['cash_box'] ? (int) $pay['cash_box']['id'] : null,
+        'cash_box' => $pay['cash_box']['name'] ?? null,
+    ];
+}
+
 /** $v من validate_receipt() */
 function audit_receipt(PDO $pdo, int $docId, int $docNo, array $v): void
 {
@@ -217,6 +250,7 @@ function audit_receipt(PDO $pdo, int $docId, int $docNo, array $v): void
         'width_unit' => $d['width']['unit'], 'thickness_unit' => $d['thickness']['unit'], 'length_unit' => $d['length']['unit'],
     ]);
     $summary = sprintf('%s إلى %s: %s، %s، %s قطعة', audit_doc_name('in', $docNo), $v['warehouse']['name'], $v['type']['name'], $size, fmt_int($v['quantity']));
+    $summary .= audit_manual_phrase($v['pay']);
     if ($v['party_name'] !== '') {
         $summary .= '، المورد: ' . $v['party_name'];
     }
@@ -226,7 +260,8 @@ function audit_receipt(PDO $pdo, int $docId, int $docNo, array $v): void
         'wood_type' => $v['type']['name'], 'size' => $size,
         'quantity' => $v['quantity'], 'volume_m3' => Num::trimDecimal($v['total_m3']),
         'supplier' => $v['party_name'], 'reference' => $v['reference'],
-    ]);
+        'cost_per_m3' => $v['cost_piasters'] !== null ? piasters_to_money((int) $v['cost_piasters']) : null,
+    ] + audit_payment_details($v['pay']));
 }
 
 /** $v من validate_sale() */
@@ -239,6 +274,7 @@ function audit_sale(PDO $pdo, int $docId, int $docNo, array $v, string $currency
         audit_items_phrase(count($v['lines'])),
         fmt_money_currency($v['total_amount'], $currency)
     );
+    $summary .= audit_manual_phrase($v['pay']);
     if ($v['party_name'] !== '') {
         $summary .= '، العميل: ' . $v['party_name'];
     }
@@ -249,7 +285,7 @@ function audit_sale(PDO $pdo, int $docId, int $docNo, array $v, string $currency
         'line_count' => count($v['lines']), 'total_qty' => $v['total_qty'], 'total_volume_m3' => Num::trimDecimal($v['total_m3']),
         'total_amount' => $v['total_amount'], 'currency' => $currency,
         'lines' => audit_lines_details($v['lines'], true),
-    ]);
+    ] + audit_payment_details($v['pay']));
 }
 
 /** $v من validate_transfer() */

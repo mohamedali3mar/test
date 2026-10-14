@@ -308,6 +308,25 @@ check_eq('  النتيجة', ['item_id' => $i9, 'qty' => 4, 'value' => 291600], 
 expect_validation('التقييم مرة ثانية مرفوض (القيمة ليست صفرًا)', fn () => set_opening_valuation($pdo, $uid, $i9, '5000'));
 expect_validation('تكلفة صفر مرفوضة', fn () => set_opening_valuation($pdo, $uid, $dd, '0'));
 
+section('وارد نقدي بتاريخ سابق: يجب أن يكفي رصيد الخزنة في ذلك التاريخ');
+$nb = cash_box_create($pdo, $uid, 'خزنة الوارد القديم', '');
+record_receipt($pdo, $uid, receipt_input($wh1, $type, '13', 'cm', '17', 'mm', '2', 'm', '5', ['cost_per_m3' => '1000', 'party_id' => (string) $s1, 'payment_type' => 'credit']));
+$bi = item_id_for($pdo, $type, 130000, 17000, 2000000); // القطعة 0.00442 م³
+record_sale($pdo, $uid, sale_input($wh1, [[$bi, 1, '100000']], ['payment_type' => 'cash', 'cash_box_id' => (string) $nb]));
+check_eq('الخزنة الجديدة 442.00 من بيع اليوم', 44200, cash_balance($pdo, $nb));
+$inNo = (int) $pdo->query("SELECT value FROM counters WHERE name = 'doc_in'")->fetchColumn();
+$bdPast = date('Y-m-d', time() - 86400 * 3);
+$e = expect_validation('وارد نقدي بتاريخ قبل 3 أيام والخزنة كانت فارغة وقتها مرفوض',
+    fn () => record_receipt($pdo, $uid, receipt_input($wh1, $type, '13', 'cm', '17', 'mm', '2', 'm', '1',
+        ['cost_per_m3' => '1000', 'payment_type' => 'cash', 'cash_box_id' => (string) $nb, 'doc_date' => $bdPast])));
+check('  الخطأ على الخزنة ويذكر التاريخ', str_contains($e['cash_box_id'] ?? '', 'لا يكفي') && str_contains($e['cash_box_id'] ?? '', digits($bdPast)), json_encode($e, JSON_UNESCAPED_UNICODE));
+check_eq('  لم يُسجل شيء: الخزنة والرصيد والعداد كما هي', [44200, 4, $inNo],
+    [cash_balance($pdo, $nb), item_q($pdo, $bi), (int) $pdo->query("SELECT value FROM counters WHERE name = 'doc_in'")->fetchColumn()]);
+$okIn = record_receipt($pdo, $uid, receipt_input($wh1, $type, '13', 'cm', '17', 'mm', '2', 'm', '1',
+    ['cost_per_m3' => '1000', 'payment_type' => 'cash', 'cash_box_id' => (string) $nb]));
+check('نفس الوارد بتاريخ اليوم مقبول', $okIn['id'] > 0 && !$okIn['duplicate']);
+check_eq('  الخزنة 442.00 − 4.42 = 437.58', 43758, cash_balance($pdo, $nb));
+
 section('سلامة الأرصدة');
 check_eq('acct_verify_balances() = []', [], acct_verify_balances($pdo));
 $neg = (int) $pdo->query('SELECT COUNT(*) FROM items WHERE inventory_value < 0')->fetchColumn();

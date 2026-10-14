@@ -133,7 +133,11 @@ render_header($title, 'parties');
 <section class="section" aria-labelledby="edit-title">
   <h2 id="edit-title">تعديل <?= h($noun) ?> «<?= h($editRow['name']) ?>»</h2>
   <?= errors_summary($errors) ?>
+  <?php if (closing_date() !== ''): ?>
+  <p class="muted"><?= h(party_opening_locked_message(closing_date())) ?> ويمكن تعديل باقي البيانات الآن.</p>
+  <?php else: ?>
   <p class="muted">تغيير الرصيد الافتتاحي يغير الرصيد الحالي بنفس الفرق، ويُسجل في سجل المراقبة.</p>
+  <?php endif; ?>
   <form method="post" action="<?= h(url('parties', $self + ['edit' => (int) $editRow['id']])) ?>" class="form" novalidate>
     <?= csrf_field() ?>
     <input type="hidden" name="action" value="update">

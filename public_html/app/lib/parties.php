@@ -167,7 +167,17 @@ function party_create(PDO $pdo, int $userId, string $kind, array $in): int
     }
 }
 
-/** تعديل بيانات الطرف (للمدير). تغيير الافتتاحي يحرك الرصيد بنفس الفرق. */
+/** سبب رفض تغيير الرصيد الافتتاحي بعد تحديد تاريخ إقفال، مع طريقة المدير لتغييره */
+function party_opening_locked_message(string $closing): string
+{
+    return sprintf(
+        'لا يمكن تغيير الرصيد الافتتاحي لأن تاريخ الإقفال محدد (حتى %s)، والرصيد الافتتاحي يدخل في كل الفترات المقفلة فيغير أرقامها. '
+        . 'لتغييره: يحذف المدير تاريخ الإقفال من الإعدادات مؤقتًا، ثم يعدّل الرصيد، ثم يعيد تاريخ الإقفال.',
+        digits($closing)
+    );
+}
+
+/** تعديل بيانات الطرف (للمدير). تغيير الافتتاحي يحرك الرصيد بنفس الفرق، ويُرفض بعد تحديد تاريخ إقفال. */
 function party_update(PDO $pdo, int $userId, int $id, array $in): void
 {
     if (!acct_can('parties.manage')) {
@@ -179,8 +189,10 @@ function party_update(PDO $pdo, int $userId, int $id, array $in): void
     }
     $kind = $row['kind'];
     $v = party_validate($kind, $in);
+    // تاريخ الإقفال يُقرأ قبل المعاملة (لا قراءة غير مقفلة داخلها)
+    $closing = closing_date();
     try {
-        db_transaction($pdo, function (PDO $pdo) use ($id, $kind, $v) {
+        db_transaction($pdo, function (PDO $pdo) use ($id, $kind, $v, $closing) {
             $stmt = $pdo->prepare('SELECT id, kind, name, opening_balance, balance FROM parties WHERE id = ? FOR UPDATE');
             $stmt->execute([$id]);
             $old = $stmt->fetch();
@@ -188,6 +200,10 @@ function party_update(PDO $pdo, int $userId, int $id, array $in): void
                 throw new ValidationException(['form' => 'الحساب غير موجود.']);
             }
             $delta = $v['opening'] - money_to_piasters($old['opening_balance']);
+            // الرصيد الافتتاحي بلا تاريخ، فيدخل في كل فترة؛ تغييره بعد الإقفال يغير أرقام فترات سُلّمت
+            if ($delta !== 0 && $closing !== '') {
+                throw new ValidationException(['opening_balance' => party_opening_locked_message($closing)]);
+            }
             $pdo->prepare('UPDATE parties SET name = ?, name_key = ?, phone = ?, address = ?, notes = ?,
                     opening_balance = ?, balance = balance + ?, credit_limit = ? WHERE id = ?')
                 ->execute([$v['name'], $v['name_key'], $v['phone'], $v['address'], $v['notes'],
