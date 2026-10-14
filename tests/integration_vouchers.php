@@ -196,8 +196,29 @@ $errs = expect_validation('إلغاء سند تاريخه في فترة مقفل
 check('  رسالة الفترة المقفلة', str_contains($errs['voucher'] ?? '', 'مقفلة'));
 check_eq('  السند ما زال ساريًا', 'active', find_voucher($pdo, $old['id'])['status']);
 expect_validation('تسجيل سند بتاريخ في فترة مقفلة مرفوض', fn () => record_voucher($pdo, $uid, 'expense', vin(['category_id' => (string) $rent, 'cash_box_id' => (string) $box, 'amount' => '1', 'notes' => 'x', 'voucher_date' => day_offset(-3)])));
+
+section('الرصيد الافتتاحي لا يتغير بعد الإقفال (يغير أرقام الفترات المقفلة)');
+$lockedParty = party_create($pdo, $uid, 'customer', ['name' => 'عميل فترة مقفلة', 'phone' => '0123', 'opening_balance' => '1000', 'opening_direction' => 'owes_us']);
+$closedBefore = party_statement($pdo, $lockedParty, null, day_offset(-3))['closing'];
+$auditBefore = (int) $pdo->query("SELECT COUNT(*) FROM audit_log WHERE action = 'party.update'")->fetchColumn();
+$errs = expect_validation('تغيير الرصيد الافتتاحي بعد تحديد تاريخ الإقفال مرفوض',
+    fn () => party_update($pdo, $uid, $lockedParty, ['name' => 'عميل فترة مقفلة', 'phone' => '0123', 'opening_balance' => '7000', 'opening_direction' => 'owes_us']));
+check('  الرسالة تذكر تاريخ الإقفال وطريقة المدير', str_contains($errs['opening_balance'] ?? '', 'تاريخ الإقفال')
+    && str_contains($errs['opening_balance'] ?? '', 'المدير') && str_contains($errs['opening_balance'] ?? '', 'الإعدادات'), json_encode($errs, JSON_UNESCAPED_UNICODE));
+check_eq('  الافتتاحي والرصيد لم يتغيرا', ['1000.00', 100000], [(string) party_find($pdo, $lockedParty)['opening_balance'], party_balance($pdo, $lockedParty)]);
+check_eq('  ختامي كشف الفترة المقفلة لم يتغير', $closedBefore, party_statement($pdo, $lockedParty, null, day_offset(-3))['closing']);
+check_eq('  لا شيء في المراقبة', $auditBefore, (int) $pdo->query("SELECT COUNT(*) FROM audit_log WHERE action = 'party.update'")->fetchColumn());
+expect_validation('  واتجاه معكوس بنفس المبلغ مرفوض أيضًا',
+    fn () => party_update($pdo, $uid, $lockedParty, ['name' => 'عميل فترة مقفلة', 'opening_balance' => '1000', 'opening_direction' => 'we_owe']));
+party_update($pdo, $uid, $lockedParty, ['name' => 'عميل فترة مقفلة المعدل', 'phone' => '0999', 'opening_balance' => '1000.00', 'opening_direction' => 'owes_us']);
+check_eq('تعديل باقي البيانات بنفس الافتتاحي مقبول بعد الإقفال', ['عميل فترة مقفلة المعدل', '0999', 100000],
+    [party_find($pdo, $lockedParty)['name'], party_find($pdo, $lockedParty)['phone'], party_balance($pdo, $lockedParty)]);
+// طريقة المدير: يحذف تاريخ الإقفال مؤقتًا، ثم يعدل الرصيد، ثم يعيد التاريخ
 save_setting($pdo, 'closing_date', '');
 reset_settings_cache();
+party_update($pdo, $uid, $lockedParty, ['name' => 'عميل فترة مقفلة المعدل', 'opening_balance' => '7000', 'opening_direction' => 'owes_us']);
+check_eq('بعد حذف تاريخ الإقفال يقبل المدير تغيير الافتتاحي', 700000, party_balance($pdo, $lockedParty));
+check_eq('  فحص السلامة', [], acct_verify_balances($pdo));
 
 section('الترقيم المتتالي لكل نوع');
 foreach (array_keys(VOUCHER_COUNTERS) as $k) {
