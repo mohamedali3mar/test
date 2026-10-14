@@ -197,7 +197,7 @@ html.js [data-nojs-only] { display: none; }
 .payment-type label { display: inline-flex; align-items: center; gap: 8px; min-height: 40px; margin: 0 0 0 24px; font-weight: 400; font-size: var(--fs-16); cursor: pointer; }
 .payment-type input[type="radio"] { width: 20px; height: 20px; margin: 0; accent-color: var(--primary); }
 
-input[type="text"], input[type="password"], input[type="search"], input[type="date"], select, textarea {
+input[type="text"], input[type="password"], input[type="search"], input[type="date"], input[type="tel"], select, textarea {
   width: 100%; min-height: 40px; padding: 4px 12px; background: var(--surface);
   border: 1px solid var(--border); border-radius: var(--radius); text-align: right; direction: rtl;
 }
@@ -357,7 +357,7 @@ td.audit-device { min-width: 140px; }
 
   /* اللمس: 44 بكسل لكل عنصر قابل للضغط، وخط 16 في الحقول حتى لا يكبّر iOS الصفحة */
   .btn { min-height: 44px; }
-  input[type="text"], input[type="password"], input[type="search"], input[type="date"], select, textarea {
+  input[type="text"], input[type="password"], input[type="search"], input[type="date"], input[type="tel"], select, textarea {
     min-height: 44px; font-size: var(--fs-16);
   }
   .field-check { min-height: 44px; }
@@ -512,7 +512,8 @@ th.align-end, td.align-end { text-align: end; }
 .row-child th { padding-inline-start: 32px; font-weight: 400; }
 .print-branch { font-size: var(--fs-16); font-weight: 600; margin: 4px 0 0; }
 .print-branch-contact { display: flex; flex-wrap: wrap; gap: 4px 24px; font-size: var(--fs-14); color: var(--text-2); margin: 4px 0 8px; }
-input.input-ltr { direction: ltr; text-align: right; }
+/* الهاتف من اليسار لليمين حتى لا تنقلب مجموعات أرقامه أثناء الكتابة، ومحاذاته يمين مثل باقي الحقول */
+input.input-ltr, input[type="tel"] { direction: ltr; text-align: right; }
 .actions-nowrap { flex-wrap: nowrap; white-space: nowrap; }
 
 /* كل جداول البيانات على A4 (المخزون والسجل والتقارير والمراقبة): الخانات وعناوين الأعمدة تلتف بين الكلمات
