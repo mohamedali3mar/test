@@ -438,6 +438,27 @@ section('تعديل فاتورة بيع: إلغاء الأصلية وتسجيل 
   check('الفاتورة الأصلية بلا زر تعديل ومعها رابط البديلة', (await page.locator('a.btn:has-text("تعديل")').count()) === 0 && (await page.locator('.alert:has-text("الساري الآن")').count()) === 1);
 }
 
+section('تعديل سند مصروف');
+{
+  await page.goto(BASE + 'index.php?r=expense');
+  await page.selectOption('#category_id', { index: 1 });
+  await page.fill('#amount', '100');
+  await page.fill('#notes', 'إيجار الشهر');
+  await page.click('button:has-text("حفظ مصروف")');
+  await page.waitForURL(/r=voucher&id=/);
+  const vId = new URL(page.url()).searchParams.get('id');
+  check('زر «تعديل» في صفحة السند', (await page.locator('a.btn:has-text("تعديل")').count()) === 1);
+  await page.click('a.btn:has-text("تعديل")');
+  check('نموذج التعديل بالمبلغ الأصلي وتنبيهه', (await page.inputValue('#amount')) === '100' && (await page.locator('.alert-warning:has-text("يُلغى السند الأصلي")').count()) === 1);
+  await page.fill('#amount', '150');
+  await page.click('button:has-text("حفظ التعديل")');
+  await page.waitForURL(/r=voucher&id=/);
+  const nId = new URL(page.url()).searchParams.get('id');
+  check('بعد الحفظ: السند البديل مع رابط الأصلي', nId !== vId && (await page.locator('.alert:has-text("هذا السند بدل")').count()) === 1);
+  check('  الأصلي ملغى ومربوط والبديل 150.00', sql(`SELECT CONCAT(status, ':', replaced_by_id) FROM vouchers WHERE id=${vId}`) === 'cancelled:' + nId
+    && sql(`SELECT amount FROM vouchers WHERE id=${nId}`) === '150.00');
+}
+
 section('المقاسات: صفحة الإخفاء والوحدات');
 {
   await page.goto(BASE + 'index.php?r=items');

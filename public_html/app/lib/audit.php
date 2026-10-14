@@ -32,6 +32,7 @@ const AUDIT_ACTIONS = [
     'doc.edit'            => ['تعديل مستند', 'documents'],
     'doc.cancel'          => ['إلغاء مستند', 'cancel'],
     'voucher.cancel'      => ['إلغاء سند', 'cancel'],
+    'voucher.edit'        => ['تعديل سند', 'accounts'],
     'type.create'         => ['إضافة نوع خشب', 'master'],
     'type.rename'         => ['تعديل اسم نوع', 'master'],
     'type.delete'         => ['حذف نوع خشب', 'master'],

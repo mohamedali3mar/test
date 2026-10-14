@@ -17,24 +17,55 @@ $warning = '';
 $form = array_fill_keys($fields, '');
 $form['party_id'] = input($_GET, 'party');
 $form['request_token'] = new_request_token();
+$posted = $_SERVER['REQUEST_METHOD'] === 'POST';
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+// تعديل سند محفوظ (?edit=): النموذج يبدأ ببياناته، والحفظ يلغيه ويسجل البديل في خطوة واحدة (lib/doc_edit.php)
+$editId = (int) ($posted ? input($_POST, 'edit_id') : input($_GET, 'edit'));
+$editVoucher = null;
+if ($editId > 0) {
+    $editVoucher = find_voucher($pdo, $editId);
+    if (!$editVoucher || $editVoucher['kind'] !== $kind) {
+        render_simple_error('السند المطلوب تعديله غير موجود.', 404);
+    }
+    if (!$posted && ($problem = voucher_edit_problem($editVoucher))) {
+        flash('error', $problem);
+        redirect('voucher', ['id' => $editId]);
+    }
+    if (!$posted) {
+        $form = voucher_edit_form($editVoucher) + $form;
+    }
+}
+
+if ($posted) {
     verify_csrf();
     acct_require(VOUCHER_PERMISSIONS[$kind]);
     $form = string_inputs($_POST, $fields);
+    $form['edit_reason'] = input($_POST, 'edit_reason');
     // القبض أكبر من رصيد العميل مسموح (دفعة مقدمة)، لكن بعد تنبيه وتأكيد صريح
     if ($kind === 'collect' && $form['confirm_advance'] !== '1') {
         $p = party_find($pdo, (int) $form['party_id']);
         [$amt] = parse_money_input($form['amount'], 'المبلغ');
-        if ($p && $p['kind'] === 'customer' && $amt !== null && $amt > money_to_piasters($p['balance'])) {
+        // عند تعديل سند قبض لنفس العميل: رصيده بعد رد السند الأصلي
+        $bal = $p ? money_to_piasters($p['balance']) : 0;
+        if ($p && $editVoucher && (int) $editVoucher['party_id'] === (int) $p['id']) {
+            $bal += money_to_piasters($editVoucher['amount']);
+        }
+        if ($p && $p['kind'] === 'customer' && $amt !== null && $amt > $bal) {
             $warning = sprintf(
                 'المبلغ %s أكبر من رصيد العميل «%s» (%s). الزيادة تُسجل دفعة مقدمة ويصبح له رصيد. ضع علامة التأكيد ثم احفظ.',
-                fmt_piasters($amt), $p['name'], fmt_party_balance(money_to_piasters($p['balance']), 'customer')
+                fmt_piasters($amt), $p['name'], fmt_party_balance($bal, 'customer')
             );
         }
     }
     if ($warning === '') {
         try {
+            if ($editVoucher) {
+                $r = voucher_replace($pdo, current_user_id(), $editId, $form, $form['edit_reason']);
+                flash($r['duplicate'] ? 'warning' : 'success', $r['duplicate']
+                    ? sprintf('هذا التعديل سُجل من قبل (%s).', voucher_label($r))
+                    : sprintf('تم تعديل %s: أُلغي وسُجل بدلًا منه %s، وضُبطت الأرصدة.', voucher_label($editVoucher), voucher_label($r)));
+                redirect('voucher', ['id' => $r['id']]);
+            }
             $r = record_voucher($pdo, current_user_id(), $kind, $form);
             flash('success', $r['duplicate']
                 ? sprintf('هذا السند محفوظ سابقًا: %s. لم يُسجل مرة أخرى.', voucher_label($r))
@@ -65,15 +96,18 @@ foreach ($parties as $p) {
     }
 }
 
-render_header($title, $kind);
+render_header($editVoucher ? 'تعديل ' . voucher_label($editVoucher) : $title, $kind);
 ?>
 <div class="page-head">
-  <h1><?= h($title) ?></h1>
+  <h1><?= $editVoucher ? 'تعديل ' . h(voucher_label($editVoucher)) : h($title) ?></h1>
   <div class="page-actions">
     <a class="btn btn-quiet" href="<?= h(url('vouchers', ['kind' => $kind])) ?>">سجل السندات</a>
   </div>
 </div>
 
+<?php if ($editVoucher): ?>
+  <div class="alert alert-warning" role="status">تعديل <?= h(voucher_label($editVoucher)) ?>: عند الحفظ يُلغى السند الأصلي بقيود عكسية ويُسجل هذا بدلًا منه برقم جديد، في خطوة واحدة. الأصلي يبقى في السجل بحالة «ملغى». <a href="<?= h(url('voucher', ['id' => $editId])) ?>">تراجع عن التعديل</a></div>
+<?php endif; ?>
 <?= errors_summary($errors) ?>
 <?php if ($warning !== ''): ?>
   <div class="alert alert-warning" role="alert"><?= h($warning) ?></div>
@@ -168,11 +202,20 @@ render_header($title, $kind);
     <textarea id="notes" name="notes" maxlength="1000" rows="2"<?= $kind === 'expense' ? ' required' : '' ?><?= field_attrs($errors, 'notes') ?>><?= h($form['notes']) ?></textarea>
     <?= field_error($errors, 'notes') ?>
   </div>
+  <?php if ($editVoucher): ?>
+    <input type="hidden" name="edit_id" value="<?= (int) $editId ?>">
+    <?php if (!acct_can('manual_date')): ?><input type="hidden" name="voucher_date" value="<?= h($form['voucher_date']) ?>"><?php endif; ?>
+    <div class="field">
+      <label for="edit_reason">سبب التعديل <span class="optional">(اختياري، يظهر في المراقبة)</span></label>
+      <input type="text" id="edit_reason" name="edit_reason" maxlength="200" value="<?= h((string) ($form['edit_reason'] ?? '')) ?>"<?= field_attrs($errors, 'edit_reason') ?>>
+      <?= field_error($errors, 'edit_reason') ?>
+    </div>
+  <?php endif; ?>
   <?= field_error($errors, 'request_token') ?>
   <?= field_error($errors, 'form') ?>
 
   <div class="actions">
-    <button type="submit" class="btn <?= h(action_btn_class($kind)) ?>" data-busy-text="جارٍ الحفظ"><?= icon($kind) ?>حفظ <?= h(VOUCHER_KIND_LABELS[$kind]) ?></button>
+    <button type="submit" class="btn <?= h(action_btn_class($kind)) ?>" data-busy-text="جارٍ الحفظ"><?= icon($kind) ?><?= $editVoucher ? 'حفظ التعديل' : 'حفظ ' . h(VOUCHER_KIND_LABELS[$kind]) ?></button>
   </div>
 </form>
 <?php endif; ?>

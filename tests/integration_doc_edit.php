@@ -148,6 +148,41 @@ check_eq('  القيود العكسية بتاريخ الشراء الأصلي،
 check_eq('  والخزنة بقي فيها 30.00', 3000, money_to_piasters((string) $q("SELECT balance FROM cash_boxes WHERE id = $box2")));
 check_eq('  ولا اختلاف في الأرصدة', [], acct_verify_balances($pdo));
 
+section('تعديل السندات: قبض ومصروف');
+$as($admin);
+$cashBox = cash_box_create($pdo, $admin, 'خزنة السندات', '1000');
+$custV = party_create($pdo, $admin, 'customer', ['name' => 'عميل السندات', 'opening_balance' => '500', 'opening_direction' => 'owes_us']);
+$vin = fn (array $f) => $f + ['reference' => '', 'notes' => '', 'request_token' => new_request_token()];
+$col = record_voucher($pdo, $admin, 'collect', $vin(['party_id' => (string) $custV, 'cash_box_id' => (string) $cashBox, 'amount' => '200']));
+$vrow = fn (int $id) => $pdo->query("SELECT * FROM vouchers WHERE id = $id")->fetch();
+check_eq('قبل التعديل: العميل عليه 300.00 والخزنة 1200.00', [30000, 120000], [party_balance($pdo, $custV), money_to_piasters((string) $q("SELECT balance FROM cash_boxes WHERE id = $cashBox"))]);
+$vf = voucher_edit_form(find_voucher($pdo, $col['id']));
+check_eq('نموذج تعديل السند يحمل بياناته', [(string) $custV, (string) $cashBox, '200'], [$vf['party_id'], $vf['cash_box_id'], $vf['amount']]);
+$vf['amount'] = '250';
+$nv = voucher_replace($pdo, $admin, $col['id'], $vf, 'خطأ في المبلغ');
+check('السند الأصلي ملغى ومربوط بالبديل', $vrow($col['id'])['status'] === 'cancelled' && (int) $vrow($col['id'])['replaced_by_id'] === $nv['id']
+    && (int) $vrow($nv['id'])['replaces_id'] === $col['id']);
+check_eq('بعد التعديل: العميل عليه 250.00 والخزنة 1250.00', [25000, 125000], [party_balance($pdo, $custV), money_to_piasters((string) $q("SELECT balance FROM cash_boxes WHERE id = $cashBox"))]);
+check('  والتعديل في المراقبة', (int) $q("SELECT COUNT(*) FROM audit_log WHERE action = 'voucher.edit'") === 1);
+check_eq('  ولا اختلاف في الأرصدة', [], acct_verify_balances($pdo));
+$dupV = voucher_replace($pdo, $admin, $col['id'], $vf, '');
+check('إعادة إرسال تعديل السند لا تكرر شيئًا', $dupV['duplicate'] === true && party_balance($pdo, $custV) === 25000);
+$vf2 = voucher_edit_form(find_voucher($pdo, $nv['id']));
+$vf2['cash_box_id'] = '999999';
+expect_validation('خزنة غير صالحة: لا يتغير شيء', fn () => voucher_replace($pdo, $admin, $nv['id'], $vf2, ''));
+check('  والسند البديل ما زال ساريًا', $vrow($nv['id'])['status'] === 'active' && party_balance($pdo, $custV) === 25000);
+
+$staffV = user_create($pdo, $admin, ['display_name' => 'محصل', 'username' => 'staff_vouch', 'role' => 'staff', 'password' => 'Staff-Pass-002', 'password_confirm' => 'Staff-Pass-002']);
+user_set_permissions($pdo, $admin, $staffV, ['vouchers.view', 'vouchers.collect', 'parties.view', 'statements.view', 'vouchers.edit_own', 'vouchers.cancel_own']);
+$as($staffV);
+$own = record_voucher($pdo, $staffV, 'collect', $vin(['party_id' => (string) $custV, 'cash_box_id' => (string) $cashBox, 'amount' => '10']));
+check('الموظف يعدل ويلغي سنده اليوم', voucher_edit_problem(find_voucher($pdo, $own['id'])) === null && voucher_cancel_permitted(find_voucher($pdo, $own['id'])));
+check('  ولا يعدل ولا يلغي سند غيره', voucher_edit_problem(find_voucher($pdo, $nv['id'])) !== null && !voucher_cancel_permitted(find_voucher($pdo, $nv['id'])));
+expect_validation('  وطلب إلغاء مباشر لسند غيره مرفوض', fn () => cancel_voucher($pdo, $staffV, $nv['id'], ''));
+cancel_voucher($pdo, $staffV, $own['id'], 'خطأ');
+check('  وإلغاء سنده نجح', $vrow($own['id'])['status'] === 'cancelled');
+$as($admin);
+
 section('الفترة المقفلة');
 $as($admin);
 save_setting($pdo, 'closing_date', date('Y-m-d', strtotime('-2 days')));

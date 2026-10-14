@@ -255,16 +255,35 @@ function record_voucher(PDO $pdo, int $userId, string $kind, array $in): array
  * يلغي السند بقيود عكسية بتاريخ الإلغاء، ويبقى السند في السجل بحالة «ملغى».
  * يُرفض إذا كان تاريخ السند في فترة مقفلة، أو إذا لم يكفِ رصيد الخزنة لعكس مبلغ دخلها.
  */
-function cancel_voucher(PDO $pdo, int $userId, int $id, string $reasonRaw): array
+/** هل يستطيع المستخدم الحالي إلغاء هذا السند: vouchers.cancel لأي سند، أو vouchers.cancel_own لسنده اليوم */
+function voucher_cancel_permitted(array $v): bool
 {
-    if (!acct_can('vouchers.cancel')) {
-        throw acct_denied('إلغاء السندات');
+    return acct_can('vouchers.cancel') || (acct_can('vouchers.cancel_own') && voucher_owned_today($v));
+}
+
+/** هل سجّل المستخدم الحالي هذا السند اليوم؟ */
+function voucher_owned_today(array $v): bool
+{
+    return (int) $v['created_by'] === current_user_id() && substr((string) $v['created_at'], 0, 10) === date('Y-m-d');
+}
+
+/**
+ * يلغي سندًا بقيود عكسية. $reversalDate: تاريخ القيود العكسية (الافتراضي وقت الإلغاء)، وتعديل السند يمرر
+ * تاريخ الأصلي. $permissionChecked: تعديل السند يفحص صلاحية التعديل بنفسه (voucher_replace).
+ */
+function cancel_voucher(PDO $pdo, int $userId, int $id, string $reasonRaw, ?string $reversalDate = null, bool $permissionChecked = false): array
+{
+    if (!$permissionChecked) {
+        $pre = find_voucher($pdo, $id);
+        if (!$pre || !voucher_cancel_permitted($pre)) {
+            throw acct_denied('إلغاء السندات');
+        }
     }
     $reason = clean_text($reasonRaw);
     if (mb_strlen($reason) > 255) {
         throw new ValidationException(['reason' => 'سبب الإلغاء أطول من المسموح (' . fmt_int(255) . ' حرفًا).']);
     }
-    return db_transaction($pdo, function (PDO $pdo) use ($userId, $id, $reason) {
+    return db_transaction($pdo, function (PDO $pdo) use ($userId, $id, $reason, $reversalDate) {
         $stmt = $pdo->prepare('SELECT * FROM vouchers WHERE id = ? FOR UPDATE');
         $stmt->execute([$id]);
         $v = $stmt->fetch();
@@ -292,7 +311,7 @@ function cancel_voucher(PDO $pdo, int $userId, int $id, string $reasonRaw): arra
         lock_cash_boxes($pdo, $src['cash_boxes'], false);
         $label = VOUCHER_KIND_LABELS[$v['kind']] . ' رقم ' . $v['doc_no'];
         try {
-            reverse_ledgers($pdo, 'voucher', $id, $now, 'إلغاء ' . $label);
+            reverse_ledgers($pdo, 'voucher', $id, $reversalDate ?? $now, 'إلغاء ' . $label);
         } catch (ValidationException $e) {
             throw new ValidationException(['voucher' => 'لا يمكن إلغاء السند: ' . implode(' ', $e->errors)]);
         }

@@ -297,3 +297,98 @@ function document_edit_stock_script(PDO $pdo, array $old): string
     return '<script type="application/json" id="edit-stock-back">'
         . json_for_script(['wh' => (string) $old['warehouse_id'], 'items' => (object) $back]) . '</script>';
 }
+
+/* ===================== تعديل السندات ===================== */
+
+/** هل يملك المستخدم الحالي صلاحية تعديل هذا السند (وتسجيل نوعه)؟ */
+function voucher_edit_permitted(array $v): bool
+{
+    return acct_can(VOUCHER_PERMISSIONS[$v['kind']])
+        && (acct_can('vouchers.edit') || (acct_can('vouchers.edit_own') && voucher_owned_today($v)));
+}
+
+/** سبب منع تعديل السند الآن، أو null */
+function voucher_edit_problem(array $v): ?string
+{
+    if ($v['status'] !== 'active') {
+        return 'هذا السند ملغى، فلا يُعدل.';
+    }
+    if (!voucher_edit_permitted($v)) {
+        return acct_can('vouchers.edit_own') ? 'تعدّل فقط السندات التي سجلتها أنت اليوم. لتعديل غيرها راجع مدير النظام.'
+            : 'ليست لديك صلاحية تعديل السندات. راجع مدير النظام.';
+    }
+    if (!period_is_open((string) $v['voucher_date'])) {
+        return sprintf('لا يمكن تعديل هذا السند: تاريخه %s يقع في فترة مقفلة (حتى %s).',
+            digits(substr((string) $v['voucher_date'], 0, 10)), digits(closing_date()));
+    }
+    return null;
+}
+
+/** قيم نموذج السند من السند الأصلي */
+function voucher_edit_form(array $v): array
+{
+    $date = substr((string) $v['voucher_date'], 0, 10);
+    return [
+        'party_id' => $v['party_id'] !== null ? (string) $v['party_id'] : '',
+        'cash_box_id' => (string) $v['cash_box_id'],
+        'to_cash_box_id' => $v['to_cash_box_id'] !== null ? (string) $v['to_cash_box_id'] : '',
+        'category_id' => $v['category_id'] !== null ? (string) $v['category_id'] : '',
+        'amount' => doc_edit_number((string) $v['amount']),
+        'reference' => (string) ($v['reference'] ?? ''),
+        'notes' => (string) ($v['notes'] ?? ''),
+        'voucher_date' => $date === date('Y-m-d') ? '' : $date,
+        'request_token' => new_request_token(),
+        'confirm_advance' => '',
+        'edit_id' => (string) $v['id'],
+        'edit_reason' => '',
+    ];
+}
+
+/**
+ * يعدّل سندًا: يلغي الأصلي (قيود عكسية بتاريخه) ويسجل البديل بنفس النوع في معاملة واحدة، ويربط بينهما.
+ * @return array{id:int, kind:string, doc_no:int, duplicate:bool}
+ */
+function voucher_replace(PDO $pdo, int $userId, int $oldId, array $in, string $reasonRaw): array
+{
+    $reason = clean_text($reasonRaw);
+    if (mb_strlen($reason) > 200) {
+        throw new ValidationException(['edit_reason' => 'سبب التعديل أطول من المسموح (200 حرف).']);
+    }
+    $old = find_voucher($pdo, $oldId);
+    if (!$old) {
+        throw new ValidationException(['form' => 'السند الأصلي غير موجود.']);
+    }
+    $token = (string) ($in['request_token'] ?? '');
+    if (is_request_token($token)) {
+        $stmt = $pdo->prepare('SELECT id, kind, doc_no, replaces_id FROM vouchers WHERE request_token = ?');
+        $stmt->execute([$token]);
+        $saved = $stmt->fetch();
+        if ($saved && (int) $saved['replaces_id'] === $oldId) {
+            return ['id' => (int) $saved['id'], 'kind' => (string) $saved['kind'], 'doc_no' => (int) $saved['doc_no'], 'duplicate' => true];
+        }
+    }
+    if ($problem = voucher_edit_problem($old)) {
+        throw new ValidationException(['form' => $problem]);
+    }
+    $label = VOUCHER_KIND_LABELS[$old['kind']] . ' رقم ' . $old['doc_no'];
+    doc_edit_inherited_date(substr((string) $old['voucher_date'], 0, 10));
+    try {
+        return db_transaction($pdo, function (PDO $pdo) use ($userId, $oldId, $old, $in, $reason, $label) {
+            cancel_voucher($pdo, $userId, $oldId, 'تعديل' . ($reason !== '' ? ': ' . $reason : ''), (string) $old['voucher_date'], true);
+            $new = record_voucher($pdo, $userId, (string) $old['kind'], $in);
+            if ($new['duplicate']) {
+                throw new ValidationException(['form' => 'هذا النموذج سُجل من قبل. افتح السند من جديد ثم عدّله.']);
+            }
+            $newLabel = VOUCHER_KIND_LABELS[$new['kind']] . ' رقم ' . $new['doc_no'];
+            $pdo->prepare('UPDATE vouchers SET replaces_id = ? WHERE id = ?')->execute([$oldId, $new['id']]);
+            $pdo->prepare('UPDATE vouchers SET replaced_by_id = ?, cancel_reason = ? WHERE id = ?')
+                ->execute([$new['id'], mb_substr('عُدّل بـ ' . $newLabel . ($reason !== '' ? ': ' . $reason : ''), 0, 255), $oldId]);
+            audit_record($pdo, 'voucher.edit', sprintf('تعديل %s: أُلغي وسُجل بدلًا منه %s%s', $label, $newLabel,
+                $reason !== '' ? '. السبب: ' . $reason : ''), 'voucher', (int) $new['id'], ['replaces_id' => $oldId, 'reason' => $reason]);
+            data_version_bump($pdo);
+            return $new;
+        });
+    } finally {
+        doc_edit_inherited_date(null, true);
+    }
+}

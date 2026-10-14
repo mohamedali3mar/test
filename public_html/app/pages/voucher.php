@@ -10,7 +10,11 @@ $errors = [];
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     verify_csrf();
-    acct_require('vouchers.cancel');
+    // الإلغاء: vouchers.cancel لأي سند، أو vouchers.cancel_own لسند سجّله المستخدم اليوم (cancel_voucher يفحصها أيضًا)
+    $target = find_voucher($pdo, $id);
+    if (!$target || !voucher_cancel_permitted($target)) {
+        acct_require('vouchers.cancel');
+    }
     if (input($_POST, 'action') !== 'cancel') {
         render_simple_error('إجراء غير معروف.', 400);
     }
@@ -35,18 +39,31 @@ $kind = $v['kind'];
 $cancelled = $v['status'] === 'cancelled';
 $amount = money_to_piasters($v['amount']);
 $closed = !period_is_open($v['voucher_date']);
+$cancelPermitted = voucher_cancel_permitted($v);
+$editProblem = $cancelled ? 'cancelled' : voucher_edit_problem($v);
+$replacedBy = !empty($v['replaced_by_id']) ? find_voucher($pdo, (int) $v['replaced_by_id']) : null;
+$replaces = !empty($v['replaces_id']) ? find_voucher($pdo, (int) $v['replaces_id']) : null;
 
 render_header(voucher_label($v), 'vouchers');
 ?>
 <div class="page-head">
   <h1><?= h(voucher_label($v)) ?></h1>
   <div class="page-actions">
-    <a class="btn" href="<?= h(url('voucher_print', ['id' => $id])) ?>">طباعة</a>
+    <?php if ($editProblem === null): ?>
+      <a class="btn btn-primary" href="<?= h(url($kind, ['edit' => $id])) ?>"><?= icon('edit') ?>تعديل</a>
+    <?php endif; ?>
+    <a class="btn" href="<?= h(url('voucher_print', ['id' => $id])) ?>"><?= icon('print') ?>طباعة</a>
     <a class="btn btn-quiet" href="<?= h(url('vouchers')) ?>">السجل</a>
   </div>
 </div>
 
 <div id="live-voucher" data-live>
+<?php if ($replaces): ?>
+  <p class="alert" role="status">هذا السند بدل <a href="<?= h(url('voucher', ['id' => (int) $replaces['id']])) ?>"><?= h(voucher_label($replaces)) ?></a> بعد تعديله.</p>
+<?php endif; ?>
+<?php if ($replacedBy): ?>
+  <p class="alert" role="status">عُدّل هذا السند: الساري الآن <a href="<?= h(url('voucher', ['id' => (int) $replacedBy['id']])) ?>"><?= h(voucher_label($replacedBy)) ?></a>.</p>
+<?php endif; ?>
 <?php if ($cancelled): ?>
   <div class="alert alert-warning" role="status">
     هذا السند ملغى منذ <?= h(fmt_datetime($v['cancelled_at'])) ?> بواسطة <?= h((string) $v['cancelled_by_name']) ?>.
@@ -76,7 +93,7 @@ render_header(voucher_label($v), 'vouchers');
 </dl>
 </div>
 
-<?php if (!$cancelled && acct_can('vouchers.cancel')): ?>
+<?php if (!$cancelled && $cancelPermitted): ?>
 <section class="section danger-zone" id="live-voucher-cancel" data-live aria-labelledby="cancel-title">
   <h2 id="cancel-title">إلغاء السند</h2>
   <?php if ($closed): ?>
