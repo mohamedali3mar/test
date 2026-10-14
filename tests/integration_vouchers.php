@@ -187,7 +187,9 @@ check_eq('إلغاء المصروف يعيد 50.00 (الرئيسية 250.00)', 2
 check_eq('فحص السلامة بعد الإلغاءات', [], acct_verify_balances($pdo));
 
 section('الإلغاء في فترة مقفلة');
-$old = record_voucher($pdo, $uid, 'expense', vin(['category_id' => (string) $rent, 'cash_box_id' => (string) $box, 'amount' => '10', 'notes' => 'قديم', 'voucher_date' => day_offset(-3)]));
+// خزنة برصيد افتتاحي (بلا تاريخ) حتى يكفي رصيدها في التاريخ السابق
+$oldBox = cash_box_create($pdo, $uid, 'خزنة الفترة المقفلة', '10');
+$old = record_voucher($pdo, $uid, 'expense', vin(['category_id' => (string) $rent, 'cash_box_id' => (string) $oldBox, 'amount' => '10', 'notes' => 'قديم', 'voucher_date' => day_offset(-3)]));
 check_eq('سند بتاريخ يدوي سابق', day_offset(-3), substr(find_voucher($pdo, $old['id'])['voucher_date'], 0, 10));
 check_eq('  رقمه 2 (الترقيم متتالٍ بعد الإلغاء)', 2, $old['doc_no']);
 save_setting($pdo, 'closing_date', day_offset(-2));
@@ -317,6 +319,42 @@ check_eq('حركة يومين', [[day_offset(-2), 4000, 1500, 3500], [day_offset
 $cs = cash_statement($pdo, $bx, day_offset(-1), null);
 check_eq('كشف من أمس: افتتاحي 35.00 وحركة واحدة', [3500, 1, 4000], [$cs['opening'], count($cs['rows']), $cs['closing']]);
 check_eq('ختامي الكشف = رصيد الخزنة', cash_balance($pdo, $bx), $cs['closing']);
+
+section('خروج بتاريخ سابق: يجب أن يكفي رصيد الخزنة في ذلك التاريخ وبعده');
+$bd = cash_box_create($pdo, $uid, 'خزنة التاريخ السابق', '');
+$bdSupp = party_create($pdo, $uid, 'supplier', ['name' => 'مورد التاريخ السابق', 'opening_balance' => '5000', 'opening_direction' => 'we_owe']);
+$bdCust = party_create($pdo, $uid, 'customer', ['name' => 'عميل التاريخ السابق', 'opening_balance' => '5000', 'opening_direction' => 'owes_us']);
+record_voucher($pdo, $uid, 'collect', vin(['party_id' => (string) $bdCust, 'cash_box_id' => (string) $bd, 'amount' => '250']));
+$payNo = (int) $pdo->query("SELECT value FROM counters WHERE name = 'doc_pay'")->fetchColumn();
+$errs = expect_validation('صرف 250.00 بتاريخ قبل 10 أيام والخزنة كانت فارغة وقتها مرفوض (رغم أن رصيد اليوم يكفي)',
+    fn () => record_voucher($pdo, $uid, 'pay', vin(['party_id' => (string) $bdSupp, 'cash_box_id' => (string) $bd, 'amount' => '250', 'voucher_date' => day_offset(-10)])));
+check('  الرسالة تذكر الرصيد والتاريخ وما يفعله المستخدم', str_contains($errs['cash_box_id'] ?? '', 'لا يكفي')
+    && str_contains($errs['cash_box_id'] ?? '', digits(day_offset(-10))) && str_contains($errs['cash_box_id'] ?? '', 'تاريخًا لاحقًا'), json_encode($errs, JSON_UNESCAPED_UNICODE));
+check_eq('  الخزنة والمورد لم يتغيرا والعداد لم يُستهلك', [25000, 500000, $payNo],
+    [cash_balance($pdo, $bd), party_balance($pdo, $bdSupp), (int) $pdo->query("SELECT value FROM counters WHERE name = 'doc_pay'")->fetchColumn()]);
+expect_validation('مصروف بتاريخ سابق والخزنة فارغة وقتها مرفوض',
+    fn () => record_voucher($pdo, $uid, 'expense', vin(['category_id' => (string) $rent, 'cash_box_id' => (string) $bd, 'amount' => '1', 'notes' => 'x', 'voucher_date' => day_offset(-1)])));
+expect_validation('تحويل نقدية بتاريخ سابق من خزنة فارغة وقتها مرفوض',
+    fn () => record_voucher($pdo, $uid, 'cash_transfer', vin(['cash_box_id' => (string) $bd, 'to_cash_box_id' => (string) $box, 'amount' => '1', 'voucher_date' => day_offset(-1)])));
+// قبض قديم ثم مصروف أحدث منه: الخروج الأقدم يجب ألا يجعل الرصيد سالبًا عند أي حركة لاحقة
+record_voucher($pdo, $uid, 'collect', vin(['party_id' => (string) $bdCust, 'cash_box_id' => (string) $bd, 'amount' => '300', 'voucher_date' => day_offset(-10)]));
+record_voucher($pdo, $uid, 'expense', vin(['category_id' => (string) $rent, 'cash_box_id' => (string) $bd, 'amount' => '200', 'notes' => 'x', 'voucher_date' => day_offset(-5)]));
+check_eq('الخزنة الآن 350.00', 35000, cash_balance($pdo, $bd));
+$errs = expect_validation('صرف 250.00 بتاريخ قبل 9 أيام: يكفي وقتها لكن الرصيد يصبح سالبًا بعد مصروف اليوم الخامس، مرفوض',
+    fn () => record_voucher($pdo, $uid, 'pay', vin(['party_id' => (string) $bdSupp, 'cash_box_id' => (string) $bd, 'amount' => '250', 'voucher_date' => day_offset(-9)])));
+check('  الرسالة تذكر يوم العجز والعجز 150.00', str_contains($errs['cash_box_id'] ?? '', digits(day_offset(-5)))
+    && str_contains($errs['cash_box_id'] ?? '', fmt_piasters(15000)), json_encode($errs, JSON_UNESCAPED_UNICODE));
+$okPay = record_voucher($pdo, $uid, 'pay', vin(['party_id' => (string) $bdSupp, 'cash_box_id' => (string) $bd, 'amount' => '100', 'voucher_date' => day_offset(-9)]));
+check('صرف 100.00 بتاريخ قبل 9 أيام يكفي في كل الأيام: مقبول', $okPay['id'] > 0 && !$okPay['duplicate']);
+$okNow = record_voucher($pdo, $uid, 'pay', vin(['party_id' => (string) $bdSupp, 'cash_box_id' => (string) $bd, 'amount' => '250']));
+check('صرف 250.00 بتاريخ اليوم يعتمد على رصيد اليوم: مقبول', $okNow['id'] > 0);
+$cs = cash_statement($pdo, $bd, null, null);
+check_eq('كشف الخزنة: لا رصيد جارٍ سالب في أي حركة', [], array_values(array_filter(array_column($cs['rows'], 'balance'), fn ($b) => $b < 0)));
+check_eq('  ولا رصيد آخر يوم سالب', [], array_values(array_filter(array_column($cs['days'], 'closing'), fn ($b) => $b < 0)));
+check_eq('  ختامي الكشف = رصيد الخزنة 0.00', [0, 0], [$cs['closing'], cash_balance($pdo, $bd)]);
+cancel_voucher($pdo, $uid, $okPay['id'], '');
+check_eq('إلغاء الصرف القديم (قيد عكسي بتاريخ اليوم) يعيد 100.00', 10000, cash_balance($pdo, $bd));
+check_eq('  فحص السلامة', [], acct_verify_balances($pdo));
 
 /* ---------------------------------------------------------------- */
 section('تعديل الرصيد الافتتاحي يحرك الرصيد بالفرق');

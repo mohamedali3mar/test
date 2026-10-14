@@ -25,6 +25,7 @@ Foundation already on the branch (do not redesign it, build on it):
    - For the party ledger, a positive amount increases what is owed. For a customer that is what the customer owes us; for a supplier, what we owe the supplier.
    - For the cash ledger, positive means money in and negative means money out.
    - A cash box can never go negative: `ledger_cash` throws a `ValidationException`, and the DB also has a CHECK.
+     A back-dated outflow (admin manual date) must also keep the running balance ≥ 0 at its own date and at every later entry (locked read of the later `cash_ledger` rows), so the cash statement never shows a negative day.
 4. **Cancellation:** never delete or update ledger rows. Call `reverse_ledgers()` with the cancellation date.
    - Lock the parties and cash boxes from `ledger_sources_of()` **before** reversing, in the lock order.
    - Cancellation is refused if the original doc date is in a closed period (`period_is_open`).

@@ -265,7 +265,8 @@ function ledger_party(PDO $pdo, int $partyId, string $date, ?int $documentId, ?i
 
 /**
  * يضيف قيدًا في دفتر خزنة ويحدّث رصيدها. صف الخزنة يجب أن يكون مقفلًا مسبقًا.
- * $amount موجب = داخل، سالب = خارج. يرفض أي خروج يجعل الرصيد سالبًا.
+ * $amount موجب = داخل، سالب = خارج. يرفض أي خروج يجعل الرصيد سالبًا، والخروج بتاريخ سابق
+ * يُرفض أيضًا إذا جعل رصيد الخزنة سالبًا في ذلك التاريخ أو بعده (كشف الخزنة مرتب بالتاريخ).
  */
 function ledger_cash(PDO $pdo, int $boxId, string $date, ?int $documentId, ?int $voucherId, string $type, int $amount, string $description, ?int $reversalOf = null): int
 {
@@ -286,6 +287,9 @@ function ledger_cash(PDO $pdo, int $boxId, string $date, ?int $documentId, ?int 
                 fmt_piasters(-$amount)
             )]);
         }
+        if (substr($date, 0, 10) < substr(now(), 0, 10)) {
+            cash_check_backdated_outflow($pdo, $boxId, (string) ($box['name'] ?? ''), $balance, $date, $amount);
+        }
     }
     $pdo->prepare('INSERT INTO cash_ledger (cash_box_id, entry_date, document_id, voucher_id, entry_type, amount, description, reversal_of, created_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
@@ -293,6 +297,46 @@ function ledger_cash(PDO $pdo, int $boxId, string $date, ?int $documentId, ?int 
     $id = (int) $pdo->lastInsertId();
     $pdo->prepare('UPDATE cash_boxes SET balance = balance + ? WHERE id = ?')->execute([piasters_to_money($amount), $boxId]);
     return $id;
+}
+
+/**
+ * خروج بتاريخ سابق (للمدير): لا يكفي رصيد اليوم، فالكشف يُرتب بالتاريخ. يجب ألا يصبح الرصيد الجاري سالبًا
+ * عند القيد الجديد ولا عند أي قيد بعده. صف الخزنة مقفل، والقيود اللاحقة تُقرأ بقفل (آخر قيمة مؤكدة).
+ * $balance الرصيد الحالي المقفل، و$amount سالب.
+ */
+function cash_check_backdated_outflow(PDO $pdo, int $boxId, string $boxName, int $balance, string $date, int $amount): void
+{
+    $stmt = $pdo->prepare('SELECT entry_date, amount FROM cash_ledger WHERE cash_box_id = ? AND entry_date > ?
+        ORDER BY entry_date, id LOCK IN SHARE MODE');
+    $stmt->execute([$boxId, $date]);
+    $later = $stmt->fetchAll();
+    // الرصيد في ذلك التاريخ = الرصيد الحالي ناقص كل ما بعده
+    $run = $balance;
+    foreach ($later as $e) {
+        $run -= money_to_piasters($e['amount']);
+    }
+    $run += $amount;
+    $badDay = $run < 0 ? substr($date, 0, 10) : null;
+    $badRun = $run;
+    for ($i = 0; $badDay === null && $i < count($later); $i++) {
+        $run += money_to_piasters($later[$i]['amount']);
+        if ($run < 0) {
+            $badDay = substr((string) $later[$i]['entry_date'], 0, 10);
+            $badRun = $run;
+        }
+    }
+    if ($badDay !== null) {
+        throw new ValidationException(['cash_box_id' => sprintf(
+            'رصيد الخزنة «%s» لا يكفي بتاريخ %s: خروج %s بهذا التاريخ يجعل رصيدها بالسالب يوم %s (العجز %s). '
+            . 'اختر تاريخًا لاحقًا يكفي فيه الرصيد، أو اترك التاريخ فارغًا لتاريخ اليوم. '
+            . 'وإذا دخلت الخزنة نقدية قبل ذلك ولم تُسجل، فسجّلها أولًا بتاريخها.',
+            $boxName,
+            digits(substr($date, 0, 10)),
+            fmt_piasters(-$amount),
+            digits($badDay),
+            fmt_piasters(-$badRun)
+        )]);
+    }
 }
 
 /**
