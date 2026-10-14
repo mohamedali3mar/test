@@ -472,5 +472,16 @@ foreach (array_keys(ACCT_REPORTS) as $k) {
     check("لوحة التحكم تربط تقرير $k", str_contains($html, h(url('reports', ['report' => $k]))));
 }
 
+// البيان نص حر فيه اسم العميل: الأرقام فقط تُعرض بالشكل المختار، والنقطة والفاصلة في الاسم تبقيان كما هما
+// (digits() كانت تجعل «م.م» «م٫م» بعلامة عشرية، وتحذف الفاصلة لتصبح مسافة ضيقة)
+// (قيد بنفس بيان سند القبض في vouchers.php: «سند قبض رقم N من <اسم العميل>»)
+$named = mk_party($pdo, 'customer', 'شركة م.م النور, فرع 2');
+$nv = mk_voucher($pdo, $uid, 'collect', 99, now(), $named, $b1, null, '10.00');
+db_transaction($pdo, fn (PDO $pdo) => ledger_cash($pdo, $b1, now(), null, $nv, 'collect', 1000, 'سند قبض رقم 99 من شركة م.م النور, فرع 2'));
+[$html, $w] = render_page('cash_statement', ['id' => (string) $b1]);
+check_eq('كشف الخزنة: بلا تحذيرات PHP', [], $w);
+check('كشف الخزنة: اسم العميل في البيان كما كُتب (النقطة والفاصلة) والأرقام بالشكل المختار',
+    str_contains($html, '<td data-label="البيان">' . h('سند قبض رقم ٩٩ من شركة م.م النور, فرع ٢') . '</td>'));
+
 check_eq('الأرصدة المخزنة سليمة في النهاية', [], acct_verify_balances($pdo));
 finish();

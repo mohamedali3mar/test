@@ -552,7 +552,7 @@ function fmt_sales_lines(array $sales): array
  */
 function fmt_phone(string $phone): string
 {
-    return digits($phone);
+    return digits_text($phone); // الأرقام فقط: «010.123.4567» لا تصبح «٠١٠٫١٢٣٫٤٥٦٧» بعلامة عشرية
 }
 
 /** رقم هاتف العميل أو المورد كـ HTML مهرب بترتيب صحيح داخل الصفحة العربية (ltr_html) */

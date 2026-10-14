@@ -86,7 +86,7 @@ render_header($title, 'parties', 'page-print');
         <?php foreach ($s['rows'] as $r): ?>
         <tr class="<?= $r['is_reversal'] ? 'row-cancelled' : '' ?>">
           <td data-label="التاريخ" class="nowrap"><?= h(fmt_datetime($r['date'])) ?></td>
-          <td data-label="البيان"><?= h(digits($r['description'])) ?></td>
+          <td data-label="البيان"><?= h(digits_text($r['description'])) ?></td>
           <td data-label="المستند" class="nowrap"><a href="<?= h(url($r['link']['route'], ['id' => $r['link']['id']])) ?>"><?= h($r['link']['label']) ?></a></td>
           <td data-label="عليه" class="num"><?= $r['alayh'] ? h(fmt_piasters($r['alayh'])) : '' ?></td>
           <td data-label="له" class="num"><?= $r['lah'] ? h(fmt_piasters($r['lah'])) : '' ?></td>

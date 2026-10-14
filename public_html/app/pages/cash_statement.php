@@ -122,7 +122,7 @@ render_header($title, 'cash_boxes', 'page-print');
         <?php foreach ($s['rows'] as $r): ?>
         <tr class="<?= $r['is_reversal'] ? 'row-cancelled' : '' ?>">
           <td data-label="التاريخ" class="nowrap"><?= h(fmt_datetime($r['date'])) ?></td>
-          <td data-label="البيان"><?= h(digits($r['description'])) ?></td>
+          <td data-label="البيان"><?= h(digits_text($r['description'])) ?></td>
           <td data-label="المستند" class="nowrap"><a href="<?= h(url($r['link']['route'], ['id' => $r['link']['id']])) ?>"><?= h($r['link']['label']) ?></a></td>
           <td data-label="داخل" class="num"><?= $r['in'] ? h(fmt_piasters($r['in'])) : '' ?></td>
           <td data-label="خارج" class="num"><?= $r['out'] ? h(fmt_piasters($r['out'])) : '' ?></td>
