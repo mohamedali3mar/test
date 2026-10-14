@@ -177,6 +177,23 @@ check('  الرسالة تذكر المتاح', str_contains($e['party_id'] ?? '
 check_eq('  لا تغيير في الرصيد أو المخزون', [100000, $stockBefore], [party_balance($pdo, $c2), stock_qty($pdo, $dd, $wh1)]);
 record_sale($pdo, $uid, sale_input($wh1, [[$dd, 1, '10000']], ['party_id' => (string) $c2, 'payment_type' => 'cash']));
 check_eq('البيع النقدي لنفس العميل مسموح', 100000, party_balance($pdo, $c2));
+// إعادة إرسال فاتورة آجلة أو جزئية محفوظة قرب حد الائتمان تعيدها كما هي («سُجلت من قبل») ولا تظهر خطأ الحد
+$c3 = make_party($pdo, 'customer', 'عميل قرب حده', '1000.00');
+$nearIn = sale_input($wh1, [[$dd, 9, '10000']], ['party_id' => (string) $c3, 'payment_type' => 'credit']); // 900.00
+$near = record_sale($pdo, $uid, $nearIn);
+$stockNear = stock_qty($pdo, $dd, $wh1);
+$nearAgain = record_sale($pdo, $uid, $nearIn);
+check('إعادة إرسال فاتورة آجلة محفوظة قرب الحد تعيدها (سُجلت من قبل)', $nearAgain['duplicate'] && $nearAgain['id'] === $near['id'], json_encode($nearAgain));
+check_eq('  فاتورة واحدة فقط ورصيد العميل 900.00 والمخزون لم يتغير', [1, 90000, $stockNear],
+    [(int) $pdo->query('SELECT COUNT(*) FROM documents WHERE party_id = ' . $c3)->fetchColumn(), party_balance($pdo, $c3), stock_qty($pdo, $dd, $wh1)]);
+$partIn = sale_input($wh1, [[$dd, 1, '10000']], ['party_id' => (string) $c3, 'payment_type' => 'partial', 'paid_amount' => '10']); // 90.00 على الحساب
+$part = record_sale($pdo, $uid, $partIn);
+$partAgain = record_sale($pdo, $uid, $partIn);
+check('  والجزئية أيضًا', $partAgain['duplicate'] && $partAgain['id'] === $part['id'], json_encode($partAgain));
+$e = expect_validation('  فاتورة جديدة تتجاوز الحد ما زالت مرفوضة عند الحفظ', fn () => record_sale($pdo, $uid, sale_input($wh1, [[$dd, 2, '10000']], ['party_id' => (string) $c3, 'payment_type' => 'credit'])));
+check('  والخطأ على العميل ويذكر المتاح', str_contains($e['party_id'] ?? '', 'المتاح'), json_encode($e, JSON_UNESCAPED_UNICODE));
+$e = expect_validation('  ومراجعة الفاتورة (قبل الحفظ) تظهر خطأ الحد', fn () => validate_sale($pdo, sale_input($wh1, [[$dd, 2, '10000']], ['party_id' => (string) $c3, 'payment_type' => 'credit'])));
+check('  على حقل العميل', isset($e['party_id']), json_encode($e, JSON_UNESCAPED_UNICODE));
 
 section('الوارد: شراء نقدي وآجل وجزئي');
 $boxBefore = cash_balance($pdo, $box);
