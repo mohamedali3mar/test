@@ -350,14 +350,19 @@ $totals = branch_summary_totals(array_values($bs));
 $totalByCur = array_column($totals['sales'], null, 'currency');
 check_eq('  الإجمالي العام لا يجمع العملات معًا', 2, count($totals['sales']));
 check_eq('  إجمالي الدولار', '1.50', $totalByCur['دولار']['amount'] ?? null);
-$egpMonth = $pdo->prepare("SELECT SUM(total_amount) FROM documents WHERE kind = 'sale' AND status = 'active' AND currency = 'جنيه مصري' AND created_at >= ?");
+$egpMonth = $pdo->prepare("SELECT SUM(total_amount) FROM documents WHERE kind = 'sale' AND status = 'active' AND currency = 'جنيه مصري' AND doc_date >= ?");
 $egpMonth->execute([current_month_range()[0]]);
 check_eq('  إجمالي الجنيه للشهر', (string) $egpMonth->fetchColumn(), $totalByCur['جنيه مصري']['amount'] ?? null);
 check('  سطر العرض لكل عملة', fmt_sales_lines([['count' => 1, 'amount' => '1.50', 'currency' => 'دولار']]) === ['عدد الفواتير: ' . fmt_int(1) . '، ' . fmt_money('1.50') . ' دولار']);
 $old = record_sale($pdo, $uid, sale_input($whMaadi, [[$item, 1, '100']]));
-$pdo->prepare("UPDATE documents SET created_at = DATE_SUB(?, INTERVAL 1 DAY) WHERE id = ?")->execute([current_month_range()[0], $old['id']]);
+$monthStart = current_month_range()[0];
+// الشهر حسب تاريخ المستند مثل التقارير ولوحة التحكم، لا حسب وقت التسجيل
+$pdo->prepare('UPDATE documents SET created_at = DATE_SUB(?, INTERVAL 1 DAY), doc_date = ? WHERE id = ?')->execute([$monthStart, $monthStart, $old['id']]);
 $bs2 = array_column(branch_summary($pdo, $maadi)[0]['sales'], null, 'currency');
-check_eq('مبيعات الشهر لا تشمل الشهر السابق', 1, $bs2['دولار']['count'] ?? null);
+check_eq('مبيعات الشهر تشمل فاتورة تاريخها هذا الشهر وإن سُجلت في الشهر السابق', 2, $bs2['دولار']['count'] ?? null);
+$pdo->prepare('UPDATE documents SET created_at = ?, doc_date = DATE_SUB(?, INTERVAL 1 DAY) WHERE id = ?')->execute([now(), $monthStart, $old['id']]);
+$bs2 = array_column(branch_summary($pdo, $maadi)[0]['sales'], null, 'currency');
+check_eq('مبيعات الشهر لا تشمل فاتورة بتاريخ الشهر السابق وإن سُجلت هذا الشهر', 1, $bs2['دولار']['count'] ?? null);
 save_setting($pdo, 'currency', DEFAULT_SETTINGS['currency']);
 reset_settings_cache();
 

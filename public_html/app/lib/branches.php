@@ -402,7 +402,7 @@ function warehouse_move(PDO $pdo, int $warehouseId, int $branchId): string
 
 /* ===================== التقارير ===================== */
 
-/** بداية الشهر الحالي وبداية الشهر التالي بتوقيت النظام (نفس توقيت created_at في المستندات) */
+/** بداية الشهر الحالي وبداية الشهر التالي بتوقيت النظام، للمقارنة بتاريخ المستند doc_date (مثل التقارير ولوحة التحكم) */
 function current_month_range(): array
 {
     $start = new DateTimeImmutable('first day of this month 00:00:00');
@@ -478,10 +478,11 @@ function branch_summary(PDO $pdo, ?int $branchId = null): array
         $r['sales'] = [];
         $rows[(int) $r['id']] = $r;
     }
+    // الشهر حسب تاريخ المستند (doc_date) لا وقت التسجيل: الفاتورة بتاريخ سابق تُحسب في شهرها المحاسبي
     [$from, $to] = current_month_range();
     $stmt = $pdo->prepare(
         "SELECT branch_id, currency, COUNT(*) AS n, SUM(total_amount) AS amount FROM documents
-         WHERE kind = 'sale' AND status = 'active' AND created_at >= ? AND created_at < ?"
+         WHERE kind = 'sale' AND status = 'active' AND doc_date >= ? AND doc_date < ?"
         . ($branchId !== null ? ' AND branch_id = ?' : '')
         . ' GROUP BY branch_id, currency ORDER BY branch_id, currency'
     );
