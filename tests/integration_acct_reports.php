@@ -373,6 +373,23 @@ try {
 $ds = $R('sales_period', ['customer' => (string) $s1]);
 check_eq('معرّف مورد في حقل العميل يُتجاهل', ['customer'], $ds['ignored']);
 
+section('نهاية الفترة 9999-12-31 (أقصى تاريخ) تشمل كل البيانات');
+$ds = $R('sales_period', ['to' => '9999-12-31']);
+check_eq('المبيعات: نفس صفوف وإجمالي كل الفترات', [$base['rows'], $base['totals'], []], [$ds['rows'], $ds['totals'], $ds['ignored']]);
+check_eq('  الوصف', 'حتى ' . digits('9999-12-31') . '، التجميع: يومي', $ds['subtitle']);
+$ds = $R('sales_period', ['from' => '2026-09-20', 'to' => '9999-12-31']);
+check_eq('  من تاريخ حتى أقصى تاريخ', ['2026-09-20'], array_column($ds['rows'], 'period'));
+check_eq('الأرباح: صافي كل الفترات', '-845.50', $R('profit', ['to' => '9999-12-31'])['totals']['amount']);
+check_eq('المصروفات: كل السندات', '1075.50', $R('expenses', ['to' => '9999-12-31'])['totals']['amount']);
+$ds = $R('cash_summary', ['to' => '9999-12-31']);
+check_eq('الخزائن: رصيد آخر الفترة = الرصيد الحالي', ['in' => '390.00', 'out' => '1805.50', 'closing' => '3584.50', 'balance' => '3584.50'],
+    array_intersect_key($ds['totals'], array_flip(['in', 'out', 'closing', 'balance'])));
+$ds = $R('sales_period', ['to' => '2026-09-19']);
+check_eq('يوم النهاية يشمل آخر ثانية فيه فقط', ['2026-08-15', '2026-09-01'], array_column($ds['rows'], 'period'));
+$pdo->prepare('UPDATE documents SET doc_date = ? WHERE id = ?')->execute(['2026-09-19 23:59:59', $d4]);
+check_eq('  فاتورة في 23:59:59 من يوم النهاية تُحسب', ['2026-08-15', '2026-09-01', '2026-09-19'], array_column($R('sales_period', ['to' => '2026-09-19'])['rows'], 'period'));
+$pdo->prepare('UPDATE documents SET doc_date = ? WHERE id = ?')->execute(['2026-09-20 11:00:00', $d4]);
+
 /* ---------------- لوحة التحكم ---------------- */
 section('لوحة التحكم');
 $dash = acct_dashboard($pdo, '2026-09-20');

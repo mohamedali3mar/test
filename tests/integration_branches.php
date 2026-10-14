@@ -374,14 +374,19 @@ $totals = branch_summary_totals(array_values($bs));
 $totalByCur = array_column($totals['sales'], null, 'currency');
 check_eq('  الإجمالي العام لا يجمع العملات معًا', 2, count($totals['sales']));
 check_eq('  إجمالي الدولار', '1.50', $totalByCur['دولار']['amount'] ?? null);
-$egpMonth = $pdo->prepare("SELECT SUM(total_amount) FROM documents WHERE kind = 'sale' AND status = 'active' AND currency = 'جنيه مصري' AND created_at >= ?");
+$egpMonth = $pdo->prepare("SELECT SUM(total_amount) FROM documents WHERE kind = 'sale' AND status = 'active' AND currency = 'جنيه مصري' AND doc_date >= ?");
 $egpMonth->execute([current_month_range()[0]]);
 check_eq('  إجمالي الجنيه للشهر', (string) $egpMonth->fetchColumn(), $totalByCur['جنيه مصري']['amount'] ?? null);
 check('  سطر العرض لكل عملة', fmt_sales_lines([['count' => 1, 'amount' => '1.50', 'currency' => 'دولار']]) === ['عدد الفواتير: ' . fmt_int(1) . '، ' . fmt_money('1.50') . ' دولار']);
 $old = record_sale($pdo, $uid, sale_input($whMaadi, [[$item, 1, '100']]));
-$pdo->prepare("UPDATE documents SET created_at = DATE_SUB(?, INTERVAL 1 DAY) WHERE id = ?")->execute([current_month_range()[0], $old['id']]);
+$monthStart = current_month_range()[0];
+// الشهر حسب تاريخ المستند مثل التقارير ولوحة التحكم، لا حسب وقت التسجيل
+$pdo->prepare('UPDATE documents SET created_at = DATE_SUB(?, INTERVAL 1 DAY), doc_date = ? WHERE id = ?')->execute([$monthStart, $monthStart, $old['id']]);
 $bs2 = array_column(branch_summary($pdo, $maadi)[0]['sales'], null, 'currency');
-check_eq('مبيعات الشهر لا تشمل الشهر السابق', 1, $bs2['دولار']['count'] ?? null);
+check_eq('مبيعات الشهر تشمل فاتورة تاريخها هذا الشهر وإن سُجلت في الشهر السابق', 2, $bs2['دولار']['count'] ?? null);
+$pdo->prepare('UPDATE documents SET created_at = ?, doc_date = DATE_SUB(?, INTERVAL 1 DAY) WHERE id = ?')->execute([now(), $monthStart, $old['id']]);
+$bs2 = array_column(branch_summary($pdo, $maadi)[0]['sales'], null, 'currency');
+check_eq('مبيعات الشهر لا تشمل فاتورة بتاريخ الشهر السابق وإن سُجلت هذا الشهر', 1, $bs2['دولار']['count'] ?? null);
 save_setting($pdo, 'currency', DEFAULT_SETTINGS['currency']);
 reset_settings_cache();
 
@@ -556,6 +561,46 @@ reset_branch_scope_cache();
 $homeAlex = home_overview($pdoH, $alexH);
 check_eq('الرئيسية للموظف المقيد: تحصيلات فرعه فقط (250.00)', [['currency' => app_setting('currency'), 'count' => 1, 'amount' => '250.00']], $homeAlex['collect']);
 check_eq('الرئيسية لفرع آخر: لا تحصيلات', [], home_overview($pdoH, $mainH)['collect']);
+$_SESSION = [];
+reset_branch_scope_cache();
+
+section('آخر المستندات في الرئيسية: نفس صفوف شرط الفرع وترتيبها');
+$_SESSION = ['user_id' => $bossH, 'role' => 'admin'];
+reset_branch_scope_cache();
+$whMainH = catalog_create($pdoH, 'warehouse', 'مخزن الرئيسي', $mainH);
+$whAlexH = catalog_create($pdoH, 'warehouse', 'مخزن الإسكندرية', $alexH);
+$whAlex2H = catalog_create($pdoH, 'warehouse', 'مخزن الإسكندرية الثاني', $alexH);
+$typeH = catalog_create($pdoH, 'type', 'زان');
+foreach ([$whMainH, $whAlexH] as $w) {
+    record_receipt($pdoH, $bossH, receipt_input($w, $typeH, '10', 'cm', '5', 'cm', '4', 'm', '500'));
+}
+$itemH = item_id_for($pdoH, $typeH, 100000, 50000, 4000000);
+for ($i = 0; $i < 4; $i++) {
+    record_transfer($pdoH, $bossH, transfer_input($whMainH, $whAlexH, [[$itemH, 1]]));   // وارد للإسكندرية من فرع آخر
+    record_sale($pdoH, $bossH, sale_input($whMainH, [[$itemH, 1, '100']]));
+    record_transfer($pdoH, $bossH, transfer_input($whAlexH, $whAlex2H, [[$itemH, 1]]));  // داخل الفرع نفسه
+    record_sale($pdoH, $bossH, sale_input($whAlexH, [[$itemH, 1, '100']]));
+    record_transfer($pdoH, $bossH, transfer_input($whAlexH, $whMainH, [[$itemH, 1]]));   // صادر من الإسكندرية
+}
+// مستند قديم بدون فرع مصدر ووجهته الإسكندرية يظهر لها أيضًا
+$legacyH = (int) $pdoH->query("SELECT id FROM documents WHERE kind = 'transfer' AND to_branch_id = $alexH AND branch_id = $mainH ORDER BY id DESC LIMIT 1")->fetchColumn();
+$pdoH->exec("UPDATE documents SET branch_id = NULL, branch_name = NULL WHERE id = $legacyH");
+$orRecent = function (int $branch) use ($pdoH): array {
+    [$cond, $p] = document_branch_condition($branch);
+    $stmt = $pdoH->prepare("SELECT d.* FROM documents d WHERE {$cond} ORDER BY d.id DESC LIMIT " . HOME_RECENT);
+    $stmt->execute($p);
+    return $stmt->fetchAll();
+};
+foreach (['الإسكندرية' => $alexH, 'الرئيسي' => $mainH] as $label => $br) {
+    $recent = home_overview($pdoH, $br)['recent'];
+    check_eq("آخر مستندات فرع $label: نفس الصفوف والترتيب", $orRecent($br), $recent);
+    check_eq("  عددها " . HOME_RECENT, HOME_RECENT, count($recent));
+}
+$alexIds = array_column(home_overview($pdoH, $alexH)['recent'], 'id');
+check('  الإسكندرية: الوارد من فرع آخر والصادر منها معًا', in_array((string) $legacyH, array_map('strval', $alexIds), true)
+    && count(array_unique(array_map('strval', $alexIds))) === count($alexIds));
+check_eq('لكل الفروع: أحدث المستندات بلا تصفية', array_column($pdoH->query('SELECT id FROM documents ORDER BY id DESC LIMIT ' . HOME_RECENT)->fetchAll(), 'id'),
+    array_column(home_overview($pdoH, null)['recent'], 'id'));
 $_SESSION = [];
 reset_branch_scope_cache();
 
