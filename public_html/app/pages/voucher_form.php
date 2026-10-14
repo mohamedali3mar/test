@@ -52,8 +52,11 @@ $boxOptions = array_map(fn ($b) => ['id' => $b['id'], 'name' => $b['name'] . ' (
 if ($form['cash_box_id'] === '' && $boxes) {
     $form['cash_box_id'] = (string) $boxes[0]['id'];
 }
-$parties = $partyKind ? parties_for_select($pdo, $partyKind) : [];
-$partyOptions = array_map(fn ($p) => ['id' => $p['id'], 'name' => $p['name'] . ' (' . fmt_party_balance(money_to_piasters($p['balance']), $partyKind) . ')'], $parties);
+// القبض والصرف يقبلان حسابًا موقوفًا لتسوية رصيده، فيظهر في القائمة مميزًا بكلمة «موقوف»
+$parties = $partyKind ? parties_for_select($pdo, $partyKind, true, (int) $form['party_id']) : [];
+$partyOptions = array_map(fn ($p) => ['id' => $p['id'], 'name' => $p['name']
+    . ((int) $p['is_active'] ? '' : ' (موقوف)')
+    . ' (' . fmt_party_balance(money_to_piasters($p['balance']), $partyKind) . ')'], $parties);
 $categories = $kind === 'expense' ? expense_categories_all($pdo, true) : [];
 $selectedParty = null;
 foreach ($parties as $p) {
@@ -78,6 +81,8 @@ render_header($title, $kind);
 
 <?php if (!$boxes): ?>
   <p class="empty">لا توجد خزنة نشطة. <a href="<?= h(url('cash_boxes')) ?>">أضف خزنة أولًا</a>.</p>
+<?php elseif ($partyKind && !$parties && parties_list($pdo, $partyKind, '', 'inactive')): ?>
+  <p class="empty">لا يوجد <?= $partyKind === 'customer' ? 'عملاء نشطون' : 'موردون نشطون' ?>، وكل الحسابات الموقوفة رصيدها صفر. <a href="<?= h(url('parties', ['kind' => $partyKind])) ?>">أضف حسابًا جديدًا</a>، أو يفعّل المدير حسابًا موقوفًا من نفس الصفحة.</p>
 <?php elseif ($partyKind && !$parties): ?>
   <p class="empty">لا يوجد <?= $partyKind === 'customer' ? 'عملاء' : 'موردون' ?> بعد. <a href="<?= h(url('parties', ['kind' => $partyKind])) ?>">أضف حسابًا أولًا</a>.</p>
 <?php else: ?>
@@ -94,6 +99,7 @@ render_header($title, $kind);
     <p class="hint" id="party-hint">
       <?php if ($selectedParty): ?>
         الرصيد الحالي: <?= h(fmt_party_balance(money_to_piasters($selectedParty['balance']), $partyKind)) ?>.
+        <?php if (!(int) $selectedParty['is_active']): ?>الحساب موقوف، والسند مسموح لتسوية رصيده.<?php endif; ?>
       <?php endif; ?>
       الرصيد بجوار كل اسم. <?= $kind === 'collect' ? 'القبض ينقص ما على العميل.' : 'الصرف ينقص ما للمورد علينا.' ?>
     </p>

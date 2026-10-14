@@ -452,11 +452,21 @@ function cash_box_in_scope(array $box, ?int $branch): bool
     return $branch === null || $box['branch_id'] === null || (int) $box['branch_id'] === $branch;
 }
 
-/** العملاء أو الموردون النشطون للقوائم المنسدلة */
-function parties_for_select(PDO $pdo, string $kind): array
+/**
+ * العملاء أو الموردون النشطون للقوائم المنسدلة.
+ * $settle (سند القبض والصرف): تُضاف الحسابات الموقوفة التي لها رصيد، والحساب $includeId ولو موقوفًا،
+ * لأن تسوية رصيد حساب موقوف مسموحة (record_voucher). الموقوفة بعد النشطة، وis_active يميزها.
+ */
+function parties_for_select(PDO $pdo, string $kind, bool $settle = false, int $includeId = 0): array
 {
-    $stmt = $pdo->prepare('SELECT id, name, balance, credit_limit FROM parties WHERE kind = ? AND is_active = 1 ORDER BY name, id');
-    $stmt->execute([$kind]);
+    $sql = 'SELECT id, name, balance, credit_limit, is_active FROM parties WHERE kind = ? AND (is_active = 1';
+    $args = [$kind];
+    if ($settle) {
+        $sql .= ' OR balance <> 0 OR id = ?';
+        $args[] = $includeId;
+    }
+    $stmt = $pdo->prepare($sql . ') ORDER BY is_active DESC, name, id');
+    $stmt->execute($args);
     return $stmt->fetchAll();
 }
 

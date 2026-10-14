@@ -105,7 +105,7 @@ Review/confirm page shows customer, payment type, paid, remaining and new custom
 - **List:** name, phone, balance (`fmt_party_balance`), credit limit, status, and a link to the statement.
 - **Create** (staff may create): name with `name_key` uniqueness per kind, phone, address, notes, opening balance (≥ 0, with direction «عليه/له»), credit limit.
 - **Edit** (admin only): opening balance edits shift `balance` by the delta under the party row lock. Audited. Refused while a closing date is set (the opening balance has no date, so it is inside every closed period); the admin clears the closing date, edits, then sets it again.
-- **Deactivate/activate** (admin): deactivate instead of delete. Delete is allowed only when there are no ledger rows and no documents.
+- **Deactivate/activate** (admin): deactivate instead of delete. Delete is allowed only when there are no ledger rows and no documents. An inactive party cannot be used on a new invoice, but collect and pay still accept it to settle its balance: their party list (`parties_for_select(..., settle: true)`) also shows inactive parties with a non-zero balance, marked «(موقوف)».
 
 **Statement** `party_statement&id=N&from&to`:
 - An opening line: opening_balance + SUM(amount) before `from`.
