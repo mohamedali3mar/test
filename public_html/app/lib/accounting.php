@@ -173,7 +173,8 @@ function acct_doc_date(array $in, array &$errors, string $field = 'doc_date'): s
         }
         return $now;
     }
-    if (!acct_can('manual_date')) {
+    // تعديل مستند يحتفظ بتاريخ المستند الأصلي، فلا يحتاج صلاحية التاريخ اليدوي لهذا التاريخ وحده
+    if (!acct_can('manual_date') && $raw !== doc_edit_inherited_date()) {
         $errors[$field] = 'لا تملك صلاحية تغيير تاريخ المستند.';
         return $now;
     }

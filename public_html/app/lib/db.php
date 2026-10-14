@@ -41,6 +41,11 @@ function db(): PDO
  */
 function db_transaction(PDO $pdo, callable $fn)
 {
+    // داخل معاملة قائمة (مثل تعديل مستند: إلغاء الأصلي وتسجيل البديل معًا) تعمل الدالة جزءًا منها،
+    // والمعاملة الخارجية وحدها تثبّت أو تتراجع وتعيد المحاولة عند الجمود
+    if ($pdo->inTransaction()) {
+        return $fn($pdo);
+    }
     $attempts = 0;
     while (true) {
         $attempts++;

@@ -9,12 +9,25 @@ $form = $posted
     : ['warehouse_id' => input($_GET, 'from'), 'to_warehouse_id' => '', 'notes' => '', 'request_token' => new_request_token()];
 $form['lines'] = $posted ? form_lines($_POST['lines'] ?? [], LINE_FIELDS_TRANSFER) : [];
 $extraLines = 0;
+// تعديل تحويل محفوظ (?edit=): يلغي الأصلي ويسجل البديل في خطوة واحدة (lib/doc_edit.php)
+$editDoc = document_edit_target($pdo, 'transfer');
+if ($editDoc && !$posted) {
+    $form = document_edit_form($pdo, $editDoc);
+} elseif ($editDoc) {
+    $form['edit_reason'] = input($_POST, 'edit_reason');
+}
 
 if ($posted) {
     verify_csrf();
     $action = input($_POST, 'action');
     try {
-        if ($action === 'save') {
+        if ($action === 'save' && $editDoc) {
+            $result = document_replace($pdo, current_user_id(), (int) $editDoc['id'], $form, $form['edit_reason']);
+            flash($result['duplicate'] ? 'warning' : 'success', $result['duplicate']
+                ? sprintf('هذا التعديل سُجل من قبل (%s).', doc_label($result))
+                : sprintf('تم تعديل %s: أُلغي وسُجل بدلًا منه %s، ونُقلت الكميات.', doc_label($editDoc), doc_label($result)));
+            redirect('document', ['id' => $result['id']]);
+        } elseif ($action === 'save') {
             $result = record_transfer($pdo, current_user_id(), $form);
             flash($result['duplicate'] ? 'warning' : 'success', $result['duplicate']
                 ? sprintf('هذا التحويل سُجل من قبل (تحويل رقم %s) ولم يتكرر.', fmt_doc_no((int) $result['doc_no']))
@@ -42,9 +55,10 @@ if ($done && $done['kind'] !== 'transfer') {
     $done = null;
 }
 
-render_header('تحويل بين المخازن', 'transfer');
+render_header($editDoc ? 'تعديل ' . doc_label($editDoc) : 'تحويل بين المخازن', 'transfer');
 ?>
-<h1>تحويل بين المخازن</h1>
+<h1><?= $editDoc ? 'تعديل ' . h(doc_label($editDoc)) : 'تحويل بين المخازن' ?></h1>
+<?= $editDoc ? document_edit_notice($editDoc) : '' ?>
 
 <?php if ($done): ?>
   <section class="confirm-box" aria-labelledby="done-title">
@@ -98,12 +112,14 @@ render_header('تحويل بين المخازن', 'transfer');
     <textarea id="notes" name="notes" rows="2" maxlength="1000"<?= field_attrs($errors, 'notes') ?>><?= h($form['notes']) ?></textarea>
     <?= field_error($errors, 'notes') ?>
   </div>
+  <?= $editDoc ? document_edit_fields($editDoc, $form, $errors) : '' ?>
 
   <div class="actions">
-    <button type="submit" name="action" value="save" class="btn btn-transfer" data-busy-text="جارٍ الحفظ"><?= icon('transfer') ?>حفظ التحويل</button>
+    <button type="submit" name="action" value="save" class="btn btn-transfer" data-busy-text="جارٍ الحفظ"><?= icon('transfer') ?><?= $editDoc ? 'حفظ التعديل' : 'حفظ التحويل' ?></button>
   </div>
 </form>
 <?= stock_data_script($stockData) ?>
+<?= $editDoc ? document_edit_stock_script($pdo, $editDoc) : '' ?>
 <?php endif; ?>
 <?php
 render_footer();

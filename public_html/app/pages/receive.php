@@ -28,8 +28,27 @@ $defaults = [
     'cost_per_m3' => '',
 ] + payment_form_defaults($boxes);
 $form = $posted ? string_inputs($_POST, $fields) : $defaults;
+// تعديل وارد محفوظ (?edit=): يلغي الأصلي ويسجل البديل في خطوة واحدة (lib/doc_edit.php)
+$editDoc = document_edit_target($pdo, 'in');
+if ($editDoc && !$posted) {
+    $form = document_edit_form($pdo, $editDoc);
+} elseif ($editDoc) {
+    $form['edit_reason'] = input($_POST, 'edit_reason');
+}
 
-if ($posted) {
+if ($posted && $editDoc) {
+    verify_csrf();
+    try {
+        $result = document_replace($pdo, current_user_id(), (int) $editDoc['id'], $form, $form['edit_reason']);
+        flash($result['duplicate'] ? 'warning' : 'success', $result['duplicate']
+            ? sprintf('هذا التعديل سُجل من قبل (%s).', doc_label($result))
+            : sprintf('تم تعديل %s: أُلغي وسُجل بدلًا منه %s، وضُبطت الكميات والحسابات.', doc_label($editDoc), doc_label($result)));
+        redirect('document', ['id' => $result['id']]);
+    } catch (ValidationException $e) {
+        $errors = $e->errors;
+    }
+    $form['request_token'] = refresh_token_if_needed($form, $errors);
+} elseif ($posted) {
     verify_csrf();
     try {
         $result = record_receipt($pdo, current_user_id(), $form);
@@ -59,12 +78,13 @@ if ($done && $done['kind'] !== 'in') {
 $doneLine = $done ? (document_lines($pdo, (int) $done['id'])[0] ?? null) : null;
 $unitsPosted = $posted || $sticky !== [];
 
-render_header('إضافة وارد', 'receive');
+render_header($editDoc ? 'تعديل ' . doc_label($editDoc) : 'إضافة وارد', 'receive');
 ?>
 <div class="page-head">
-  <h1>إضافة وارد</h1>
-  <?php if ($sticky): ?><div class="page-actions"><a class="btn btn-quiet" href="<?= h(url('receive', ['clear' => '1'])) ?>">نموذج جديد فارغ</a></div><?php endif; ?>
+  <h1><?= $editDoc ? 'تعديل ' . h(doc_label($editDoc)) : 'إضافة وارد' ?></h1>
+  <?php if ($sticky && !$editDoc): ?><div class="page-actions"><a class="btn btn-quiet" href="<?= h(url('receive', ['clear' => '1'])) ?>">نموذج جديد فارغ</a></div><?php endif; ?>
 </div>
+<?= $editDoc ? document_edit_notice($editDoc) : '' ?>
 
 <?php if ($done && $doneLine): ?>
   <section class="confirm-box" aria-labelledby="done-title">
@@ -177,9 +197,10 @@ render_header('إضافة وارد', 'receive');
     <p class="hint" id="hint-notes">لتسجيل الرصيد الافتتاحي: اترك التكلفة والمورد فارغين واكتب في الملاحظات «رصيد افتتاحي»، ثم قيّمه من صفحة «تقييم المخزون الافتتاحي». إدخال تكلفة بدون مورد يُعامل كشراء نقدي ويحتاج رصيدًا كافيًا في الخزنة.</p>
     <?= field_error($errors, 'notes') ?>
   </div>
+  <?= $editDoc ? document_edit_fields($editDoc, $form, $errors) : '' ?>
 
   <div class="actions">
-    <button type="submit" class="btn btn-receive" data-busy-text="جارٍ الحفظ"><?= icon('receive') ?>حفظ الوارد</button>
+    <button type="submit" class="btn btn-receive" data-busy-text="جارٍ الحفظ"><?= icon('receive') ?><?= $editDoc ? 'حفظ التعديل' : 'حفظ الوارد' ?></button>
   </div>
 </form>
 <?= stock_data_script(stock_payload($pdo, $scope)) ?>

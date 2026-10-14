@@ -401,9 +401,53 @@ const [dl3] = await Promise.all([page.waitForEvent('download'), page.click('a:ha
 check('تحميل PDF الفاتورة من صفحة الطباعة', readFileSync(await dl3.path()).subarray(0, 5).toString() === '%PDF-' && dl3.suggestedFilename().endsWith('.pdf'), dl3.suggestedFilename());
 
 /* ---------------------------------------------------------------- */
+section('تعديل فاتورة بيع: إلغاء الأصلية وتسجيل البديلة في خطوة واحدة');
+{
+  await page.goto(BASE + 'index.php?r=sell');
+  await page.selectOption('#warehouse_id', { label: 'المخزن الرئيسي' });
+  await settle(page);
+  await page.fill('#pos-qty', '2');
+  await page.fill('#pos-price', '20000');
+  await page.click('[data-pos-add]');
+  await page.click('button:has-text("مراجعة الفاتورة")');
+  await page.click('button:has-text("تأكيد البيع")');
+  await page.waitForURL(/done=/);
+  const origId = new URL(page.url()).searchParams.get('done');
+  const stockBefore = Number(sql('SELECT qty_on_hand FROM stock WHERE warehouse_id=1'));
+  await page.goto(BASE + 'index.php?r=document&id=' + origId);
+  check('زر «تعديل» في صفحة الفاتورة للمدير', (await page.locator('a.btn:has-text("تعديل")').count()) === 1);
+  await page.click('a.btn:has-text("تعديل")');
+  await settle(page);
+  check('صفحة التعديل بعنوانها وتنبيهها', (await text(page, 'h1')).startsWith('تعديل بيع رقم') && (await page.locator('.alert-warning:has-text("يُلغى المستند الأصلي")').count()) === 1);
+  check('  أسطر الفاتورة في الجدول', (await page.locator('[data-pos-rows] tr').count()) === 1 && (await page.inputValue('[data-pos-hidden] input[name="lines[0][quantity]"]')) === '2');
+  check('  والمتاح يشمل كمية الفاتورة الأصلية', (await text(page, '[data-pos-available]')).includes(String(stockBefore + 2).replace(/\d/g, (d) => '٠١٢٣٤٥٦٧٨٩'[d])));
+  await page.click('[data-pos-rows] [data-pos-action="edit"]');
+  await page.fill('#pos-qty', '3');
+  await page.click('[data-pos-add]');
+  await page.fill('#edit_reason', 'زيادة الكمية');
+  await page.click('button:has-text("مراجعة الفاتورة")');
+  check('مراجعة التعديل', (await text(page, 'h1')).startsWith('مراجعة تعديل بيع رقم'));
+  await page.click('button:has-text("تأكيد التعديل")');
+  await page.waitForURL(/r=document/);
+  const newId = new URL(page.url()).searchParams.get('id');
+  check('بعد التأكيد: صفحة الفاتورة البديلة مع رابط الأصلية', newId !== origId && (await page.locator('.alert:has-text("هذا المستند بدل")').count()) === 1);
+  check('  الأصلية ملغاة ومربوطة', sql(`SELECT CONCAT(status, ':', replaced_by_id) FROM documents WHERE id=${origId}`) === 'cancelled:' + newId);
+  check('  والرصيد نقص ٣ فقط (أُعيد ٢ وخُصم ٣)', Number(sql('SELECT qty_on_hand FROM stock WHERE warehouse_id=1')) === stockBefore - 1);
+  check('  والتعديل في المراقبة بسببه', sql("SELECT COUNT(*) FROM audit_log WHERE action='doc.edit' AND summary LIKE '%زيادة الكمية%'") === '1');
+  await page.goto(BASE + 'index.php?r=document&id=' + origId);
+  check('الفاتورة الأصلية بلا زر تعديل ومعها رابط البديلة', (await page.locator('a.btn:has-text("تعديل")').count()) === 0 && (await page.locator('.alert:has-text("الساري الآن")').count()) === 1);
+}
+
+section('المقاسات: صفحة الإخفاء والوحدات');
+{
+  await page.goto(BASE + 'index.php?r=items');
+  check('صفحة المقاسات تفتح وفيها المقاسات', (await text(page, 'h1')) === 'المقاسات' && (await page.locator('#live-items tbody tr').count()) >= 1);
+  check('  مقاس له رصيد بلا زر إخفاء', (await page.locator('#live-items button:has-text("إخفاء")').count()) === 0);
+}
+
 section('إمكانية الوصول وقواعد التصميم (كمبيوتر)');
 const pages = ['home', 'inventory', 'receive', 'sell', 'transfer', 'documents', 'types', 'warehouses', 'settings', 'document&id=1', 'print&id=' + new URL(saleUrl).searchParams.get('id'),
-  'account', 'users', 'users&edit=1', 'monitor', 'reports&report=sales_period', 'reports&report=cash_summary', 'dashboard'];
+  'account', 'users', 'users&edit=1', 'monitor', 'items', 'reports&report=sales_period', 'reports&report=cash_summary', 'dashboard'];
 for (const r of pages) {
   await page.goto(BASE + 'index.php?r=' + r);
   await settle(page);
@@ -492,6 +536,8 @@ section('متصفح قديم بلا BigInt: المحرر الكلاسيكي يب
   check('بدون BigInt: الأسطر الكلاسيكية وزر «أسطر إضافية» ظاهر', (await o.locator('[data-pos]').count()) === 0
     && (await o.locator('[data-line]').count()) >= 3 && (await o.locator('button[value="more_lines"]').isVisible()));
   const before = await o.locator('[data-line]').count();
+  // الأسطر الإضافية تُضاف بعد الأسطر المملوءة: يُملأ سطر أولًا
+  await o.fill('input[name="lines[0][quantity]"]', '1');
   await Promise.all([o.waitForNavigation(), o.click('button[value="more_lines"]')]);
   check('  والزر يضيف أسطرًا', (await o.locator('[data-line]').count()) > before, `${before} -> ${await o.locator('[data-line]').count()}`);
   await octx.close();

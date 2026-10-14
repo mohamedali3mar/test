@@ -6,7 +6,11 @@ $id = (int) input($_GET, 'id');
 $errors = [];
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    require_permission('documents.cancel');
+    // الإلغاء: documents.cancel لأي مستند، أو documents.cancel_own لمستند سجّله المستخدم اليوم (يحددها المدير)
+    $target = find_document_scoped($pdo, $id);
+    if (!$target || !document_cancel_permitted($target)) {
+        require_permission('documents.cancel');
+    }
     verify_csrf();
     if (input($_POST, 'action') !== 'cancel') {
         render_simple_error('إجراء غير معروف.', 400);
@@ -37,6 +41,10 @@ $names = users_name_map($pdo);
 $createdBy = $names[(int) $d['created_by']] ?? (string) $d['created_by_name'];
 $cancelledBy = $d['cancelled_by'] !== null ? ($names[(int) $d['cancelled_by']] ?? (string) $d['cancelled_by_name']) : '';
 $canCancel = document_cancellable($d, allowed_branch_id($pdo));
+$cancelPermitted = document_cancel_permitted($d);
+$editProblem = $cancelled ? null : document_edit_problem($pdo, $d);
+$replacedBy = !empty($d['replaced_by_id']) ? find_document_scoped($pdo, (int) $d['replaced_by_id']) : null;
+$replaces = !empty($d['replaces_id']) ? find_document_scoped($pdo, (int) $d['replaces_id']) : null;
 $interBranch = $kind === 'transfer' && $d['to_branch_id'] !== null && (int) $d['to_branch_id'] !== (int) $d['branch_id'];
 
 render_header(doc_label($d), 'documents');
@@ -44,6 +52,9 @@ render_header(doc_label($d), 'documents');
 <div class="page-head">
   <h1><?= h(doc_label($d)) ?></h1>
   <div class="page-actions">
+    <?php if (!$cancelled && $editProblem === null): ?>
+      <a class="btn btn-primary" href="<?= h(url(document_edit_route($d), ['edit' => $id])) ?>"><?= icon('edit') ?>تعديل</a>
+    <?php endif; ?>
     <a class="btn" href="<?= h(url('print', ['id' => $id])) ?>"><?= icon('print') ?>طباعة</a>
     <a class="btn" href="<?= h(url('pdf', ['id' => $id])) ?>"><?= icon('pdf') ?>تحميل PDF</a>
     <a class="btn btn-quiet" href="<?= h(url('documents')) ?>">السجل</a>
@@ -51,6 +62,12 @@ render_header(doc_label($d), 'documents');
 </div>
 
 <div id="live-document" data-live>
+<?php if ($replaces): ?>
+  <p class="alert" role="status">هذا المستند بدل <a href="<?= h(url('document', ['id' => (int) $replaces['id']])) ?>"><?= h(doc_label($replaces)) ?></a> بعد تعديله.</p>
+<?php endif; ?>
+<?php if ($replacedBy): ?>
+  <p class="alert" role="status">عُدّل هذا المستند: الساري الآن <a href="<?= h(url('document', ['id' => (int) $replacedBy['id']])) ?>"><?= h(doc_label($replacedBy)) ?></a>.</p>
+<?php endif; ?>
 <?php if ($cancelled): ?>
   <div class="alert alert-warning" role="status">
     هذا المستند ملغى منذ <?= h(fmt_datetime($d['cancelled_at'])) ?> بواسطة <?= h($cancelledBy) ?>.
@@ -154,12 +171,12 @@ render_header(doc_label($d), 'documents');
 <?php endif; ?>
 </div>
 
-<?php if (!$cancelled && can('documents.cancel') && !$canCancel): ?>
+<?php if (!$cancelled && $cancelPermitted && !$canCancel): ?>
 <section class="section danger-zone" id="live-cancel" data-live aria-label="إلغاء المستند">
   <?= errors_summary($errors) ?>
   <p class="muted">إلغاء هذا المستند متاح فقط لمستخدم يرى فرعَي التحويل.</p>
 </section>
-<?php elseif (!$cancelled && can('documents.cancel')): ?>
+<?php elseif (!$cancelled && $cancelPermitted): ?>
 <section class="section danger-zone" id="live-cancel" data-live aria-labelledby="cancel-title">
   <h2 id="cancel-title">إلغاء المستند</h2>
   <p>
@@ -171,6 +188,7 @@ render_header(doc_label($d), 'documents');
       إلغاء التحويل يعيد الكميات من <?= h((string) $d['to_warehouse_name']) ?> إلى <?= h($d['warehouse_name']) ?>، ويُرفض إذا كان رصيد المخزن المستلم أقل من الكمية.
     <?php endif; ?>
     يبقى المستند في السجل بحالة «ملغى».
+    <?php if ($editProblem === null): ?>لتصحيح بياناته بدل إلغائها استخدم زر «تعديل» أعلى الصفحة.<?php endif; ?>
   </p>
   <?= errors_summary($errors, 'تعذر الإلغاء') ?>
   <form method="post" action="<?= h(url('document', ['id' => $id])) ?>" class="form" novalidate>

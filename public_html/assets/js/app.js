@@ -224,8 +224,20 @@
 
   /* ---------- بيانات الأرصدة ---------- */
   var stock = { items: [], byId: {}, byKey: {} };
+  // تعديل مستند: كمياته الأصلية تعود لمخزنه عند الحفظ، فتُضاف للمتاح بعد كل تحديث للأرصدة (lib/doc_edit.php)
+  var editBack = null;
+  var editBackEl = document.getElementById('edit-stock-back');
+  if (editBackEl) {
+    try { editBack = JSON.parse(editBackEl.textContent); } catch { editBack = null; }
+  }
   function setStock(items) {
     stock.items = items || [];
+    if (editBack && editBack.items) {
+      stock.items.forEach(function (it) {
+        var back = Number(editBack.items[it.id] || 0);
+        if (back > 0) { it.stock[editBack.wh] = Number(it.stock[editBack.wh] || 0) + back; }
+      });
+    }
     stock.byId = {};
     stock.byKey = {};
     stock.items.forEach(function (it) { stock.byId[it.id] = it; stock.byKey[it.key] = it; });

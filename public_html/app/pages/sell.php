@@ -12,6 +12,13 @@ $form = $posted
 $form['lines'] = $posted ? form_lines($_POST['lines'] ?? [], LINE_FIELDS_SALE) : [];
 $extraLines = 0;
 $review = null;
+// تعديل فاتورة محفوظة (?edit=): النموذج يبدأ ببياناتها، والحفظ يلغيها ويسجل البديلة في خطوة واحدة (lib/doc_edit.php)
+$editDoc = document_edit_target($pdo, 'sale');
+if ($editDoc && !$posted) {
+    $form = document_edit_form($pdo, $editDoc);
+} elseif ($editDoc) {
+    $form['edit_reason'] = input($_POST, 'edit_reason');
+}
 
 if ($posted) {
     verify_csrf();
@@ -26,7 +33,13 @@ if ($posted) {
             }
         }
         if ($action === 'review') {
-            $review = validate_sale($pdo, $form, true);
+            $review = $editDoc ? document_edit_review_sale($pdo, $editDoc, $form) : validate_sale($pdo, $form, true);
+        } elseif ($action === 'confirm' && $editDoc) {
+            $result = document_replace($pdo, current_user_id(), (int) $editDoc['id'], $form, $form['edit_reason']);
+            flash($result['duplicate'] ? 'warning' : 'success', $result['duplicate']
+                ? sprintf('هذا التعديل سُجل من قبل (%s).', doc_label($result))
+                : sprintf('تم تعديل %s: أُلغيت وسُجلت بدلًا منها %s، وضُبطت الكميات والحسابات.', doc_label($editDoc), doc_label($result)));
+            redirect('document', ['id' => $result['id']]);
         } elseif ($action === 'confirm') {
             $result = record_sale($pdo, current_user_id(), $form);
             flash($result['duplicate'] ? 'warning' : 'success', $result['duplicate']
@@ -47,10 +60,11 @@ if ($posted) {
 /* ---------- صفحة المراجعة ---------- */
 if ($review) {
     render_header('مراجعة فاتورة البيع', 'sell');
-    $avail = current_stock($pdo, array_map(fn ($l) => (int) $l['item']['id'], $review['lines']), (int) $review['warehouse']['id']);
+    $avail = $review['avail'] ?? current_stock($pdo, array_map(fn ($l) => (int) $l['item']['id'], $review['lines']), (int) $review['warehouse']['id']);
     $rp = $review['pay'];
     ?>
-<h1>مراجعة فاتورة البيع</h1>
+<h1><?= $editDoc ? 'مراجعة تعديل ' . h(doc_label($editDoc)) : 'مراجعة فاتورة البيع' ?></h1>
+<?= $editDoc ? document_edit_notice($editDoc) : '' ?>
 <p>راجع البيانات ثم اضغط «تأكيد البيع». لم يُحفظ شيء حتى الآن، والرصيد يُتحقق منه مرة أخرى لحظة التأكيد.</p>
 <dl class="facts facts-wide">
   <div><dt>المخزن</dt><dd><?= h($review['warehouse']['name']) ?></dd></div>
@@ -58,7 +72,7 @@ if ($review) {
   <div><dt>طريقة الدفع</dt><dd><?= h(PAYMENT_TYPE_LABELS[$rp['payment_type']]) ?></dd></div>
   <div><dt>المدفوع</dt><dd><?= h(fmt_piasters($rp['paid'])) ?><?= $rp['cash_box'] ? ' (' . h($rp['cash_box']['name']) . ')' : '' ?></dd></div>
   <div><dt>المتبقي</dt><dd><?= h(fmt_piasters($rp['remaining'])) ?></dd></div>
-  <?php if ($rp['party']): $oldBal = money_to_piasters((string) $rp['party']['balance']); ?>
+  <?php if ($rp['party']): $oldBal = $review['party_balance'] ?? money_to_piasters((string) $rp['party']['balance']); ?>
     <div><dt>رصيد العميل الحالي</dt><dd><?= h(fmt_party_balance($oldBal, 'customer')) ?></dd></div>
     <div class="fact-strong"><dt>رصيد العميل بعد الفاتورة</dt><dd><?= h(fmt_party_balance($oldBal + $rp['remaining'], 'customer')) ?></dd></div>
   <?php endif; ?>
@@ -117,13 +131,17 @@ if ($review) {
   <?php foreach (['warehouse_id', 'party_name', 'notes', 'request_token'] as $f): ?>
     <input type="hidden" name="<?= h($f) ?>" value="<?= h($form[$f]) ?>">
   <?php endforeach; ?>
+  <?php if ($editDoc): ?>
+    <input type="hidden" name="edit_id" value="<?= (int) $editDoc['id'] ?>">
+    <input type="hidden" name="edit_reason" value="<?= h((string) $form['edit_reason']) ?>">
+  <?php endif; ?>
   <?= payment_hidden_fields($form) ?>
   <?php foreach (array_values($form['lines']) as $i => $line): ?>
     <?php foreach (LINE_FIELDS_SALE as $f): ?>
       <input type="hidden" name="lines[<?= (int) $i ?>][<?= h($f) ?>]" value="<?= h($line[$f]) ?>">
     <?php endforeach; ?>
   <?php endforeach; ?>
-  <button type="submit" name="action" value="confirm" class="btn btn-sale" data-busy-text="جارٍ الحفظ"><?= icon('sale') ?>تأكيد البيع</button>
+  <button type="submit" name="action" value="confirm" class="btn btn-sale" data-busy-text="جارٍ الحفظ"><?= icon('sale') ?><?= $editDoc ? 'تأكيد التعديل' : 'تأكيد البيع' ?></button>
   <button type="submit" name="action" value="edit" class="btn">تعديل</button>
 </form>
 <?php
@@ -142,9 +160,10 @@ if ($done && $done['kind'] !== 'sale') {
     $done = null;
 }
 
-render_header('فاتورة بيع', 'sell');
+render_header($editDoc ? 'تعديل ' . doc_label($editDoc) : 'فاتورة بيع', 'sell');
 ?>
-<h1>فاتورة بيع</h1>
+<h1><?= $editDoc ? 'تعديل ' . h(doc_label($editDoc)) : 'فاتورة بيع' ?></h1>
+<?= $editDoc ? document_edit_notice($editDoc) : '' ?>
 
 <?php if ($done): ?>
   <section class="confirm-box" aria-labelledby="done-title">
@@ -169,7 +188,7 @@ render_header('فاتورة بيع', 'sell');
   </section>
 <?php endif; ?>
 
-<?php if (!$hasStock && !$errors && !$posted): ?>
+<?php if (!$hasStock && !$errors && !$posted && !$editDoc): ?>
   <p class="empty">لا توجد أصناف متاحة للبيع. <a href="<?= h(url('receive')) ?>">أضف وارد</a> أولًا.</p>
 <?php else: ?>
 
@@ -197,6 +216,7 @@ render_header('فاتورة بيع', 'sell');
   <?= render_line_editor(editor_lines($form['lines'], LINE_FIELDS_SALE, 3, $extraLines), $errors, true, $types, $stockData) ?>
 
   <?= render_payment_fields($form, $errors, 'customer', parties_for_select($pdo, 'customer'), $boxes) ?>
+  <?= $editDoc ? document_edit_fields($editDoc, $form, $errors) : '' ?>
 
   <div class="field">
     <label for="notes">ملاحظات <span class="optional">(اختياري)</span></label>
@@ -210,6 +230,7 @@ render_header('فاتورة بيع', 'sell');
   </div>
 </form>
 <?= stock_data_script($stockData) ?>
+<?= $editDoc ? document_edit_stock_script($pdo, $editDoc) : '' ?>
 <?php endif; ?>
 <?php
 render_footer();
