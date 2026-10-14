@@ -713,8 +713,9 @@ function validate_sale(PDO $pdo, array $in, bool $checkStock = true): array
     }
     [$lines, $totQty, $totM3, $totAmount] = lines_with_figures($lines);
     $pay = payment_settle($pay, money_to_piasters($totAmount), $errors);
-    if (!$errors && $pay['party']) {
-        // فحص مبدئي لحد الائتمان (يُعاد بعد قفل حساب العميل)
+    if ($checkStock && !$errors && $pay['party']) {
+        // فحص مبدئي لحد الائتمان لصفحة المراجعة فقط. عند الحفظ يُفحص بعد قفل حساب العميل وبعد فحص التكرار،
+        // فإعادة إرسال فاتورة محفوظة تعيدها («سُجلت من قبل») حتى لو صار رصيد العميل الآن قريبًا من حده
         if ($err = credit_limit_error($pay['party'], money_to_piasters((string) $pay['party']['balance']), $pay['remaining'])) {
             $errors['party_id'] = $err;
         }
