@@ -36,7 +36,10 @@ $cancelled = $d['status'] === 'cancelled';
 $names = users_name_map($pdo);
 $createdBy = $names[(int) $d['created_by']] ?? (string) $d['created_by_name'];
 $cancelledBy = $d['cancelled_by'] !== null ? ($names[(int) $d['cancelled_by']] ?? (string) $d['cancelled_by_name']) : '';
-$canCancel = document_cancellable($d, allowed_branch_id($pdo));
+$scope = allowed_branch_id($pdo);
+$canCancel = document_cancellable($d, $scope);
+// مخزن المستند نُقل إلى فرع آخر بعد حفظه: الإلغاء لمستخدم يرى ذلك الفرع فقط (يُعاد الفحص عند الإلغاء نفسه)
+$movedWarehouse = $canCancel && !$cancelled ? document_moved_warehouse($pdo, $d, $scope) : null;
 $interBranch = $kind === 'transfer' && $d['to_branch_id'] !== null && (int) $d['to_branch_id'] !== (int) $d['branch_id'];
 
 render_header(doc_label($d), 'documents');
@@ -158,6 +161,11 @@ render_header(doc_label($d), 'documents');
 <section class="section danger-zone" id="live-cancel" data-live aria-label="إلغاء المستند">
   <?= errors_summary($errors) ?>
   <p class="muted">إلغاء هذا المستند متاح فقط لمستخدم يرى فرعَي التحويل.</p>
+</section>
+<?php elseif (!$cancelled && can('documents.cancel') && $movedWarehouse !== null): ?>
+<section class="section danger-zone" id="live-cancel" data-live aria-label="إلغاء المستند">
+  <?= errors_summary($errors) ?>
+  <p class="muted"><?= h(sprintf(DOC_WAREHOUSE_MOVED, $movedWarehouse)) ?></p>
 </section>
 <?php elseif (!$cancelled && can('documents.cancel')): ?>
 <section class="section danger-zone" id="live-cancel" data-live aria-labelledby="cancel-title">

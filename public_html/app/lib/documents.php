@@ -7,8 +7,8 @@ defined('APP_ROOT') || exit;
  * قواعد ثابتة في كل العمليات:
  *  - كل عملية معاملة واحدة: الرصيد والمستند وأسطره والترقيم إما تُحفظ معًا أو لا يُحفظ شيء.
  *  - ترتيب الأقفال واحد دائمًا لمنع الجمود (الترتيب الكامل في رأس accounting.php):
- *      (الإلغاء فقط) صف المستند ← (الوارد والبيع والتحويل) صفوف warehouses ثم branches بقفل مشترك
- *      مرتبة تصاعديًا (lock_doc_warehouses) ← صف العميل أو المورد ← صفوف الخزائن تصاعديًا
+ *      (الإلغاء فقط) صف المستند ← (الوارد والبيع والتحويل، والإلغاء للمستخدم المقيد بفرع) صفوف warehouses
+ *      ثم branches بقفل مشترك مرتبة تصاعديًا (lock_doc_warehouses) ← صف العميل أو المورد ← صفوف الخزائن تصاعديًا
  *      ← صفوف items مرتبة تصاعديًا (FOR UPDATE في الوارد والبيع وإلغائهما لأن قيمة المخزون تتغير،
  *        ومشترك LOCK IN SHARE MODE في التحويل وإلغائه) ثم قراءة Q المقفلة من stock
  *      ← صفوف stock مرتبة تصاعديًا (item_id, warehouse_id) ← صف عداد الترقيم ← إدراج المستند وأسطره
@@ -23,6 +23,7 @@ defined('APP_ROOT') || exit;
 const DOC_COUNTERS = ['in' => 'doc_in', 'sale' => 'doc_sale', 'transfer' => 'doc_transfer'];
 const MAX_LINES = 50;
 const FORM_EXPIRED = 'انتهت صلاحية النموذج. أعد فتح الصفحة وحاول مرة أخرى.';
+const DOC_WAREHOUSE_MOVED = 'لا يمكنك إلغاء هذا المستند لأن المخزن «%s» نُقل إلى فرع آخر بعد حفظه. اطلب إلغاءه من المدير (مستخدم يرى كل الفروع).';
 
 /* ===================== أدوات عامة ===================== */
 
@@ -1006,6 +1007,16 @@ function cancel_document(PDO $pdo, int $userId, int $docId, string $reasonRaw): 
         }
         if ($doc['status'] !== 'active') {
             throw new ValidationException(['document' => 'هذا المستند ملغى بالفعل.']);
+        }
+        // المقيد بفرع يلغي فقط إذا كانت مخازن المستند الآن في فرعه: المخزن قد يُنقل إلى فرع آخر بعد الحفظ،
+        // والإلغاء يغير رصيده. قفل مشترك على المخازن وفروعها بعد صف المستند، حسب ترتيب الأقفال.
+        if ($scope !== null) {
+            $whIds = array_filter([(int) $doc['warehouse_id'], (int) ($doc['to_warehouse_id'] ?? 0)]);
+            foreach (lock_doc_warehouses($pdo, $whIds) as $w) {
+                if (!branch_in_scope($scope, $w['branch_id'])) {
+                    throw new ValidationException(['document' => sprintf(DOC_WAREHOUSE_MOVED, $w['name'])]);
+                }
+            }
         }
         if (!period_is_open((string) $doc['doc_date'])) {
             throw new ValidationException(['document' => sprintf(

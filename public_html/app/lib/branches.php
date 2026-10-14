@@ -82,6 +82,29 @@ function document_cancellable(array $doc, ?int $scope): bool
         && ($doc['kind'] !== 'transfer' || branch_in_scope($scope, $doc['to_branch_id'] ?? null));
 }
 
+/**
+ * اسم أول مخزن للمستند خرج الآن من النطاق (نُقل إلى فرع آخر بعد حفظ المستند)، أو null إذا كانت كلها فيه.
+ * قراءة بدون قفل لعرض صفحة المستند فقط؛ cancel_document يعيد الفحص بعد قفل صفوف المخازن.
+ */
+function document_moved_warehouse(PDO $pdo, array $doc, ?int $scope): ?string
+{
+    if ($scope === null) {
+        return null;
+    }
+    $ids = array_values(array_filter([(int) $doc['warehouse_id'], (int) ($doc['to_warehouse_id'] ?? 0)]));
+    if (!$ids) {
+        return null;
+    }
+    $stmt = $pdo->prepare('SELECT name, branch_id FROM warehouses WHERE id IN (' . implode(',', array_fill(0, count($ids), '?')) . ') ORDER BY id');
+    $stmt->execute($ids);
+    foreach ($stmt->fetchAll() as $w) {
+        if (!branch_in_scope($scope, $w['branch_id'])) {
+            return (string) $w['name'];
+        }
+    }
+    return null;
+}
+
 /** المستند إذا كان ظاهرًا للمستخدم الحالي، وإلا null كأنه غير موجود (لا يُكشف وجوده) */
 function find_document_scoped(PDO $pdo, int $id): ?array
 {

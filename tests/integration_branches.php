@@ -327,6 +327,30 @@ check_eq('  الرصيد لم يتغير', $qtyBefore, stock_qty($pdo, $item, $w
 warehouse_move($pdo, $whMaadi, $maadi);
 
 /* ---------------------------------------------------------------- */
+section('مخزن نُقل إلى فرع آخر: المقيد بالفرع القديم لا يلغي مستنداته السابقة');
+$movedIn = record_receipt($pdo, $uid, receipt_input($whMaadi, $mosky, '13', 'cm', '5', 'cm', '3', 'm', '40'));
+$movedItem = item_id_for($pdo, $mosky, 130000, 50000, 3000000);
+$movedSale = record_sale($pdo, $uid, sale_input($whMaadi, [[$movedItem, 5, '1000']]));
+warehouse_move($pdo, $whMaadi, $north);
+act_as($staff);
+$errors = expect_validation('إلغاء وارد قديم لمخزن نُقل إلى فرع آخر مرفوض', fn () => cancel_document($pdo, $staff, $movedIn['id'], ''));
+check('  الرسالة تذكر النقل وتوجه إلى المدير', str_contains($errors['document'] ?? '', 'نُقل إلى فرع آخر') && str_contains($errors['document'] ?? '', 'المدير'), $errors['document'] ?? '');
+expect_validation('  وإلغاء البيع القديم من نفس المخزن مرفوض', fn () => cancel_document($pdo, $staff, $movedSale['id'], ''));
+check_eq('  المستندان ساريان والرصيد لم يتغير', ['active', 'active', 35],
+    [find_document($pdo, $movedIn['id'])['status'], find_document($pdo, $movedSale['id'])['status'], stock_qty($pdo, $movedItem, $whMaadi)]);
+$whName = (string) $pdo->query("SELECT name FROM warehouses WHERE id = $whMaadi")->fetchColumn();
+check_eq('  صفحة المستند تعرض السبب بدل نموذج الإلغاء', $whName, document_moved_warehouse($pdo, find_document($pdo, $movedIn['id']), allowed_branch_id($pdo)));
+act_as($uid);
+check('  المدير الذي يرى كل الفروع: لا مانع', document_moved_warehouse($pdo, find_document($pdo, $movedSale['id']), allowed_branch_id($pdo)) === null);
+cancel_document($pdo, $uid, $movedSale['id'], 'إلغاء بواسطة المدير');
+check_eq('  والمدير يلغي البيع القديم', ['cancelled', 40], [find_document($pdo, $movedSale['id'])['status'], stock_qty($pdo, $movedItem, $whMaadi)]);
+warehouse_move($pdo, $whMaadi, $maadi);
+act_as($staff);
+cancel_document($pdo, $staff, $movedIn['id'], '');
+check_eq('بعد إعادة المخزن إلى فرعه: المقيد يلغي الوارد', ['cancelled', 0], [find_document($pdo, $movedIn['id'])['status'], stock_qty($pdo, $movedItem, $whMaadi)]);
+act_as(0);
+
+/* ---------------------------------------------------------------- */
 section('إجماليات المبيعات لكل عملة على حدة');
 save_setting($pdo, 'currency', 'دولار');
 reset_settings_cache();
