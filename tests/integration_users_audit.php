@@ -409,7 +409,7 @@ check_eq('ما تغير: منح الإلغاء والصرف، وسحب التح�
 check_eq('  يُحفظ ما يختلف عن الافتراضي فقط', ['documents.cancel' => true, 'vouchers.collect' => false, 'vouchers.pay' => true],
     (function () use ($pdo, $staff) { $o = json_decode((string) user_find($pdo, $staff)['permissions'], true); ksort($o); return $o; })());
 $row = expect_one_audit($pdo, '  سطر في المراقبة', $a0, 'user.permissions', $admin, 'user', $staff);
-check('  الملخص بالأسماء العربية', str_contains($row['summary'], 'منح: إلغاء المستندات') && str_contains($row['summary'], 'سحب: سند قبض'), $row['summary']);
+check('  الملخص بالأسماء العربية', str_contains($row['summary'], 'منح: إلغاء أي فاتورة أو إذن') && str_contains($row['summary'], 'سحب: سند قبض'), $row['summary']);
 act_as($pdo, $staff);
 check('بعد التحديد: الموظف يلغي ويصرف ولا يحصّل', can('documents.cancel') && can('vouchers.pay') && !can('vouchers.collect') && can_open('pay') && !can_open('collect'));
 check('  ولا يحصل على إدارة المستخدمين ولا الإعدادات أبدًا', !can('users.manage') && !can('settings.manage') && !can('migrate.run'));
