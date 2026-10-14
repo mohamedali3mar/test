@@ -210,7 +210,7 @@ render_header($title, 'parties');
       <?php foreach ($rows as $r): $rid = (int) $r['id']; $active = (int) $r['is_active'] === 1; ?>
         <tr class="<?= $active ? '' : 'row-cancelled' ?>">
           <td data-label="الاسم"><a href="<?= h(url('party_statement', ['id' => $rid])) ?>"><?= h($r['name']) ?></a></td>
-          <td data-label="الهاتف" class="nowrap"><?= h(digits($r['phone'])) ?></td>
+          <td data-label="الهاتف" class="nowrap"><?= phone_html((string) $r['phone']) ?></td>
           <td data-label="الرصيد" class="num nowrap"><?= h(fmt_party_balance(money_to_piasters($r['balance']), $kind)) ?></td>
           <td data-label="حد الائتمان" class="num"><?= $r['credit_limit'] === null ? '<span class="muted">بلا حد</span>' : h(fmt_money((string) $r['credit_limit'])) ?></td>
           <td data-label="الحالة"><?= $active ? 'نشط' : '<span class="status status-cancelled">موقوف</span>' ?></td>

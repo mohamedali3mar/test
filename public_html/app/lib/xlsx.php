@@ -8,6 +8,7 @@ defined('APP_ROOT') || exit;
  *   'title'        => عنوان التقرير
  *   'subtitle'     => وصف الفلاتر المطبقة (قد يكون فارغًا)
  *   'columns'      => [['key' => .., 'label' => .., 'type' => text|int|volume|money|date, 'align' => start|end], ...]
+ *                     (اختياري 'dir' => 'ltr' لنص يُقرأ من اليسار لليمين مثل الهاتف)
  *   'rows'         => [[key => قيمة خام], ...]   (مصفوفة أو أي iterable، تُقرأ مرة واحدة)
  *   'totals'       => [key => قيمة خام] أو null
  *   'generated_at' => 'Y-m-d H:i:s' بالتوقيت المحلي
@@ -195,7 +196,9 @@ function xlsx_normalize_dataset(array $d): array
         if ($align !== 'start' && $align !== 'end') {
             throw new InvalidArgumentException('Export column align must be start or end');
         }
-        $out[] = ['key' => $key, 'label' => xlsx_text($c['label'] ?? $key), 'type' => $type, 'align' => $align];
+        // dir => ltr: نص يُقرأ من اليسار لليمين (الهاتف)، وإلا تقلب الورقة العربية ترتيب مجموعات أرقامه
+        $out[] = ['key' => $key, 'label' => xlsx_text($c['label'] ?? $key), 'type' => $type, 'align' => $align,
+            'ltr' => ($c['dir'] ?? '') === 'ltr'];
     }
     $rows = $d['rows'] ?? [];
     if (!is_iterable($rows)) {
@@ -323,9 +326,9 @@ function xlsx_write_sheet(array $d, string $dir): array
         $fmt = XlsxStyles::numFmtFor($col['type']);
         // إزاحة 1 في خلايا الجدول: بدونها يلتصق عمود محاذاته للبداية بجاره المحاذى للنهاية عند الطباعة
         $cellStyles[$i] = [
-            'num' => $st->xf($fmt, 0, 0, 0, $h, 'top', false, 1),
-            'text' => $st->xf(0, 0, 0, 0, $h, 'top', false, 1),
-            'wrap' => $st->xf(0, 0, 0, 0, $h, 'top', true, 1),
+            'num' => $st->xf($fmt, 0, 0, 0, $h, 'top', false, 1, $col['ltr']),
+            'text' => $st->xf(0, 0, 0, 0, $h, 'top', false, 1, $col['ltr']),
+            'wrap' => $st->xf(0, 0, 0, 0, $h, 'top', true, 1, $col['ltr']),
             'head' => $st->xf(0, XlsxStyles::FONT_BOLD, XlsxStyles::FILL_HEADER, XlsxStyles::BORDER_BOTTOM, $h, 'center', true, 1),
             'total' => $st->xf($fmt, XlsxStyles::FONT_BOLD, 0, XlsxStyles::BORDER_TOP, $h, 'top', false, 1),
         ];
@@ -729,10 +732,10 @@ final class XlsxStyles
         };
     }
 
-    /** $indent: إزاحة النص عن حافة محاذاته (left/right فقط) */
-    public function xf(int $fmt, int $font, int $fill, int $border, string $h = '', string $v = '', bool $wrap = false, int $indent = 0): int
+    /** $indent: إزاحة النص عن حافة محاذاته (left/right فقط). $ltr: اتجاه القراءة من اليسار لليمين (readingOrder) */
+    public function xf(int $fmt, int $font, int $fill, int $border, string $h = '', string $v = '', bool $wrap = false, int $indent = 0, bool $ltr = false): int
     {
-        $key = "$fmt|$font|$fill|$border|$h|$v|" . (int) $wrap . ($indent ? "|$indent" : '');
+        $key = "$fmt|$font|$fill|$border|$h|$v|" . (int) $wrap . ($indent ? "|$indent" : '') . ($ltr ? '|ltr' : '');
         if (isset($this->index[$key])) {
             return $this->index[$key];
         }
@@ -742,7 +745,8 @@ final class XlsxStyles
         if ($h !== '' || $v !== '' || $wrap) {
             $x .= ' applyAlignment="1"><alignment' . ($h !== '' ? ' horizontal="' . $h . '"' : '')
                 . ($v !== '' ? ' vertical="' . $v . '"' : '') . ($wrap ? ' wrapText="1"' : '')
-                . ($indent && ($h === 'left' || $h === 'right') ? ' indent="' . $indent . '"' : '') . '/></xf>';
+                . ($indent && ($h === 'left' || $h === 'right') ? ' indent="' . $indent . '"' : '')
+                . ($ltr ? ' readingOrder="1"' : '') . '/></xf>';
         } else {
             $x .= '/>';
         }

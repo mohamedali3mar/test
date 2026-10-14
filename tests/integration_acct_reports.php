@@ -444,6 +444,19 @@ check('المبيعات: الوصف في الصفحة', str_contains($html, h('�
 check('الأرباح: السالب بعلامة ناقص', str_contains($html, h('-' . fmt_money('845.50'))));
 [$html, $w] = render_page('reports', ['report' => 'valuation']);
 check('التقييم: تنبيه الأصناف غير المقيّمة', str_contains($html, 'غير مقيّم') && str_contains($html, h(fmt_money('753.34'))));
+// الهاتف من اليسار لليمين: بدون <bdo dir="ltr"> ينقلب ترتيب مجموعات أرقامه داخل الخانة العربية («5678 1234 010»)
+$pdo->prepare('UPDATE parties SET phone = ? WHERE id = ?')->execute(['010 1234 5678', $c1]);
+[$html, $w] = render_page('reports', ['report' => 'customer_balances', 'show' => 'all']);
+check_html('أرصدة العملاء مع هاتف بمسافات', $html, $w);
+check('أرصدة العملاء: الهاتف داخل <bdo dir="ltr">', str_contains($html, '<td data-col="phone" data-label="الهاتف"><bdo dir="ltr">010 1234 5678</bdo></td>'));
+$_SERVER['REQUEST_METHOD'] = 'GET';
+[$html, $w] = render_page('parties', ['kind' => 'customer']);
+check_eq('قائمة العملاء: بلا تحذيرات PHP', [], $w);
+check('قائمة العملاء: الهاتف بترتيبه داخل <bdo dir="ltr">', str_contains($html, '<bdo dir="ltr">' . digits('010 1234 5678') . '</bdo>'));
+[$html, $w] = render_page('party_statement', ['id' => (string) $c1]);
+check_eq('كشف حساب العميل: بلا تحذيرات PHP', [], $w);
+check('كشف حساب العميل: الهاتف بترتيبه داخل <bdo dir="ltr">', str_contains($html, '<dd><bdo dir="ltr">' . digits('010 1234 5678') . '</bdo></dd>'));
+$pdo->prepare('UPDATE parties SET phone = ? WHERE id = ?')->execute(['0100', $c1]);
 [$html, $w] = render_page('reports', ['report' => 'sales_period', 'from' => '<script>alert(1)</script>', 'warehouse' => '"><b>x']);
 check_html('مدخلات خبيثة', $html, $w);
 check('مدخلات خبيثة: لا تظهر في الصفحة', !str_contains($html, '<script>alert') && !str_contains($html, '<b>x') && str_contains($html, 'تم تجاهل'));

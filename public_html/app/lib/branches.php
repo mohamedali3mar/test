@@ -554,3 +554,9 @@ function fmt_phone(string $phone): string
 {
     return digits($phone);
 }
+
+/** رقم هاتف العميل أو المورد كـ HTML مهرب بترتيب صحيح داخل الصفحة العربية (ltr_html) */
+function phone_html(string $phone): string
+{
+    return ltr_html(fmt_phone($phone));
+}

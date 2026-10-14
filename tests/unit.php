@@ -153,6 +153,16 @@ set_settings(['digits' => 'western']);
 check_eq('عرض المقاس بترتيب ثابت (U+00A0 داخل البعد)', "عرض\u{00A0}10\u{00A0}سم × تخانة\u{00A0}50\u{00A0}مللي × طول\u{00A0}3\u{00A0}متر",
     fmt_size(['width_um' => 100000, 'width_unit' => 'cm', 'thickness_um' => 50000, 'thickness_unit' => 'mm', 'length_um' => 3000000, 'length_unit' => 'm']));
 
+// هاتف العميل والمورد: الأرقام العربية والفواصل بينها تأخذ اتجاه الصفحة فينقلب ترتيب المجموعات بدون <bdo dir="ltr">
+set_settings(['digits' => 'arabic']);
+check_eq('الهاتف بمسافات داخل <bdo dir="ltr">', '<bdo dir="ltr">٠١٠ ١٢٣٤ ٥٦٧٨</bdo>', phone_html('010 1234 5678'));
+check_eq('  ومعه + و-', '<bdo dir="ltr">+٢٠ ١٠٠-١٢٣-٤٥٦٧</bdo>', phone_html('+20 100-123-4567'));
+check_eq('  هاتف كُتبت معه حروف يُعزل فقط فلا تنقلب حروفه', '<bdi>٠١٠١٢٣٤٥٦٧٨ أحمد</bdi>', phone_html('01012345678 أحمد'));
+check_eq('  ويُهرب', '<bdi>&lt;b&gt;</bdi>', phone_html('<b>'));
+check_eq('  والفارغ لا يُخرج شيئًا', '', phone_html(''));
+set_settings(['digits' => 'western']);
+check_eq('  وبالأرقام الإنجليزية', '<bdo dir="ltr">010 1234 5678</bdo>', phone_html('010 1234 5678'));
+
 /* ---------------------------------------------------------------- */
 section('ملف حالات التطابق مع JavaScript');
 $parity = [];

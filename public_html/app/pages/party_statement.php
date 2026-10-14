@@ -56,7 +56,7 @@ render_header($title, 'parties', 'page-print');
   </header>
   <dl class="print-meta">
     <div><dt><?= h(PARTY_NOUNS[$kind]) ?></dt><dd><?= h($party['name']) ?><?= (int) $party['is_active'] ? '' : ' (موقوف)' ?></dd></div>
-    <?php if ($party['phone'] !== ''): ?><div><dt>الهاتف</dt><dd><?= h(digits($party['phone'])) ?></dd></div><?php endif; ?>
+    <?php if ($party['phone'] !== ''): ?><div><dt>الهاتف</dt><dd><?= phone_html((string) $party['phone']) ?></dd></div><?php endif; ?>
     <div><dt>الفترة</dt><dd><?= h($period) ?></dd></div>
     <div><dt>الرصيد الحالي</dt><dd><?= h(fmt_party_balance(money_to_piasters($party['balance']), $kind)) ?></dd></div>
   </dl>
