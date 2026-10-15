@@ -145,7 +145,7 @@ render_header('المراقبة', 'monitor');
               <a href="<?= h(url('users', ['edit' => (int) $a['entity_id']])) ?>">عرض المستخدم</a>
             <?php endif; ?>
           </td>
-          <td data-label="<?= h('عنوان IP') ?>" class="nowrap"><?= $a['ip'] !== '' ? h((string) $a['ip']) : '<span class="muted">لا يوجد</span>' ?></td>
+          <td data-label="<?= h('عنوان IP') ?>" class="nowrap"><?= $a['ip'] !== '' ? monitor_ip_html((string) $a['ip']) : '<span class="muted">لا يوجد</span>' ?></td>
           <td data-label="<?= h('الجهاز') ?>" class="audit-device"><?= $device !== '' ? '<span title="' . h((string) $a['user_agent']) . '">' . h($device) . '</span>' : '<span class="muted">لا يوجد</span>' ?></td>
         </tr>
       <?php endforeach; ?>
@@ -188,7 +188,7 @@ render_header('المراقبة', 'monitor');
           <td data-label="<?= h('الوقت') ?>" class="nowrap"><?= h(fmt_datetime($e['created_at'])) ?></td>
           <td data-label="<?= h('اسم المستخدم') ?>"><?= h((string) $e['username']) ?></td>
           <td data-label="<?= h('الحدث') ?>"><?= $bad ? '<span class="status status-failed">' . h(MONITOR_AUTH_EVENT_LABELS[$e['event']]) . '</span>' : h(MONITOR_AUTH_EVENT_LABELS[$e['event']] ?? (string) $e['event']) ?></td>
-          <td data-label="<?= h('عنوان IP') ?>" class="nowrap"><?= h((string) $e['ip']) ?></td>
+          <td data-label="<?= h('عنوان IP') ?>" class="nowrap"><?= monitor_ip_html((string) $e['ip']) ?></td>
           <td data-label="<?= h('الجهاز') ?>" class="audit-device"><?= $device !== '' ? '<span title="' . h((string) $e['user_agent']) . '">' . h($device) . '</span>' : '<span class="muted">لا يوجد</span>' ?></td>
         </tr>
       <?php endforeach; ?>

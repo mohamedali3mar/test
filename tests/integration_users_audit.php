@@ -734,6 +734,22 @@ check_eq('محاولات فاشلة خلال 24 ساعة من auth_events', 2, m
 $ev = monitor_auth_events($pdo, 50);
 check('سجل الدخول: الأحدث أولًا', count($ev) === 4 && $ev[0]['event'] === 'login_ok');
 check('كل أحداث الدخول لها اسم عربي', !array_diff(['login_ok', 'login_fail', 'login_locked', 'logout', 'password_changed', 'password_reset', 'session_expired'], array_keys(MONITOR_AUTH_EVENT_LABELS)));
+
+// صفحة المراقبة: مجموعات عنوان IPv6 التي أولها أرقام فقط تتبادل أماكنها داخل الخانة العربية بدون فرض الاتجاه
+// («2001:db8::7334» يظهر «db8::7334:2001»)
+$pdo->exec("UPDATE audit_log SET ip = '2001:db8:85a3::8a2e:370:7334' ORDER BY id DESC LIMIT 1");
+$ins->execute(['login_fail', 'attacker', '2001:4860:4860::/64', 'curl/8', date('Y-m-d H:i:s')]);
+$savedSession = $_SESSION;
+act_as($pdo, $admin);
+$html = (function (): string { // نطاق خاص حتى لا تغير متغيرات الصفحة متغيرات الاختبار
+    $_GET = [];
+    ob_start();
+    include APP_ROOT . '/pages/monitor.php';
+    return (string) ob_get_clean();
+})();
+$_SESSION = $savedSession;
+check('المراقبة: عنوان IPv6 في سجل العمليات داخل <bdo dir="ltr">', str_contains($html, '<bdo dir="ltr">2001:db8:85a3::8a2e:370:7334</bdo>'));
+check('المراقبة: عنوان IPv6 في سجل الدخول داخل <bdo dir="ltr">', str_contains($html, '<bdo dir="ltr">2001:4860:4860::/64</bdo>'));
 $root->exec('DROP TABLE auth_events');
 
 section('أسماء الأجهزة');

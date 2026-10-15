@@ -70,7 +70,11 @@
     });
   }
 
-  /* البحث السريع: يُخفي الصفوف التي لا تحتوي النص في أعمدتها الظاهرة. الإجمالي الفرعي يظهر مع صفوفه */
+  /*
+   * البحث السريع: يُخفي الصفوف التي لا تحتوي النص في أعمدتها الظاهرة. الإجمالي الفرعي يظهر مع صفوفه.
+   * سطر الحالة يذكر نص البحث وعدد الصفوف وأن الإجماليات لكل الصفوف، ويُطبع مع الجدول (خارج شريط الأدوات)
+   * حتى لا تُقرأ الورقة المطبوعة كأن الإجمالي للصفوف الظاهرة فقط.
+   */
   function applySearch(table, query, statusEl) {
     var q = norm(query);
     var total = 0;
@@ -95,9 +99,10 @@
       statusEl.textContent = '';
       statusEl.hidden = true;
     } else {
+      var said = '«' + String(query).replace(/\s+/g, ' ').trim() + '»';
       statusEl.textContent = shown === 0
-        ? 'لا توجد صفوف مطابقة للبحث في هذه الصفحة.'
-        : 'الصفوف الظاهرة: ' + fmtInt(shown) + ' من ' + fmtInt(total) + '. الإجماليات لكل صفوف الجدول.';
+        ? 'لا توجد صفوف مطابقة للبحث السريع ' + said + ' في هذه الصفحة.'
+        : 'الصفوف الظاهرة بالبحث السريع ' + said + ': ' + fmtInt(shown) + ' من ' + fmtInt(total) + '. الإجماليات لكل صفوف الجدول.';
       statusEl.hidden = false;
     }
   }
@@ -163,7 +168,8 @@
       slot.appendChild(withIcon(el('button', { type: 'button', 'class': 'btn', 'data-action': 'print' }, 'طباعة'), 'print'));
     }
 
-    tools.appendChild(status);
+    // بعد الشريط وليس داخله: الشريط مخفي في الطباعة، وسطر البحث يجب أن يُطبع
+    tools.parentNode.insertBefore(status, tools.nextSibling);
 
     input.addEventListener('input', function () {
       queries[key] = input.value;

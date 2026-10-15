@@ -467,6 +467,28 @@ try {
 check('تقرير بلا أعمدة يُرفض بوضوح', $rejected);
 
 /* ---------------------------------------------------------------- */
+section('عمود الهاتف من اليسار لليمين (dir => ltr)');
+// بدون فرض الاتجاه تظهر مجموعات الرقم معكوسة في السطر العربي: «010 1234 5678» تُكتب «5678 1234 010»
+$bytes = pdf_report(['title' => 'أرصدة العملاء', 'subtitle' => '', 'columns' => [
+    ['key' => 'name', 'label' => 'العميل', 'type' => 'text', 'align' => 'start'],
+    ['key' => 'phone', 'label' => 'الهاتف', 'type' => 'text', 'align' => 'start', 'dir' => 'ltr'],
+], 'rows' => [
+    ['name' => 'عميل أول', 'phone' => '010 1234 5678'],
+    ['name' => 'عميل ثان', 'phone' => '٠١٢ ٣٤٥٦ ٧٨٩٠'],
+    ['name' => 'عميل ثالث', 'phone' => '0155-777-8888'],
+    ['name' => 'عميل رابع', 'phone' => '01001234567 أحمد'],
+], 'totals' => null, 'generated_at' => '2026-10-07 10:00:00']);
+check_pdf_file('تقرير بعمود هاتف', $bytes);
+$path = pdf_save('report-phones', $bytes);
+$words = pdf_words($path);
+check_visual_order('هاتف بأرقام إنجليزية ومسافات بترتيبه', $words, ['010', '1234', '5678'], false);
+check_visual_order('هاتف بأرقام عربية ومسافات بترتيبه', $words, ['٠١٢', '٣٤٥٦', '٧٨٩٠'], false);
+check('هاتف بشرطات (يُعرض بالأرقام العربية) بترتيبه', pdf_word($words, digits('0155-777-8888')) !== null,
+    implode(' ', array_map(fn ($w) => $w['t'], array_filter($words, fn ($w) => preg_match('/[٠-٩]/u', $w['t'])))));
+check_has('هاتف معه حروف يبقى كما هو', pdf_text_of($path), 'أحمد');
+pdf_png($path, 'report-phones');
+
+/* ---------------------------------------------------------------- */
 section('الأمان: لا جلب لأي مورد محلي أو خارجي');
 $png = PDF_OUT . '/probe.png';
 $im = imagecreatetruecolor(8, 8);

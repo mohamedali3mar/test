@@ -328,18 +328,20 @@ await page.goto(BASE + 'index.php?r=inventory');
 await page.evaluate(() => localStorage.removeItem('wood.cols.inventory'));
 await page.goto(BASE + 'index.php?r=inventory');
 const tools = '[data-table-tools="inventory"]';
+// سطر حالة البحث السريع بعد شريط الأدوات مباشرة (الشريط مخفي في الطباعة، والسطر يُطبع)
+const qsStatus = tools + ' + .table-search-status';
 check('tables.js أضاف البحث والأعمدة والطباعة', (await page.locator(tools + ' input[type="search"]').count()) === 1
   && (await page.locator(tools + ' details.table-columns > summary').count()) === 1 && (await page.locator(tools + ' button[data-action="print"]').count()) === 1);
 check('البحث السريع له تسمية', (await page.locator(tools + ' label', { hasText: 'بحث سريع في الجدول' }).count()) === 1);
 const visibleRows = () => page.evaluate(() => [...document.querySelectorAll('#stock-table tbody tr:not(.row-subtotal)')].filter((r) => !r.hidden).length);
 const allRows = await visibleRows();
 await page.fill(tools + ' input[type="search"]', 'زان');
-check('بحث بلا نتائج يخفي الصفوف ويقول ذلك', (await visibleRows()) === 0 && (await text(page, tools + ' .table-search-status')).includes('لا توجد صفوف مطابقة'));
+check('بحث بلا نتائج يخفي الصفوف ويقول ذلك', (await visibleRows()) === 0 && (await text(page, qsStatus)).includes('لا توجد صفوف مطابقة'));
 check('الإجمالي الفرعي يختفي مع صفوف نوعه', (await page.evaluate(() => [...document.querySelectorAll('#stock-table .row-subtotal')].every((r) => r.hidden))));
 await page.fill(tools + ' input[type="search"]', '90');
-check('البحث بأرقام إنجليزية يطابق الأرقام العربية المعروضة (٩٠)', (await visibleRows()) === allRows && (await text(page, tools + ' .table-search-status')).startsWith('الصفوف الظاهرة'));
+check('البحث بأرقام إنجليزية يطابق الأرقام العربية المعروضة (٩٠)', (await visibleRows()) === allRows && (await text(page, qsStatus)).startsWith('الصفوف الظاهرة'));
 await page.fill(tools + ' input[type="search"]', '');
-check('مسح البحث يعيد كل الصفوف', (await visibleRows()) === allRows && (await page.locator(tools + ' .table-search-status').isHidden()));
+check('مسح البحث يعيد كل الصفوف', (await visibleRows()) === allRows && (await page.locator(qsStatus).isHidden()));
 
 await page.click(tools + ' details.table-columns > summary');
 check('العمود الأول لا يمكن إخفاؤه', await page.locator(tools + ' .table-columns-panel input[value="type"]').isDisabled());
@@ -379,7 +381,7 @@ await page.waitForFunction(() => document.querySelector('#stock-table tbody tr t
 check('الجدول تحدّث تلقائيًا (٩٥)', (await text(page, '#stock-table tbody tr td[data-col="qty"]')) === '٩٥');
 check('بعد التحديث: العمود المخفي ما زال مخفيًا', await page.evaluate(() => [...document.querySelectorAll('#stock-table [data-col="width"]')].every((c) => c.hidden)));
 check('بعد التحديث: نص البحث باقٍ ومطبق', (await page.inputValue(tools + ' input[type="search"]')) === 'موسكي'
-  && (await text(page, tools + ' .table-search-status')).startsWith('الصفوف الظاهرة'));
+  && (await text(page, qsStatus)).startsWith('الصفوف الظاهرة'));
 await p2.close();
 await page.click(tools + ' details.table-columns > summary');
 await page.check(tools + ' .table-columns-panel input[value="width"]');
@@ -388,6 +390,10 @@ await page.keyboard.press('Escape');
 await page.emulateMedia({ media: 'print' });
 const printState = await page.evaluate(() => ['.table-tools', '.filters', '.print-heading'].map((s) => getComputedStyle(document.querySelector(s)).display));
 check('الطباعة: الأدوات والتصفية مخفية، ووصف التصفية ظاهر', printState[0] === 'none' && printState[1] === 'none' && printState[2] !== 'none', JSON.stringify(printState));
+// البحث السريع ما زال «موسكي»: الورقة تذكره، وتذكر أن الإجماليات لكل الصفوف وليست للصفوف الظاهرة فقط
+const qsPrint = await page.evaluate((sel) => { const s = document.querySelector(sel); return s ? getComputedStyle(s).display + '|' + s.textContent : 'missing'; }, qsStatus);
+check('الطباعة بعد البحث السريع: سطر يذكر نص البحث وأن الإجماليات لكل الصفوف', !qsPrint.startsWith('none') && !qsPrint.startsWith('missing')
+  && qsPrint.includes('«موسكي»') && qsPrint.includes('الإجماليات لكل صفوف الجدول'), qsPrint);
 await page.emulateMedia({ media: 'screen' });
 
 await page.goto(BASE + 'index.php?r=documents');

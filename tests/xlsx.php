@@ -464,13 +464,23 @@ $gen = (function (): Generator {
 file_put_contents($OUT . '/xlsx_gen.xlsx', xlsx_build(['title' => 'مولد', 'columns' => array_slice($sample['columns'], 0, 3), 'rows' => $gen]));
 $dg = load_xml(zip_parts($OUT . '/xlsx_gen.xlsx')['xl/worksheets/sheet1.xml'] ?? '');
 check('الصفوف من Generator', $dg !== null && (sheet_cells($dg)['C7']['v'] ?? '') === '3');
+// عمود الهاتف (dir => ltr): اتجاه قراءة الخلية من اليسار لليمين، وإلا تقلب الورقة العربية ترتيب مجموعات الرقم
+file_put_contents($OUT . '/xlsx_phone.xlsx', xlsx_build(['title' => 'أرصدة العملاء', 'columns' => [['key' => 'name', 'label' => 'العميل'],
+    ['key' => 'phone', 'label' => 'الهاتف', 'dir' => 'ltr']], 'rows' => [['name' => 'عميل', 'phone' => '010 1234 5678']]]));
+$pp = zip_parts($OUT . '/xlsx_phone.xlsx');
+$dp = load_xml($pp['xl/worksheets/sheet1.xml'] ?? '');
+$sp = load_xml($pp['xl/styles.xml'] ?? '');
+$readingOrder = static fn (int $s): string => $sp === null ? '?' : xp($sp)->evaluate('string(//m:cellXfs/m:xf[' . ($s + 1) . ']/m:alignment/@readingOrder)');
+$pc = $dp !== null ? sheet_cells($dp) : [];
+check('عمود الهاتف من اليسار لليمين (readingOrder=1)، وعمود الاسم بلا تغيير', isset($pc['A5'], $pc['B5']) && $pc['B5']['v'] === '010 1234 5678'
+    && $readingOrder($pc['B5']['s']) === '1' && $readingOrder($pc['A5']['s']) === '', json_encode([$pc['B5'] ?? null, $readingOrder($pc['B5']['s'] ?? 0)]));
 check_eq('لا ملفات مؤقتة متبقية بعد كل البناءات', $leftBefore, temp_leftovers());
 
 $xsdDir = getenv('XLSX_XSD_DIR') ?: '';
 if ($xsdDir !== '' && is_file($xsdDir . '/sml.xsd')) {
     section('xlsx: التحقق بمخطط ECMA-376 الرسمي');
     // معروف: المخطط لا يذكر xml:space على <t> رغم أن Excel نفسه يكتبه؛ يُحذف قبل التحقق
-    foreach ([$samplePath, $OUT . '/xlsx_one.xlsx', $OUT . '/xlsx_empty.xlsx'] as $file) {
+    foreach ([$samplePath, $OUT . '/xlsx_one.xlsx', $OUT . '/xlsx_empty.xlsx', $OUT . '/xlsx_phone.xlsx'] as $file) {
         $pp = zip_parts($file);
         foreach (['xl/worksheets/sheet1.xml' => 'sml.xsd', 'xl/styles.xml' => 'sml.xsd', 'xl/workbook.xml' => 'sml.xsd',
             'docProps/app.xml' => 'shared-documentPropertiesExtended.xsd'] as $part => $xsd) {

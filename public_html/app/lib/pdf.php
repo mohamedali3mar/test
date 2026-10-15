@@ -509,6 +509,7 @@ function pdf_report(array $dataset): string
             'type' => $type,
             'end' => $align === 'end',
             'nowrap' => $type !== 'text',
+            'ltr' => ($c['dir'] ?? '') === 'ltr', // نص يُقرأ من اليسار لليمين مثل الهاتف
         ];
     }
     if (!$columns) {
@@ -854,11 +855,18 @@ function pdf_report_draw_rows(\Mpdf\Mpdf $mpdf, Closure $measure, Closure $fontF
             // النص الحر يأخذ اتجاهه من أول حرف قوي (مثل <bdi>)، والأرقام والتواريخ تبقى في سياق الصفحة
             $isolate = $kind === 'row' && !$columns[$j]['nowrap'];
             $cellText = implode(' ', $lines);
-            $mpdf->directionality = $isolate ? pdf_text_dir($cellText) : 'rtl';
+            // الهاتف (أرقام وفواصل بلا حروف) من اليسار لليمين مثل <bdo dir="ltr"> في الصفحة: بدونه ينقلب ترتيب
+            // مجموعات أرقامه («010 1234 5678» تظهر «5678 1234 010»). الأرقام العربية (٠١٢) تتبع اتجاه النص العربي
+            // حتى في سطر من اليسار لليمين، فتُحاط بعلامتي فرض الاتجاه LRO وPDF (تحذفهما المكتبة بعد ترتيب النص).
+            $ltr = $kind === 'row' && $columns[$j]['ltr'] && !preg_match('/\p{L}/u', $cellText);
+            $mpdf->directionality = $ltr ? 'ltr' : ($isolate ? pdf_text_dir($cellText) : 'rtl');
             $font = $fontFor($cellText);
             foreach ($lines as $k => $line) {
                 if ($line === '') {
                     continue;
+                }
+                if ($ltr && preg_match('/[\x{0660}-\x{0669}\x{06F0}-\x{06F9}]/u', $line)) {
+                    $line = "\u{202D}" . $line . "\u{202C}";
                 }
                 $mpdf->SetFont($font, $style, PDF_REPORT_FONT_PT, true, $fontDirty);
                 $fontDirty = false;

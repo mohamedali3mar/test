@@ -10,6 +10,7 @@ defined('APP_ROOT') || exit;
  *   و sections (اختياري): جداول إضافية بنفس الشكل {title, columns, rows, totals}.
  * القيم في rows خام: المبالغ نص عشري مثل "1234.50"، الأحجام نص عشري دقيق، الأعداد int، التواريخ 'Y-m-d H:i:s'.
  * أنواع الأعمدة: text | int | volume | money | date. نسبة هامش الربح نوعها money (رقمان عشريان) وعنوانها يذكر ٪.
+ * dir => 'ltr' (اختياري) لعمود نصي يُقرأ من اليسار لليمين مثل الهاتف: يُعرض بترتيبه الصحيح في الصفحة وPDF وExcel.
  *
  * المستندات: فواتير البيع السارية فقط (status = active) حسب doc_date. السندات: السارية فقط حسب voucher_date.
  * حركة الخزائن تُقرأ من دفتر الخزائن نفسه (القيود العكسية للإلغاء موجودة فيه بتاريخ الإلغاء)، فلا تُحسب مرتين.
@@ -79,7 +80,7 @@ const ACCT_REPORTS = [
         'filters' => ['show'],
         'columns' => [
             ['key' => 'name', 'label' => 'العميل', 'type' => 'text', 'align' => 'start'],
-            ['key' => 'phone', 'label' => 'الهاتف', 'type' => 'text', 'align' => 'start'],
+            ['key' => 'phone', 'label' => 'الهاتف', 'type' => 'text', 'align' => 'start', 'dir' => 'ltr'],
             ['key' => 'balance', 'label' => 'الرصيد', 'type' => 'money', 'align' => 'end'],
             ['key' => 'direction', 'label' => 'الاتجاه', 'type' => 'text', 'align' => 'start'],
             ['key' => 'credit_limit', 'label' => 'حد الائتمان', 'type' => 'money', 'align' => 'end'],
@@ -94,7 +95,7 @@ const ACCT_REPORTS = [
         'filters' => ['show'],
         'columns' => [
             ['key' => 'name', 'label' => 'المورد', 'type' => 'text', 'align' => 'start'],
-            ['key' => 'phone', 'label' => 'الهاتف', 'type' => 'text', 'align' => 'start'],
+            ['key' => 'phone', 'label' => 'الهاتف', 'type' => 'text', 'align' => 'start', 'dir' => 'ltr'],
             ['key' => 'balance', 'label' => 'الرصيد', 'type' => 'money', 'align' => 'end'],
             ['key' => 'direction', 'label' => 'الاتجاه', 'type' => 'text', 'align' => 'start'],
             ['key' => 'credit_limit', 'label' => 'حد الائتمان', 'type' => 'money', 'align' => 'end'],
@@ -1038,7 +1039,7 @@ function render_dataset_table(array $dataset, array $o = []): void
       <?php endif; ?>
       <?php foreach ($dataset['rows'] as $r): ?>
       <tr>
-        <?php foreach ($cols as $c): ?><td data-col="<?= h((string) $c['key']) ?>" data-label="<?= h($c['label']) ?>"<?= $cls($c) ?>><?= h(acct_fmt_cell($r[$c['key']] ?? null, $c['type'])) ?></td><?php endforeach; ?>
+        <?php foreach ($cols as $c): $text = acct_fmt_cell($r[$c['key']] ?? null, $c['type']); ?><td data-col="<?= h((string) $c['key']) ?>" data-label="<?= h($c['label']) ?>"<?= $cls($c) ?>><?= ($c['dir'] ?? '') === 'ltr' ? ltr_html($text) : h($text) ?></td><?php endforeach; ?>
       </tr>
       <?php endforeach; ?>
     </tbody>

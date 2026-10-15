@@ -444,6 +444,19 @@ check('المبيعات: الوصف في الصفحة', str_contains($html, h('�
 check('الأرباح: السالب بعلامة ناقص', str_contains($html, h('-' . fmt_money('845.50'))));
 [$html, $w] = render_page('reports', ['report' => 'valuation']);
 check('التقييم: تنبيه الأصناف غير المقيّمة', str_contains($html, 'غير مقيّم') && str_contains($html, h(fmt_money('753.34'))));
+// الهاتف من اليسار لليمين: بدون <bdo dir="ltr"> ينقلب ترتيب مجموعات أرقامه داخل الخانة العربية («5678 1234 010»)
+$pdo->prepare('UPDATE parties SET phone = ? WHERE id = ?')->execute(['010 1234 5678', $c1]);
+[$html, $w] = render_page('reports', ['report' => 'customer_balances', 'show' => 'all']);
+check_html('أرصدة العملاء مع هاتف بمسافات', $html, $w);
+check('أرصدة العملاء: الهاتف داخل <bdo dir="ltr">', str_contains($html, '<td data-col="phone" data-label="الهاتف"><bdo dir="ltr">010 1234 5678</bdo></td>'));
+$_SERVER['REQUEST_METHOD'] = 'GET';
+[$html, $w] = render_page('parties', ['kind' => 'customer']);
+check_eq('قائمة العملاء: بلا تحذيرات PHP', [], $w);
+check('قائمة العملاء: الهاتف بترتيبه داخل <bdo dir="ltr">', str_contains($html, '<bdo dir="ltr">' . digits('010 1234 5678') . '</bdo>'));
+[$html, $w] = render_page('party_statement', ['id' => (string) $c1]);
+check_eq('كشف حساب العميل: بلا تحذيرات PHP', [], $w);
+check('كشف حساب العميل: الهاتف بترتيبه داخل <bdo dir="ltr">', str_contains($html, '<dd><bdo dir="ltr">' . digits('010 1234 5678') . '</bdo></dd>'));
+$pdo->prepare('UPDATE parties SET phone = ? WHERE id = ?')->execute(['0100', $c1]);
 [$html, $w] = render_page('reports', ['report' => 'sales_period', 'from' => '<script>alert(1)</script>', 'warehouse' => '"><b>x']);
 check_html('مدخلات خبيثة', $html, $w);
 check('مدخلات خبيثة: لا تظهر في الصفحة', !str_contains($html, '<script>alert') && !str_contains($html, '<b>x') && str_contains($html, 'تم تجاهل'));
@@ -458,6 +471,17 @@ check('لوحة التحكم: تنبيه المخزون غير المقيّم و
 foreach (array_keys(ACCT_REPORTS) as $k) {
     check("لوحة التحكم تربط تقرير $k", str_contains($html, h(url('reports', ['report' => $k]))));
 }
+
+// البيان نص حر فيه اسم العميل: الأرقام فقط تُعرض بالشكل المختار، والنقطة والفاصلة في الاسم تبقيان كما هما
+// (digits() كانت تجعل «م.م» «م٫م» بعلامة عشرية، وتحذف الفاصلة لتصبح مسافة ضيقة)
+// (قيد بنفس بيان سند القبض في vouchers.php: «سند قبض رقم N من <اسم العميل>»)
+$named = mk_party($pdo, 'customer', 'شركة م.م النور, فرع 2');
+$nv = mk_voucher($pdo, $uid, 'collect', 99, now(), $named, $b1, null, '10.00');
+db_transaction($pdo, fn (PDO $pdo) => ledger_cash($pdo, $b1, now(), null, $nv, 'collect', 1000, 'سند قبض رقم 99 من شركة م.م النور, فرع 2'));
+[$html, $w] = render_page('cash_statement', ['id' => (string) $b1]);
+check_eq('كشف الخزنة: بلا تحذيرات PHP', [], $w);
+check('كشف الخزنة: اسم العميل في البيان كما كُتب (النقطة والفاصلة) والأرقام بالشكل المختار',
+    str_contains($html, '<td data-label="البيان">' . h('سند قبض رقم ٩٩ من شركة م.م النور, فرع ٢') . '</td>'));
 
 check_eq('الأرصدة المخزنة سليمة في النهاية', [], acct_verify_balances($pdo));
 finish();

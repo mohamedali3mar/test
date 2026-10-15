@@ -197,7 +197,7 @@ html.js [data-nojs-only] { display: none; }
 .payment-type label { display: inline-flex; align-items: center; gap: 8px; min-height: 40px; margin: 0 0 0 24px; font-weight: 400; font-size: var(--fs-16); cursor: pointer; }
 .payment-type input[type="radio"] { width: 20px; height: 20px; margin: 0; accent-color: var(--primary); }
 
-input[type="text"], input[type="password"], input[type="search"], input[type="date"], select, textarea {
+input[type="text"], input[type="password"], input[type="search"], input[type="date"], input[type="tel"], select, textarea {
   width: 100%; min-height: 40px; padding: 4px 12px; background: var(--surface);
   border: 1px solid var(--border); border-radius: var(--radius); text-align: right; direction: rtl;
 }
@@ -310,6 +310,9 @@ td.audit-device { min-width: 140px; }
 .login-box { max-width: 400px; margin: 48px auto 0; padding: 24px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); }
 .login-box h1 { margin-bottom: 4px; }
 .login-mark { display: block; width: 48px; height: 48px; margin-bottom: 12px; color: var(--primary); }
+/* رمز QR للتحقق بخطوتين (twofactor.js): يُرسم بحجم ثابت يكبر مع طول اسم الشركة، فيصغر هنا ليتسع لعرض
+   الشاشة (360 بكسل) بدل التمرير الأفقي، وتبقى حواف مربعاته حادة حتى يقرأه الهاتف */
+[data-otpauth] canvas { display: block; max-width: 100%; height: auto; image-rendering: pixelated; }
 
 /* ---------- المستند المطبوع ---------- */
 .print-toolbar { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
@@ -357,7 +360,7 @@ td.audit-device { min-width: 140px; }
 
   /* اللمس: 44 بكسل لكل عنصر قابل للضغط، وخط 16 في الحقول حتى لا يكبّر iOS الصفحة */
   .btn { min-height: 44px; }
-  input[type="text"], input[type="password"], input[type="search"], input[type="date"], select, textarea {
+  input[type="text"], input[type="password"], input[type="search"], input[type="date"], input[type="tel"], select, textarea {
     min-height: 44px; font-size: var(--fs-16);
   }
   .field-check { min-height: 44px; }
@@ -512,8 +515,17 @@ th.align-end, td.align-end { text-align: end; }
 .row-child th { padding-inline-start: 32px; font-weight: 400; }
 .print-branch { font-size: var(--fs-16); font-weight: 600; margin: 4px 0 0; }
 .print-branch-contact { display: flex; flex-wrap: wrap; gap: 4px 24px; font-size: var(--fs-14); color: var(--text-2); margin: 4px 0 8px; }
-input.input-ltr { direction: ltr; text-align: right; }
+/* الهاتف من اليسار لليمين حتى لا تنقلب مجموعات أرقامه أثناء الكتابة، ومحاذاته يمين مثل باقي الحقول */
+input.input-ltr, input[type="tel"] { direction: ltr; text-align: right; }
 .actions-nowrap { flex-wrap: nowrap; white-space: nowrap; }
+
+/* كل جداول البيانات على A4 (المخزون والسجل والتقارير والمراقبة): الخانات وعناوين الأعمدة تلتف بين الكلمات
+   وحشوها أقل، فلا يتجاوز الجدول عرض الصفحة فيُقص عمود الحالة أو القيمة على حافتها اليسرى.
+   break-word وليس anywhere: الكلمة لا تُقسم على حروف إلا إن كانت أعرض من عمودها (التاريخ واسم المستخدم يبقيان كاملين). */
+@media print {
+  .table-wrap th, .table-wrap td { white-space: normal; padding: 4px; overflow-wrap: break-word; }
+  td.split, td.audit-summary, td.audit-device { min-width: 0; }
+}
 
 /* الفاتورة على A4: الجدول يلتف ويصغر قليلًا حتى لا يُقص عمود المبالغ على حافة الصفحة (فاتورة عدة أسطر بمقاسات طويلة) */
 @media print {
@@ -544,7 +556,8 @@ input.input-ltr { direction: ltr; text-align: right; }
 .table-export-label { font-size: var(--fs-14); font-weight: 600; color: var(--text-2); }
 .table-export-buttons { display: flex; flex-wrap: wrap; gap: 8px; }
 .table-sort { display: none; }
-.table-search-status { flex: 1 1 100%; margin: 0; }
+/* سطر البحث السريع بعد شريط الأدوات (لا داخله) حتى يُطبع مع الجدول */
+.table-search-status { margin: 0 0 12px; }
 .sort-link { color: inherit; text-decoration: none; }
 .sort-link:hover { color: var(--primary); text-decoration: underline; }
 th[aria-sort] .sort-link { color: var(--primary); }
@@ -571,6 +584,7 @@ th[aria-sort] .sort-link { color: var(--primary); }
   .filters, .page-actions, .pager, .cell-actions, .table-tools { display: none !important; }
   .print-heading { margin-bottom: 8px; }
   .print-heading p { margin: 0 0 4px; }
+  .table-search-status { color: #000; }
   .sort-state { display: none; }
   .sort-link { color: #000; }
 }
