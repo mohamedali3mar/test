@@ -1095,16 +1095,32 @@ function cancel_document(PDO $pdo, int $userId, int $docId, string $reasonRaw, ?
         // قيمة المخزون: البيع يعيد تكلفته المحفوظة، والوارد يخصم قيمته مع ضبط الحدود وتسجيل الفرق.
         // سطر بتكلفة صفر سُجل قبل التقييم الافتتاحي يُعكس بتكلفة التقييم (costing_line_cost).
         $label = doc_label($doc);
+        $sinceSale = [];
+        if ($doc['kind'] === 'sale' && $itemIds) {
+            // فروق التكلفة المسجلة لأصناف الفاتورة بعد حفظها (من إلغاء وارد بعدها)، بقراءة مقفلة بعد قفل الأصناف
+            $in = implode(',', array_fill(0, count($itemIds), '?'));
+            $stmt = $pdo->prepare("SELECT item_id, amount FROM cost_adjustments WHERE item_id IN ($in) AND created_at >= ? LOCK IN SHARE MODE");
+            $stmt->execute([...$itemIds, $doc['created_at']]);
+            foreach ($stmt->fetchAll() as $r) {
+                $sinceSale[(int) $r['item_id']] = ($sinceSale[(int) $r['item_id']] ?? 0) + money_to_piasters((string) $r['amount']);
+            }
+        }
         foreach ($valued ? $lines : [] as $l) {
             $id = (int) $l['item_id'];
             $c = $costs[$id];
             $lineCost = costing_line_cost($c, $l, (string) $doc['created_at']);
             if ($doc['kind'] === 'sale') {
-                $back = $lineCost;
-                if (costing_unvalued($c) && $lineCost > 0) {
+                // فرق تكلفة سُجل بعد البيع صحّح تكلفة مبيعات شملت هذه الفاتورة؛ بإلغائها يُعكس: ربح سابق (سالب)
+                // يُخصم من التكلفة العائدة، وخسارة سابقة (موجب) تُضاف إليها، بفرق مقابل. فالنتيجة واحدة بأي ترتيب للإلغاء.
+                $net = $sinceSale[$id] ?? 0;
+                $back = max(0, $lineCost + $net);
+                $offset = $lineCost - $back;
+                if (costing_unvalued($c) && ($lineCost > 0 || $back > 0)) {
                     throw new ValidationException(['document' => sprintf('لا يمكن إلغاء هذا المستند: %s (%s): ', $l['wood_type_name'], fmt_size($l))
                         . costing_unvalued_message('إلغاء فاتورة تعيد قطعه بتكلفتها')]);
                 }
+                costing_record_adjustment($pdo, $id, $docId, $offset, "إلغاء {$label}: عكس فرق تكلفة سُجل بعد الفاتورة", $userId);
+                $sinceSale[$id] = $net + $offset;
                 $costs[$id]['value'] += $back;
                 // قطع تعود لصنف بلا رصيد بقيمة صفر وتكلفتها محسوبة بالفعل: رصيد خُصمت تكلفته
                 $writtenOff = $c['qty'] === 0 ? ($back === 0 && $lineCost > 0) : null;

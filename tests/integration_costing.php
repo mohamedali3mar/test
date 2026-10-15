@@ -3,7 +3,7 @@ declare(strict_types=1);
 
 /*
  * تكلفة المخزون (ACCOUNTING_SPEC.md البند 2): المخزون بدون تكلفة والتقييم الافتتاحي، وإلغاء الوارد المقيّم
- * افتتاحيًا، والأصناف التي خُصمت تكلفتها، والترقية 010.
+ * افتتاحيًا، وإلغاء البيع بعد فرق تكلفة (نفس النتيجة بأي ترتيب)، والأصناف التي خُصمت تكلفتها، والترقية 010.
  * التشغيل: WOOD_TEST_DB=wood_costing php tests/integration_costing.php
  */
 
@@ -168,6 +168,56 @@ try {
     document_replace($pdo, $admin, $o6, $form, '');
     check_eq('تعديل الوارد الافتتاحي الوحيد: V = 0 و Q = 100 ويظهر للتقييم من جديد', [0, 100, true], [$V($f6), $Q($f6), $listed($f6)]);
     check_eq('  بلا فرق تكلفة والربح كما هو', [0, $net0], [$adjRows($f6), $net()]);
+} catch (Throwable $ex) {
+    unexpected($ex);
+}
+
+/* ---------------------------------------------------------------- */
+section('إلغاء بيع ووارد لنفس الصنف: نفس النتيجة بأي ترتيب');
+try {
+    // القطعة 1 × 1 × 100 سم = 0.0001 م³. و1: 10 قطع × 100000 = 100.00، و2: 10 قطع × 300000 = 300.00
+    // بيع 10 قطع (تكلفة 200.00) بسعر 500000 = 500.00
+    $scenario = function (int $type, bool $saleFirst, bool $cancelFirstReceipt) use ($receive, $costed, $sell, $cancel, $V, $Q, $adj, $net): array {
+        [$r1, $item] = $receive($type, '1', '1', '1', 10, $costed('100000'));
+        [$r2, ] = $receive($type, '1', '1', '1', 10, $costed('300000'));
+        $net0 = $net();
+        $s = $sell($item, 10, '500000');
+        $receipt = $cancelFirstReceipt ? $r1 : $r2;
+        foreach ($saleFirst ? [$s, $receipt] : [$receipt, $s] as $id) {
+            $cancel($id);
+        }
+        return [$V($item), $Q($item), $adj($item), $net() - $net0];
+    };
+    // إلغاء الوارد الثاني (300.00) بعد بيع: يبقى الأول فقط، 10 قطع بتكلفة 100.00، ولا ربح
+    $x = $scenario($types[6], true, false);
+    check_eq('إلغاء البيع ثم الوارد الثاني: V = 100.00 و Q = 10 وفروق التكلفة 0 والربح 0', [10000, 10, 0, 0], $x);
+    $y = $scenario($types[7], false, false);
+    check_eq('إلغاء الوارد الثاني ثم البيع: نفس النتيجة (بدون ربح وهمي 100.00)', [10000, 10, 0, 0], $y);
+    // إلغاء الوارد الأول (100.00): يبقى الثاني فقط، 10 قطع بتكلفة 300.00 (فرق التكلفة خسارة عند نفاد الكمية)
+    $x = $scenario($types[8], true, true);
+    check_eq('إلغاء البيع ثم الوارد الأول: V = 300.00 و Q = 10 والربح 0', [30000, 10, 0, 0], $x);
+    $y = $scenario($types[9], false, true);
+    check_eq('إلغاء الوارد الأول ثم البيع: نفس النتيجة (بدون خسارة وهمية 100.00)', [30000, 10, 0, 0], $y);
+    $offset = $pdo->query("SELECT amount, reason FROM cost_adjustments WHERE reason LIKE '%عكس فرق تكلفة%' ORDER BY id DESC LIMIT 1")->fetch();
+    check('  الفرق المقابل مسجل بسبب واضح', $offset !== false && (string) $offset['amount'] === '-100.00', json_encode($offset, JSON_UNESCAPED_UNICODE));
+
+    // بيعان بعد الوارد ثم إلغاء أحدهما: نفس النتيجة بالترتيبين
+    $twoSales = function (int $type, bool $saleFirst) use ($receive, $costed, $sell, $cancel, $V, $Q, $adj, $net): array {
+        [, $item] = $receive($type, '1', '1', '2', 10, $costed('100000'));   // 0.0002 م³ للقطعة: 200.00
+        [$r2, ] = $receive($type, '1', '1', '2', 10, $costed('300000'));     // 600.00
+        $net0 = $net();
+        $s1 = $sell($item, 5, '500000');                                    // تكلفة 200.00
+        $s2 = $sell($item, 5, '500000');                                    // تكلفة 200.00
+        foreach ($saleFirst ? [$s1, $r2] : [$r2, $s1] as $id) {
+            $cancel($id);
+        }
+        return [$V($item), $Q($item), $adj($item), $net() - $net0, $s2];
+    };
+    [$v1, $q1, $a1, $n1] = $twoSales($types[6], true);
+    [$v2, $q2, $a2, $n2] = $twoSales($types[7], false);
+    check_eq('بيعان وإلغاء أحدهما مع الوارد الثاني: نفس القيمة والكمية والربح بالترتيبين', [$v1, $q1, $n1], [$v2, $q2, $n2]);
+    check_eq('  V = 0 و Q = 5 (تكلفة الوارد الأول كلها في البيع الباقي)', [0, 5], [$v1, $q1]);
+    check_eq('  ومجموع فروق التكلفة واحد', $a1, $a2);
 } catch (Throwable $ex) {
     unexpected($ex);
 }
