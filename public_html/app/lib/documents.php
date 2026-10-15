@@ -1002,8 +1002,13 @@ function record_transfer(PDO $pdo, int $userId, array $in): array
 /**
  * $reversalDate: تاريخ القيود العكسية (الافتراضي وقت الإلغاء). تعديل المستند يمرر تاريخ المستند الأصلي، لأن البديل
  * يُسجل بتاريخه أيضًا، فيبقى كشف الخزنة والعميل في ذلك اليوم: الأصلي ثم عكسه ثم البديل.
+ *
+ * $between (للتعديل): تسجيل البديل داخل نفس المعاملة، ويعيد نتيجته (فيها id). يُنفذ بعد ما يرد للمخازن والخزائن
+ * وعكس قيود الأطراف، وقبل ما يخرج منها: خصم من مخزن لا يكفيه رصيده الآن (وارد بيع جزء منه، أو تحويل باع المخزن
+ * المستلم جزءًا منه) ورد نقدية بيع. فيُفحص الرصيد بعد البديل، ويكفي أن تكون النتيجة النهائية صحيحة.
+ * وارد بيع جزء منه: فرق تكلفة القطع المباعة (بين تكلفة البديل والأصلي) يُسجل فرق تكلفة، والباقي بتكلفة البديل.
  */
-function cancel_document(PDO $pdo, int $userId, int $docId, string $reasonRaw, ?string $reversalDate = null): array
+function cancel_document(PDO $pdo, int $userId, int $docId, string $reasonRaw, ?string $reversalDate = null, ?callable $between = null): array
 {
     $reason = clean_text($reasonRaw);
     if (mb_strlen($reason) > 255) {
@@ -1015,7 +1020,7 @@ function cancel_document(PDO $pdo, int $userId, int $docId, string $reasonRaw, ?
     $sources = ledger_sources_of($pdo, 'document', $docId);
     closing_date();
     $scope = allowed_branch_id($pdo);
-    return db_transaction($pdo, function (PDO $pdo) use ($userId, $docId, $reason, $lines, $sources, $scope, $reversalDate) {
+    return db_transaction($pdo, function (PDO $pdo) use ($userId, $docId, $reason, $lines, $sources, $scope, $reversalDate, $between) {
         $stmt = $pdo->prepare('SELECT * FROM documents WHERE id = ? FOR UPDATE');
         $stmt->execute([$docId]);
         $doc = $stmt->fetch();
@@ -1079,9 +1084,12 @@ function cancel_document(PDO $pdo, int $userId, int $docId, string $reasonRaw, ?
         $bal = lock_stock_rows($pdo, array_map(fn ($d) => [$d['item'], $d['wh']], $deltas), true);
 
         $problems = [];
+        $deferred = []; // التعديل: خصم لا يكفيه الرصيد الآن يُنفذ بعد تسجيل البديل
         foreach ($deltas as $k => $d) {
             $new = (int) $bal[$k] + $d['delta'];
-            if ($new < 0) {
+            if ($new < 0 && $between !== null) {
+                $deferred[$k] = true;
+            } elseif ($new < 0) {
                 $problems[] = sprintf(
                     'رصيد %s (%s) في %s الآن %s قطعة، والإلغاء يحتاج خصم %s قطعة.',
                     $d['line']['wood_type_name'],
@@ -1100,7 +1108,9 @@ function cancel_document(PDO $pdo, int $userId, int $docId, string $reasonRaw, ?
 
         $now = now();
         foreach ($deltas as $k => $d) {
-            set_stock($pdo, $d['item'], $d['wh'], (int) $bal[$k] + $d['delta'], $now);
+            if (!isset($deferred[$k])) {
+                set_stock($pdo, $d['item'], $d['wh'], (int) $bal[$k] + $d['delta'], $now);
+            }
         }
         // قيمة المخزون: البيع يعيد تكلفته المحفوظة، والوارد يخصم قيمته مع ضبط الحدود وتسجيل الفرق.
         // سطر بتكلفة صفر سُجل قبل التقييم الافتتاحي يُعكس بتكلفة التقييم (costing_line_cost).
@@ -1115,6 +1125,7 @@ function cancel_document(PDO $pdo, int $userId, int $docId, string $reasonRaw, ?
                 $sinceSale[(int) $r['item_id']] = ($sinceSale[(int) $r['item_id']] ?? 0) + money_to_piasters((string) $r['amount']);
             }
         }
+        $laterLines = [];
         foreach ($valued ? $lines : [] as $l) {
             $id = (int) $l['item_id'];
             $c = $costs[$id];
@@ -1134,6 +1145,10 @@ function cancel_document(PDO $pdo, int $userId, int $docId, string $reasonRaw, ?
                 $costs[$id]['value'] += $back;
                 // قطع تعود لصنف بلا رصيد بقيمة صفر وتكلفتها محسوبة بالفعل: رصيد خُصمت تكلفته
                 $writtenOff = $c['qty'] === 0 ? ($back === 0 && $lineCost > 0) : null;
+            } elseif (isset($deferred[$id . ':' . (int) $doc['warehouse_id']])) {
+                // وارد بيع جزء منه: قيمته تُخصم بعد تسجيل البديل مع خصم كميته
+                $laterLines[] = $l;
+                continue;
             } else {
                 $costs[$id]['qty'] -= (int) $l['quantity'];
                 [$final, $adj] = costing_cancel_receipt_value($c['value'], $costs[$id]['qty'], $lineCost);
@@ -1158,14 +1173,94 @@ function cancel_document(PDO $pdo, int $userId, int $docId, string $reasonRaw, ?
         }
         // القيود العكسية بتاريخ الإلغاء؛ رد نقدية بيع يُرفض إذا لم يكفِ رصيد الخزنة
         try {
-            reverse_ledgers($pdo, 'document', $docId, $reversalDate ?? $now, 'إلغاء ' . $label);
+            reverse_ledgers($pdo, 'document', $docId, $reversalDate ?? $now, 'إلغاء ' . $label, $between ? 'first' : 'all');
         } catch (ValidationException $e) {
             throw new ValidationException(['document' => 'لا يمكن إلغاء هذا المستند: رصيد الخزنة لا يكفي لرد المبلغ. ' . implode(' ', $e->errors)]);
+        }
+        if ($between !== null) {
+            $replacement = $between($pdo);
+            cancel_document_after_replacement($pdo, $userId, $doc, $deltas, $deferred, $laterLines, $costs, $replacement, $label);
+            try {
+                reverse_ledgers($pdo, 'document', $docId, $reversalDate ?? $now, 'إلغاء ' . $label, 'last');
+            } catch (ValidationException $e) {
+                throw new ValidationException(['document' => 'لا يمكن حفظ التعديل: رصيد الخزنة لا يكفي لرد مبلغ المستند الأصلي. ' . implode(' ', $e->errors)]);
+            }
         }
         audit_cancel($pdo, $doc, $reason);
         data_version_bump($pdo);
         return $doc;
     });
+}
+
+/**
+ * الجزء المؤجل من إلغاء المستند الأصلي عند تعديله، بعد تسجيل البديل: خصم الكميات التي لم يكفها الرصيد قبله،
+ * وقيمة وارد بيع جزء منه. القطع المباعة من الوارد الأصلي (s = كميته − رصيد الصنف قبل التعديل) دخلت تكلفة المبيعات
+ * بتكلفة الأصلي: فرقها عن تكلفة البديل يُسجل فرق تكلفة (يظهر في الأرباح)، فتبقى القطع الباقية بتكلفة البديل.
+ * $costs: حالة الأصناف المقفلة قبل التعديل. $replacement: نتيجة تسجيل البديل (فيها id).
+ */
+function cancel_document_after_replacement(PDO $pdo, int $userId, array $doc, array $deltas, array $deferred, array $laterLines,
+    array $costs, $replacement, string $label): void
+{
+    if (!$deferred) {
+        return;
+    }
+    $docId = (int) $doc['id'];
+    $now = now();
+    // الأصناف مقفلة من قبل؛ قراءة V و Q بعد البديل وقبل الخصم المؤجل
+    $after = $laterLines ? costing_lock_items($pdo, array_map(fn ($l) => (int) $l['item_id'], $laterLines)) : [];
+    $bal = lock_stock_rows($pdo, array_map(fn ($k) => [$deltas[$k]['item'], $deltas[$k]['wh']], array_keys($deferred)), true);
+    $problems = [];
+    foreach (array_keys($deferred) as $k) {
+        $d = $deltas[$k];
+        if ((int) $bal[$k] + $d['delta'] < 0) {
+            $problems[] = sprintf(
+                'رصيد %s (%s) في %s مع التعديل %s قطعة، وإلغاء المستند الأصلي يخصم %s قطعة: بيع أو حُوّل منه أكثر مما يبقى بعد التعديل.',
+                $d['line']['wood_type_name'],
+                fmt_size($d['line']),
+                $d['wh_name'],
+                fmt_int((int) $bal[$k]),
+                fmt_int(-$d['delta'])
+            );
+        }
+    }
+    if ($problems) {
+        throw new ValidationException(['document' => 'لا يمكن حفظ التعديل: ' . implode(' ', $problems)]);
+    }
+    foreach (array_keys($deferred) as $k) {
+        set_stock($pdo, $deltas[$k]['item'], $deltas[$k]['wh'], (int) $bal[$k] + $deltas[$k]['delta'], $now);
+    }
+    if (!$laterLines) {
+        return;
+    }
+    $newLines = [];
+    $newId = is_array($replacement) ? (int) ($replacement['id'] ?? 0) : 0;
+    foreach ($newId > 0 ? document_lines($pdo, $newId) : [] as $nl) {
+        $newLines[(int) $nl['item_id']] ??= $nl;
+    }
+    foreach ($laterLines as $l) {
+        $id = (int) $l['item_id'];
+        $c = $after[$id];
+        $q = (int) $l['quantity'];
+        $lineCost = costing_line_cost($c, $l, (string) $doc['created_at']);
+        // القطع المباعة من الأصلي: ما لا يغطيه رصيد الصنف (كل المخازن) قبل التعديل
+        $sold = max(0, $q - $costs[$id]['qty']);
+        $soldDiff = 0;
+        $nl = $newLines[$id] ?? null;
+        if ($sold > 0 && $nl !== null && (int) $nl['quantity'] >= $sold) {
+            $soldDiff = muldiv_half_up(money_to_piasters((string) $nl['cost_amount']), $sold, (int) $nl['quantity'])
+                - muldiv_half_up($lineCost, $sold, $q);
+            costing_record_adjustment($pdo, $id, $docId, $soldDiff,
+                "تعديل {$label}: فرق تكلفة " . fmt_int($sold) . ' قطعة بيعت قبل التعديل', $userId);
+        }
+        $qtyAfter = $c['qty'] - $q;
+        [$final, $adj] = costing_cancel_receipt_value($c['value'] - $soldDiff, $qtyAfter, $lineCost);
+        if ($adj !== 0) {
+            costing_record_adjustment($pdo, $id, $docId, $adj, $qtyAfter <= 0
+                ? "إلغاء {$label}: نفدت كمية الصنف وبقيت قيمة، فضُبطت قيمة المخزون على صفر"
+                : "إلغاء {$label}: قيمة المخزون المحسوبة أقل من صفر، فضُبطت على صفر", $userId);
+        }
+        costing_set_value($pdo, $id, $final, $qtyAfter <= 0 ? false : ($final === 0 && $c['value'] > 0 ? true : null));
+    }
 }
 
 /* ===================== استعلامات ===================== */

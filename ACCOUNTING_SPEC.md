@@ -49,15 +49,28 @@ For each item, `items.inventory_value` holds V, the value of the item's total st
 **Sale** of q pieces: COGS = `muldiv_half_up(V, q, Q)` (when q = Q, COGS = V exactly, so there is no residue). V -= COGS. The sale line stores `cost_amount` = COGS, and the document `total_cost` = sum of line COGS.
 - Profit = `total_amount` − `total_cost`.
 
-**Cancel sale:** for each line, V += `cost_amount` (the stock returns at its snapshot cost).
+**Cancel sale:** for each line, V += `cost_amount` (the stock returns at its snapshot cost), netted with the item's `cost_adjustments` recorded since the sale was saved:
+- returned = max(0, `cost_amount` + those differences), and the opposite difference is recorded as a new `cost_adjustments` row («عكس فرق تكلفة سُجل بعد الفاتورة»).
+- So cancelling a sale and a receipt of the same item gives the same V, Q and profit in either order.
 
 **Cancel receipt:** for each line, V -= `cost_amount` (stock is already validated to stay ≥ 0).
 - If the result is V < 0, or Q becomes 0 with V ≠ 0, set V to the boundary: 0 when V < 0, and 0 when Q = 0.
 - Insert a `cost_adjustments` row (item, document, the amount written off, Arabic reason) so the profit report shows it.
+- When V becomes 0 while pieces remain, set `items.cost_written_off` = 1: their cost is already in the profit. Such items are not «unvalued» and cannot get an opening valuation (it would count their cost twice).
+
+**Zero-cost lines and the opening valuation:** a receipt line without cost, or a sale line with COGS 0, saved before the item's last opening valuation (`items.opening_valued_at`) is reversed at the valuation cost (`items.opening_cost_per_m3`, `costing_line_cost()`), because that is the value the valuation gave its pieces.
+
+**Unvalued stock** (Q > 0, V = 0, not written off): a receipt **with cost** for that item, and cancelling a sale that would return valued pieces to it, are refused until the admin values the stock from the opening valuation page (the message tells staff to ask the admin). This keeps valued and unvalued pieces from being blended.
 
 **Transfers** do not change V.
 
-**Opening valuation** (admin page): lists items with Q > 0 and V = 0. The admin enters a cost per m³, and V is set to `sale_amount_piasters(Q × piece_um3, c)`. This is audited, done in a transaction with the item locked FOR UPDATE, and allowed only while V = 0.
+**Opening valuation** (admin page): lists items with Q > 0, V = 0 and `cost_written_off` = 0. The admin enters a cost per m³, and V is set to `sale_amount_piasters(Q × piece_um3, c)`. This is audited, done in a transaction with the item locked FOR UPDATE, and allowed only while V = 0. It stores c and the time in `opening_cost_per_m3` / `opening_valued_at` (migration 010).
+
+**Editing a document** (`document_replace()`, one transaction): `cancel_document()` runs with a callback that records the replacement in the middle.
+- **Before the replacement:** stock coming back to a warehouse, a sale's cost returning to V, every party reversal, and cash coming back into a box.
+- **After the replacement:** stock deductions the warehouse cannot cover before it (a receipt part of whose pieces were sold, a transfer whose destination sold part), the cost removal of such a receipt, and cash going out of a box (a cash sale's refund). Only the final result must be valid; a real shortage is refused with «لا يمكن حفظ التعديل» and nothing changes.
+- **Receipt edited after part of it was sold:** sold = max(0, q_old − Q before the edit). The sold pieces' cost difference, `muldiv(A_new, sold, q_new) − muldiv(A_old, sold, q_old)`, is a `cost_adjustments` row («فرق تكلفة … قطعة بيعت قبل التعديل»), so the remaining pieces carry the replacement's cost. Cancelling one of those earlier sales later reverses it (rule above).
+- Vouchers follow the same order (`cancel_voucher()` with a callback).
 
 Back-dated documents affect the average in **posting order** (not date order). Document this in the handover.
 
@@ -98,7 +111,7 @@ Review/confirm page shows customer, payment type, paid, remaining and new custom
   - Cancelling a sale whose cash would make the box negative is refused («رصيد الخزنة لا يكفي لرد المبلغ»).
   - Cancelling a credit sale reduces the customer balance (it may become negative, which is a credit balance; that is allowed).
 
-**Manual date:** documents get `doc_date` from `acct_doc_date($in, $errors)`. The documents log and reports filter by `doc_date`. Cancellation uses `now()` for reversal entries.
+**Manual date:** documents get `doc_date` from `acct_doc_date($in, $errors)`. The documents log and reports filter by `doc_date`. Cancellation uses `now()` for reversal entries; an edit uses the original's date for its reversal entries and for the replacement (no manual-date permission needed for that one date).
 
 ## 4. Parties, cash boxes, vouchers, statements (owner: Agent B)
 **Parties.** Route `parties&kind=customer|supplier`, with NAV labels «العملاء» / «الموردون».

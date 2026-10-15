@@ -83,10 +83,14 @@ check_eq('المقاس الخاطئ رصيده صفر والصحيح ٧', [0, 7]
 check('  والبديل مربوط', (int) $doc($nr['id'])['replaces_id'] === $rc['id']);
 $sold = record_sale($pdo, $admin, sale_input($wh2, [[$right, 5, '1000']]));
 $f2 = document_edit_form($pdo, $doc($nr['id']));
-$f2['quantity'] = '6';
-$errors = expect_validation('وارد بيع منه جزء لا يُعدل إذا أصبح الرصيد سالبًا بالإلغاء', fn () => document_replace($pdo, $admin, $nr['id'], $f2, ''));
-check('  رسالة الرصيد', str_contains($errors['document'] ?? '', 'لا يمكن إلغاء'), json_encode($errors, JSON_UNESCAPED_UNICODE));
+$f2['quantity'] = '4';
+$errors = expect_validation('وارد بيع منه ٥ لا يُعدل إلى ٤ قطع (أقل من المباع)', fn () => document_replace($pdo, $admin, $nr['id'], $f2, ''));
+check('  رسالة الرصيد', str_contains($errors['document'] ?? '', 'لا يمكن حفظ التعديل'), json_encode($errors, JSON_UNESCAPED_UNICODE));
 check('  ولم يتغير شيء', $doc($nr['id'])['status'] === 'active' && $stock($right, $wh2) === 2);
+$f2['quantity'] = '6';
+document_replace($pdo, $admin, $nr['id'], $f2, 'وصل ٦ فقط');
+check_eq('  وإلى ٦ قطع يُحفظ: الباقي ١ (بيع منها ٥)', 1, $stock($right, $wh2));
+check_eq('  ولا اختلاف في الأرصدة', [], acct_verify_balances($pdo));
 
 section('تعديل إذن تحويل');
 record_receipt($pdo, $admin, receipt_input($wh1, $mosky, '10', 'cm', '50', 'mm', '3', 'm', '20'));
@@ -205,6 +209,89 @@ check('  ولم يتغير شيء', $vrow($nb['id'])['status'] === 'active' && $
 $fb2['amount'] = '100';
 voucher_replace($pdo, $admin, $nb['id'], $fb2, '');
 check_eq('إنقاصه إلى 100.00 (يكفي رصيد الخزنة) يُحفظ: الخزنة صفر', 0, $balOf($boxB));
+check_eq('  ولا اختلاف في الأرصدة', [], acct_verify_balances($pdo));
+
+section('تعديل وارد بيع جزء منه: تصحيح التكلفة والكمية');
+$as($admin);
+$zan = catalog_create($pdo, 'type', 'زان');
+$sup = party_create($pdo, $admin, 'supplier', ['name' => 'مورد التعديل']);
+$val = fn (int $id): int => money_to_piasters((string) $q("SELECT inventory_value FROM items WHERE id = $id"));
+$adjOf = fn (int $id): int => money_to_piasters((string) $q("SELECT COALESCE(SUM(amount), 0) FROM cost_adjustments WHERE item_id = $id"));
+$rz = record_receipt($pdo, $admin, receipt_input($wh1, $zan, '10', 'cm', '50', 'mm', '3', 'm', '10',
+    ['cost_per_m3' => '10000', 'party_id' => (string) $sup, 'payment_type' => 'credit']));
+$z = item_id_for($pdo, $zan, 100000, 50000, 3000000); // القطعة 0.015 م³
+check_eq('الوارد: ١٠ قطع بقيمة 1500.00 والمورد له 1500.00', [10, 150000, 150000], [$stock($z, $wh1), $val($z), party_balance($pdo, $sup)]);
+$sz = record_sale($pdo, $admin, sale_input($wh1, [[$z, 4, '20000']]));
+check_eq('بيع ٤: الباقي ٦ بقيمة 900.00', [6, 90000], [$stock($z, $wh1), $val($z)]);
+$fz = document_edit_form($pdo, $doc($rz['id']));
+check_eq('نموذج الوارد يحمل التكلفة', '10000', $fz['cost_per_m3']);
+$fz['cost_per_m3'] = '12000';
+$nz = document_replace($pdo, $admin, $rz['id'], $fz, 'التكلفة 12000');
+check_eq('تصحيح التكلفة بعد البيع يُحفظ: الباقي ٦ بقيمة 1080.00 بالتكلفة الجديدة', [6, 108000], [$stock($z, $wh1), $val($z)]);
+check_eq('  وفرق تكلفة القطع الأربع المباعة 120.00 في فروق التكلفة', 12000, $adjOf($z));
+check_eq('  والمورد له 1800.00', 180000, party_balance($pdo, $sup));
+check_eq('  ولا اختلاف في الأرصدة', [], acct_verify_balances($pdo));
+$fz2 = document_edit_form($pdo, $doc($nz['id']));
+$fz2['quantity'] = '8';
+$nz2 = document_replace($pdo, $admin, $nz['id'], $fz2, 'الكمية ٨');
+check_eq('إنقاص الكمية إلى ٨ وقد بيع منها ٤: الباقي ٤ بقيمة 720.00', [4, 72000], [$stock($z, $wh1), $val($z)]);
+check_eq('  وفروق التكلفة كما هي (نفس التكلفة)', 12000, $adjOf($z));
+check_eq('  والمورد له 1440.00', 144000, party_balance($pdo, $sup));
+$fz3 = document_edit_form($pdo, $doc($nz2['id']));
+$fz3['quantity'] = '3';
+$errors = expect_validation('كمية ٣ أقل من المباع (٤): مرفوض', fn () => document_replace($pdo, $admin, $nz2['id'], $fz3, ''));
+check('  برسالة حفظ التعديل والرصيد', str_contains($errors['document'] ?? '', 'لا يمكن حفظ التعديل'), json_encode($errors, JSON_UNESCAPED_UNICODE));
+check('  ولم يتغير شيء', $doc($nz2['id'])['status'] === 'active' && $stock($z, $wh1) === 4 && $val($z) === 72000 && party_balance($pdo, $sup) === 144000);
+check_eq('  ولا اختلاف في الأرصدة', [], acct_verify_balances($pdo));
+cancel_document($pdo, $admin, $sz['id'], 'مرتجع');
+check_eq('إلغاء البيع القديم بعد التعديل: ٨ قطع بقيمة 1440.00 (كلها بالتكلفة المصححة)', [8, 144000], [$stock($z, $wh1), $val($z)]);
+check_eq('  وفرق التكلفة عُكس (المجموع صفر)', 0, $adjOf($z));
+
+section('تعديل وارد بلا تكلفة لم يُبع منه شيء: إضافة التكلفة');
+$rb = record_receipt($pdo, $admin, receipt_input($wh1, $zan, '20', 'cm', '50', 'mm', '3', 'm', '5'));
+$zb = item_id_for($pdo, $zan, 200000, 50000, 3000000); // 0.03 م³
+check_eq('بلا تكلفة: القيمة صفر', [5, 0], [$stock($zb, $wh1), $val($zb)]);
+$fb = document_edit_form($pdo, $doc($rb['id']));
+$fb['cost_per_m3'] = '10000';
+$fb['party_id'] = (string) $sup;
+$fb['payment_type'] = 'credit';
+document_replace($pdo, $admin, $rb['id'], $fb, 'نسيت التكلفة');
+check_eq('بعد إضافة التكلفة: ٥ قطع بقيمة 1500.00', [5, 150000], [$stock($zb, $wh1), $val($zb)]);
+check_eq('  ولا فروق تكلفة', 0, $adjOf($zb));
+
+section('تعديل بيع نقدي نُقلت نقديته من الخزنة');
+$boxS = cash_box_create($pdo, $admin, 'خزنة البيع', '0');
+$boxT = cash_box_create($pdo, $admin, 'خزنة الإدارة ٢', '0');
+$cs = record_sale($pdo, $admin, sale_input($wh1, [[$zb, 1, '20000']], ['payment_type' => 'cash', 'cash_box_id' => (string) $boxS]));
+check_eq('بيع نقدي 600.00 في خزنة البيع', 60000, $balOf($boxS));
+record_voucher($pdo, $admin, 'cash_transfer', $vin(['cash_box_id' => (string) $boxS, 'to_cash_box_id' => (string) $boxT, 'amount' => '600']));
+$fs = document_edit_form($pdo, $doc($cs['id']));
+$fs['lines'][0]['price'] = '22000';
+$ns = document_replace($pdo, $admin, $cs['id'], $fs, 'السعر');
+check_eq('رفع السعر يُحفظ: البديل يدخل 660.00 قبل رد 600.00، فالخزنة 60.00', 6000, $balOf($boxS));
+check_eq('  والرصيد ٤ (البيع ١ كما هو)', 4, $stock($zb, $wh1));
+$fs2 = document_edit_form($pdo, $doc($ns['id']));
+$fs2['lines'][0]['price'] = '18000';
+$errors = expect_validation('خفض السعر إلى 540.00 يحتاج رد 120.00 والخزنة فيها 60.00: مرفوض', fn () => document_replace($pdo, $admin, $ns['id'], $fs2, ''));
+check('  برسالة حفظ التعديل والخزنة', str_contains($errors['document'] ?? '', 'لا يمكن حفظ التعديل') && str_contains($errors['document'] ?? '', 'خزنة البيع'),
+    json_encode($errors, JSON_UNESCAPED_UNICODE));
+check('  ولم يتغير شيء', $doc($ns['id'])['status'] === 'active' && $balOf($boxS) === 6000 && $stock($zb, $wh1) === 4);
+check_eq('  ولا اختلاف في الأرصدة', [], acct_verify_balances($pdo));
+
+section('تعديل تحويل باع المخزن المستلم جزءًا منه');
+$rt = record_receipt($pdo, $admin, receipt_input($wh1, $zan, '30', 'cm', '50', 'mm', '3', 'm', '10',
+    ['cost_per_m3' => '10000', 'party_id' => (string) $sup, 'payment_type' => 'credit']));
+$zt = item_id_for($pdo, $zan, 300000, 50000, 3000000);
+$tt = record_transfer($pdo, $admin, transfer_input($wh1, $wh2, [[$zt, 10]]));
+record_sale($pdo, $admin, sale_input($wh2, [[$zt, 6, '20000']]));
+$ftt = document_edit_form($pdo, $doc($tt['id']));
+$ftt['lines'][0]['quantity'] = '8';
+document_replace($pdo, $admin, $tt['id'], $ftt, 'حُوّل ٨ فقط');
+check_eq('التحويل ٨ بدل ١٠ وقد بيع ٦: المصدر ٢ والمستلم ٢', [2, 2], [$stock($zt, $wh1), $stock($zt, $wh2)]);
+$ftt2 = document_edit_form($pdo, $doc((int) $q("SELECT replaced_by_id FROM documents WHERE id = {$tt['id']}")));
+$ftt2['lines'][0]['quantity'] = '5';
+$errors = expect_validation('تحويل ٥ أقل من المباع في المستلم (٦): مرفوض', fn () => document_replace($pdo, $admin, (int) $ftt2['edit_id'], $ftt2, ''));
+check('  ولم يتغير شيء', $stock($zt, $wh1) === 2 && $stock($zt, $wh2) === 2);
 check_eq('  ولا اختلاف في الأرصدة', [], acct_verify_balances($pdo));
 
 section('الفترة المقفلة');

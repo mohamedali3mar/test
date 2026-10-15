@@ -173,17 +173,23 @@ function document_replace(PDO $pdo, int $userId, int $oldId, array $in, string $
     doc_edit_inherited_date(substr((string) $old['doc_date'], 0, 10));
     try {
         return db_transaction($pdo, function (PDO $pdo) use ($userId, $oldId, $old, $in, $reason, $label) {
-            // القيود العكسية بتاريخ الأصلي (والبديل بنفس التاريخ): كشف ذلك اليوم يبقى متوازنًا، وفحص الخزنة بتاريخ سابق يمر
-            cancel_document($pdo, $userId, $oldId, 'تعديل' . ($reason !== '' ? ': ' . $reason : ''), (string) $old['doc_date']);
-            $new = match ($old['kind']) {
-                'in' => record_receipt($pdo, $userId, $in),
-                'sale' => record_sale($pdo, $userId, $in),
-                'transfer' => record_transfer($pdo, $userId, $in),
-            };
-            if ($new['duplicate']) {
-                // رمز الطلب استُخدم لمستند آخر: لا يُلغى الأصلي
-                throw new ValidationException(['form' => 'هذا النموذج سُجل من قبل. افتح المستند من جديد ثم عدّله.']);
-            }
+            // القيود العكسية بتاريخ الأصلي (والبديل بنفس التاريخ): كشف ذلك اليوم يبقى متوازنًا، وفحص الخزنة بتاريخ سابق يمر.
+            // البديل يُسجل في منتصف الإلغاء: بعد ما يرد للمخازن والخزائن وقبل ما يخرج منها، فوارد بيع جزء منه
+            // وبيع نُقلت نقديته من الخزنة يُعدلان إذا كانت النتيجة النهائية صحيحة.
+            $new = null;
+            cancel_document($pdo, $userId, $oldId, 'تعديل' . ($reason !== '' ? ': ' . $reason : ''), (string) $old['doc_date'],
+                function (PDO $pdo) use ($userId, $old, $in, &$new) {
+                    $new = match ($old['kind']) {
+                        'in' => record_receipt($pdo, $userId, $in),
+                        'sale' => record_sale($pdo, $userId, $in),
+                        'transfer' => record_transfer($pdo, $userId, $in),
+                    };
+                    if ($new['duplicate']) {
+                        // رمز الطلب استُخدم لمستند آخر: لا يُلغى الأصلي
+                        throw new ValidationException(['form' => 'هذا النموذج سُجل من قبل. افتح المستند من جديد ثم عدّله.']);
+                    }
+                    return $new;
+                });
             $pdo->prepare('UPDATE documents SET replaces_id = ? WHERE id = ?')->execute([$oldId, $new['id']]);
             $pdo->prepare('UPDATE documents SET replaced_by_id = ?, cancel_reason = ? WHERE id = ?')
                 ->execute([$new['id'], mb_substr('عُدّل بـ ' . doc_label(['kind' => $new['kind'], 'doc_no' => $new['doc_no']])
