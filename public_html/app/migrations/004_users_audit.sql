@@ -6,11 +6,12 @@
 
 -- الأدوار: admin مدير (كل الصلاحيات)، staff موظف. الحسابات الموجودة قبل الترقية تصبح مديرين.
 -- أمر واحد لكل الأعمدة: تغيير الجدول يُطبق كاملًا أو لا يُطبق، فإعادة التنفيذ بعد فشله آمنة.
+-- و IF NOT EXISTS (MariaDB) تجعل إعادة تنفيذه بعد نجاحه آمنة أيضًا، إذا انقطعت الترقية قبل تسجيل تقدمها.
 ALTER TABLE users
-    ADD COLUMN role ENUM('admin','staff') NOT NULL DEFAULT 'admin' AFTER auth_version,
-    ADD COLUMN is_active TINYINT(1) NOT NULL DEFAULT 1 AFTER role,
-    ADD COLUMN display_name VARCHAR(100) NOT NULL DEFAULT '' AFTER is_active,
-    ADD COLUMN last_seen_at DATETIME NULL AFTER last_login_at;
+    ADD COLUMN IF NOT EXISTS role ENUM('admin','staff') NOT NULL DEFAULT 'admin' AFTER auth_version,
+    ADD COLUMN IF NOT EXISTS is_active TINYINT(1) NOT NULL DEFAULT 1 AFTER role,
+    ADD COLUMN IF NOT EXISTS display_name VARCHAR(100) NOT NULL DEFAULT '' AFTER is_active,
+    ADD COLUMN IF NOT EXISTS last_seen_at DATETIME NULL AFTER last_login_at;
 
 -- سجل المراقبة: صف لكل عملية، يُكتب داخل نفس معاملة العملية فيُحفظ معها أو يتراجع معها.
 -- السجل دائم (سجل محاسبي) ولا يُحذف منه شيء. username و summary لقطة نصية وقت العملية.
