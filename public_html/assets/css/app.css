@@ -310,6 +310,9 @@ td.audit-device { min-width: 140px; }
 .login-box { max-width: 400px; margin: 48px auto 0; padding: 24px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); }
 .login-box h1 { margin-bottom: 4px; }
 .login-mark { display: block; width: 48px; height: 48px; margin-bottom: 12px; color: var(--primary); }
+/* رمز QR للتحقق بخطوتين (twofactor.js): يُرسم بحجم ثابت يكبر مع طول اسم الشركة، فيصغر هنا ليتسع لعرض
+   الشاشة (360 بكسل) بدل التمرير الأفقي، وتبقى حواف مربعاته حادة حتى يقرأه الهاتف */
+[data-otpauth] canvas { display: block; max-width: 100%; height: auto; image-rendering: pixelated; }
 
 /* ---------- المستند المطبوع ---------- */
 .print-toolbar { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
