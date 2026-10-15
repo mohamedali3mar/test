@@ -94,6 +94,7 @@ tests/run_all.sh         # كل الاختبارات بالترتيب، على �
 | `php tests/accounting_e2e.php` | دورة محاسبية كاملة تتطابق فيها الخدمات والتقارير |
 | `php tests/integration_items.php` | صفحة المقاسات: الإخفاء والإظهار والوحدات |
 | `php tests/integration_doc_edit.php` | تعديل المستندات والسندات: الإلغاء والبديل في عملية واحدة، والتاريخ، والصلاحيات |
+| `php tests/integration_costing.php` | التكلفة: المخزون بلا تقييم، والتقييم الافتتاحي عند الإلغاء، ونفس النتيجة بأي ترتيب للإلغاء |
 | `php tests/pdf.php` | ملفات PDF للفاتورة والتقارير |
 | `php tests/xlsx.php` | ملفات Excel وCSV |
 | `python3 -I tests/http_security.py` | الحماية عبر HTTP على خادم حقيقي |
