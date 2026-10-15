@@ -532,6 +532,10 @@ function record_receipt(PDO $pdo, int $userId, array $in): array
             if ($after > MAX_STOCK) {
                 throw new ValidationException(['quantity' => 'الرصيد الناتج أكبر من الحد المسموح للصنف.']);
             }
+            // وارد بتكلفة لمقاس رصيده لم يُقيَّم يخلط القطع بلا قيمة بالمقيّمة: التقييم الافتتاحي أولًا (للمدير)
+            if ($v['cost_piasters'] !== null && costing_unvalued($cost)) {
+                throw new ValidationException(['cost_per_m3' => costing_unvalued_message('وارد بتكلفة له')]);
+            }
             $value = costing_receipt_value($cost['value'], $cost['qty'], $v['quantity'], $v['total_um3'], $v['cost_piasters']);
 
             $docNo = counter_next($pdo, DOC_COUNTERS['in']);
@@ -553,7 +557,8 @@ function record_receipt(PDO $pdo, int $userId, array $in): array
                 'cost_amount' => piasters_to_money($value),
             ]);
             set_stock($pdo, $itemId, $wid, $after, $now);
-            costing_set_value($pdo, $itemId, $cost['value'] + $value);
+            // وارد لصنف بلا رصيد يبدأ رصيدًا جديدًا: ليس رصيدًا خُصمت تكلفته
+            costing_set_value($pdo, $itemId, $cost['value'] + $value, $cost['qty'] === 0 ? false : null);
 
             // القيود: المورد +التكلفة، والمدفوع يخرج من الخزنة (لا تصبح سالبة)
             $desc = 'وارد رقم ' . $docNo;
@@ -829,7 +834,9 @@ function record_sale(PDO $pdo, int $userId, array $in): array
                     'cost_amount' => piasters_to_money($cogs[$idx]),
                 ]);
                 set_stock($pdo, $id, $wid, $after, $now);
-                costing_set_value($pdo, $id, $costs[$id]['value'] - $cogs[$idx]);
+                // قيمة صارت صفرًا بالتقريب والقطع باقية: تكلفتها دخلت تكلفة هذا البيع
+                $left = $costs[$id]['value'] - $cogs[$idx];
+                costing_set_value($pdo, $id, $left, $left === 0 && $costs[$id]['value'] > 0 && $costs[$id]['qty'] > $l['quantity'] ? true : null);
             }
 
             // القيود: العميل +الإجمالي ثم −المدفوع، والمدفوع يدخل الخزنة
@@ -1095,24 +1102,51 @@ function cancel_document(PDO $pdo, int $userId, int $docId, string $reasonRaw, ?
         foreach ($deltas as $k => $d) {
             set_stock($pdo, $d['item'], $d['wh'], (int) $bal[$k] + $d['delta'], $now);
         }
-        // قيمة المخزون: البيع يعيد تكلفته المحفوظة، والوارد يخصم قيمته مع ضبط الحدود وتسجيل الفرق
+        // قيمة المخزون: البيع يعيد تكلفته المحفوظة، والوارد يخصم قيمته مع ضبط الحدود وتسجيل الفرق.
+        // سطر بتكلفة صفر سُجل قبل التقييم الافتتاحي يُعكس بتكلفة التقييم (costing_line_cost).
         $label = doc_label($doc);
+        $sinceSale = [];
+        if ($doc['kind'] === 'sale' && $itemIds) {
+            // فروق التكلفة المسجلة لأصناف الفاتورة بعد حفظها (من إلغاء وارد بعدها)، بقراءة مقفلة بعد قفل الأصناف
+            $in = implode(',', array_fill(0, count($itemIds), '?'));
+            $stmt = $pdo->prepare("SELECT item_id, amount FROM cost_adjustments WHERE item_id IN ($in) AND created_at >= ? LOCK IN SHARE MODE");
+            $stmt->execute([...$itemIds, $doc['created_at']]);
+            foreach ($stmt->fetchAll() as $r) {
+                $sinceSale[(int) $r['item_id']] = ($sinceSale[(int) $r['item_id']] ?? 0) + money_to_piasters((string) $r['amount']);
+            }
+        }
         foreach ($valued ? $lines : [] as $l) {
             $id = (int) $l['item_id'];
-            $lineCost = money_to_piasters((string) ($l['cost_amount'] ?? '0'));
+            $c = $costs[$id];
+            $lineCost = costing_line_cost($c, $l, (string) $doc['created_at']);
             if ($doc['kind'] === 'sale') {
-                $costs[$id]['value'] += $lineCost;
+                // فرق تكلفة سُجل بعد البيع صحّح تكلفة مبيعات شملت هذه الفاتورة؛ بإلغائها يُعكس: ربح سابق (سالب)
+                // يُخصم من التكلفة العائدة، وخسارة سابقة (موجب) تُضاف إليها، بفرق مقابل. فالنتيجة واحدة بأي ترتيب للإلغاء.
+                $net = $sinceSale[$id] ?? 0;
+                $back = max(0, $lineCost + $net);
+                $offset = $lineCost - $back;
+                if (costing_unvalued($c) && ($lineCost > 0 || $back > 0)) {
+                    throw new ValidationException(['document' => sprintf('لا يمكن إلغاء هذا المستند: %s (%s): ', $l['wood_type_name'], fmt_size($l))
+                        . costing_unvalued_message('إلغاء فاتورة تعيد قطعه بتكلفتها')]);
+                }
+                costing_record_adjustment($pdo, $id, $docId, $offset, "إلغاء {$label}: عكس فرق تكلفة سُجل بعد الفاتورة", $userId);
+                $sinceSale[$id] = $net + $offset;
+                $costs[$id]['value'] += $back;
+                // قطع تعود لصنف بلا رصيد بقيمة صفر وتكلفتها محسوبة بالفعل: رصيد خُصمت تكلفته
+                $writtenOff = $c['qty'] === 0 ? ($back === 0 && $lineCost > 0) : null;
             } else {
                 $costs[$id]['qty'] -= (int) $l['quantity'];
-                [$final, $adj] = costing_cancel_receipt_value($costs[$id]['value'], $costs[$id]['qty'], $lineCost);
+                [$final, $adj] = costing_cancel_receipt_value($c['value'], $costs[$id]['qty'], $lineCost);
                 $costs[$id]['value'] = $final;
                 if ($adj !== 0) {
                     costing_record_adjustment($pdo, $id, $docId, $adj, $costs[$id]['qty'] <= 0
                         ? "إلغاء {$label}: نفدت كمية الصنف وبقيت قيمة، فضُبطت قيمة المخزون على صفر"
                         : "إلغاء {$label}: قيمة المخزون المحسوبة أقل من صفر، فضُبطت على صفر", $userId);
                 }
+                // قيمة صُفّرت والقطع باقية: تكلفتها دخلت تكلفة مبيعات سابقة (خُصمت من الأرباح)، وليست رصيدًا بلا تقييم
+                $writtenOff = $costs[$id]['qty'] <= 0 ? false : ($final === 0 && $c['value'] > 0 ? true : null);
             }
-            costing_set_value($pdo, $id, $costs[$id]['value']);
+            costing_set_value($pdo, $id, $costs[$id]['value'], $writtenOff);
         }
         $stmt = $pdo->prepare(
             "UPDATE documents SET status = 'cancelled', cancelled_at = ?, cancelled_by = ?, cancel_reason = ?

@@ -680,7 +680,7 @@ function acct_rep_valuation(PDO $pdo, array $f): array
     }
     $stmt = $pdo->prepare(
         'SELECT i.id, i.wood_type_id, t.name AS type_name, i.width_um, i.thickness_um, i.length_um,
-                i.width_unit, i.thickness_unit, i.length_unit, i.piece_volume_m3, i.inventory_value
+                i.width_unit, i.thickness_unit, i.length_unit, i.piece_volume_m3, i.inventory_value, i.cost_written_off
          FROM items i JOIN wood_types t ON t.id = i.wood_type_id' . $where . '
          ORDER BY t.name, t.id, i.thickness_um, i.width_um, i.length_um, i.id'
     );
@@ -710,7 +710,9 @@ function acct_rep_valuation(PDO $pdo, array $f): array
         $pieceUm3 = m3_to_um3((string) $it['piece_volume_m3']);
         $split = acct_split_value($v, $qtys);
         $avg = ($q > 0 && $v > 0) ? piasters_to_money((int) acct_big_div_half_up(Num::mul((string) $v, '1' . str_repeat('0', VOLUME_SCALE)), Num::mul($pieceUm3, (string) $q))) : null;
-        $status = $q > 0 && $v === 0 ? 'غير مقيّم' : ($q === 0 ? 'قيمة بدون رصيد' : ($v < 0 ? 'قيمة سالبة' : 'مقيّم'));
+        // قيمة صفر لرصيد خُصمت تكلفته من الأرباح (إلغاء وارد بعد بيع جزء منه) ليست «غير مقيّم»: لا يُقيَّم مرة أخرى
+        $status = $q > 0 && $v === 0 ? ((int) $it['cost_written_off'] === 1 ? 'تكلفته محسوبة في الأرباح' : 'غير مقيّم')
+            : ($q === 0 ? 'قيمة بدون رصيد' : ($v < 0 ? 'قيمة سالبة' : 'مقيّم'));
         foreach ($qtys as $wid => $wq) {
             $byWh[$wid] ??= ['qty' => 0, 'um3' => '0', 'value' => 0];
             $byWh[$wid]['qty'] += $wq;
@@ -954,7 +956,7 @@ function acct_dashboard(PDO $pdo, ?string $today = null): array
         return piasters_to_money(money_to_piasters((string) $pdo->query($sql)->fetchColumn()));
     };
     $top = $pdo->query("SELECT id, name, balance FROM parties WHERE kind = 'customer' AND balance > 0 ORDER BY balance DESC, name, id LIMIT 5")->fetchAll();
-    $unvalued = (int) $pdo->query('SELECT COUNT(*) FROM items i WHERE i.inventory_value = 0
+    $unvalued = (int) $pdo->query('SELECT COUNT(*) FROM items i WHERE i.inventory_value = 0 AND i.cost_written_off = 0
         AND (SELECT COALESCE(SUM(s.qty_on_hand), 0) FROM stock s WHERE s.item_id = i.id) > 0')->fetchColumn();
     return [
         'today' => $today,

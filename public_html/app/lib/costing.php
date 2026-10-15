@@ -10,10 +10,19 @@ defined('APP_ROOT') || exit;
  *   وارد بتكلفة c للمتر:   A = sale_amount_piasters(حجم الكمية, c)، و V += A.
  *   وارد بدون تكلفة:       A = V × q ÷ Q (إذا Q > 0) وإلا A = 0 (مخزون بلا قيمة)، و V += A.
  *   بيع q قطعة:            COGS = V × q ÷ Q مقربًا النصف لأعلى (q = Q تعطي V بالضبط)، و V -= COGS.
- *   إلغاء بيع:             V += تكلفة السطر المحفوظة.
+ *   إلغاء بيع:             V += تكلفة السطر المحفوظة، معدلة بفروق التكلفة المسجلة بعد البيع (تُعكس بفرق مقابل)،
+ *                          فلا تختلف النتيجة باختلاف ترتيب إلغاء البيع والوارد.
  *   إلغاء وارد:            V -= تكلفة السطر؛ إذا صارت V سالبة أو نفدت الكمية مع بقاء قيمة تُضبط V = 0
  *                          ويُسجل الفرق في cost_adjustments (الموجب خسارة تُخصم من الربح، والسالب ربح).
  *   التحويل لا يغير V.
+ *
+ * رصيد بلا قيمة (Q > 0 و V = 0) نوعان:
+ *   - لم يُقيَّم (سُجل بدون تكلفة): يظهر في التقييم الافتتاحي، ولا يُقبل له وارد بتكلفة ولا إلغاء بيع يعيد قيمة
+ *     حتى يقيّمه المدير، حتى لا تختلط القطع بلا قيمة بالقطع المقيّمة.
+ *   - خُصمت تكلفته (items.cost_written_off = 1): صارت V صفرًا بإلغاء وارد أو بيع والقطع باقية، وتكلفتها
+ *     محسوبة في الأرباح بالفعل. لا يظهر في التقييم الافتتاحي ولا يُقيَّم (حتى لا تُحسب تكلفته مرتين).
+ * التقييم الافتتاحي يحفظ تكلفة المتر ووقته (opening_cost_per_m3، opening_valued_at): إلغاء وارد بلا تكلفة أو بيع
+ * بتكلفة صفر سُجل قبل التقييم يُعكس بهذه التكلفة، فيخرج من V ما أضافه التقييم لقطعه أو يعود إليها.
  *
  * الترتيب يتبع ترتيب التسجيل وليس التاريخ المحاسبي: المستند بتاريخ سابق يؤثر على المتوسط وقت حفظه.
  * كل الدوال التي تقرأ أو تكتب تُستدعى داخل معاملة، بعد قفل الطرف والخزائن وقبل قفل صفوف stock.
@@ -21,8 +30,9 @@ defined('APP_ROOT') || exit;
 
 /**
  * يقفل صفوف الأصناف FOR UPDATE بترتيب تصاعدي (الخطوة 4 في ترتيب الأقفال) ويقرأ Q لكل صنف بقراءة مقفلة.
+ * opening_c: تكلفة المتر بالقروش في آخر تقييم افتتاحي (أو null)، opening_at: وقته.
  * @param int[] $itemIds
- * @return array<int, array{value:int, qty:int, piece_um3:string}>
+ * @return array<int, array{value:int, qty:int, piece_um3:string, opening_c:?string, opening_at:?string, written_off:bool}>
  */
 function costing_lock_items(PDO $pdo, array $itemIds): array
 {
@@ -32,14 +42,21 @@ function costing_lock_items(PDO $pdo, array $itemIds): array
         return [];
     }
     $in = implode(',', array_fill(0, count($ids), '?'));
-    $stmt = $pdo->prepare("SELECT id, inventory_value, piece_volume_m3 FROM items WHERE id IN ($in) ORDER BY id FOR UPDATE");
+    $stmt = $pdo->prepare(
+        "SELECT id, inventory_value, piece_volume_m3, opening_cost_per_m3, opening_valued_at, cost_written_off
+         FROM items WHERE id IN ($in) ORDER BY id FOR UPDATE"
+    );
     $stmt->execute($ids);
     $out = [];
     foreach ($stmt->fetchAll() as $r) {
+        $opening = $r['opening_cost_per_m3'] !== null && $r['opening_valued_at'] !== null;
         $out[(int) $r['id']] = [
             'value' => money_to_piasters((string) $r['inventory_value']),
             'qty' => 0,
             'piece_um3' => m3_to_um3((string) $r['piece_volume_m3']),
+            'opening_c' => $opening ? (string) money_to_piasters((string) $r['opening_cost_per_m3']) : null,
+            'opening_at' => $opening ? (string) $r['opening_valued_at'] : null,
+            'written_off' => (int) $r['cost_written_off'] === 1,
         ];
     }
     foreach ($ids as $id) {
@@ -56,13 +73,50 @@ function costing_lock_items(PDO $pdo, array $itemIds): array
     return $out;
 }
 
-/** يحفظ V الجديدة لصنف مقفل */
-function costing_set_value(PDO $pdo, int $itemId, int $value): void
+/**
+ * يحفظ V الجديدة لصنف مقفل.
+ * $writtenOff: true = رصيد خُصمت تكلفته، false = ليس كذلك (رصيد جديد أو لم يُقيَّم)، null = بلا تغيير.
+ */
+function costing_set_value(PDO $pdo, int $itemId, int $value, ?bool $writtenOff = null): void
 {
     if ($value < 0) {
         throw new RuntimeException('Negative inventory value');
     }
-    $pdo->prepare('UPDATE items SET inventory_value = ? WHERE id = ?')->execute([piasters_to_money($value), $itemId]);
+    if ($writtenOff === null) {
+        $pdo->prepare('UPDATE items SET inventory_value = ? WHERE id = ?')->execute([piasters_to_money($value), $itemId]);
+        return;
+    }
+    $pdo->prepare('UPDATE items SET inventory_value = ?, cost_written_off = ? WHERE id = ?')
+        ->execute([piasters_to_money($value), $writtenOff ? 1 : 0, $itemId]);
+}
+
+/** رصيد لم يُقيَّم بعد: له قطع وقيمته صفر، وليست قيمة خُصمت تكلفتها من الأرباح */
+function costing_unvalued(array $c): bool
+{
+    return $c['qty'] > 0 && $c['value'] === 0 && !$c['written_off'];
+}
+
+/** رسالة رفض عملية تعيد قيمة لمقاس رصيده لم يُقيَّم: التقييم للمدير، فالموظف يطلبه منه */
+function costing_unvalued_message(string $action): string
+{
+    return sprintf(
+        'لهذا المقاس رصيد بدون تكلفة لم يُقيَّم بعد، فلا يُقبل %s الآن حتى لا تختلط القطع بلا قيمة بالقطع المقيّمة. '
+        . 'اطلب من المدير تقييم رصيده أولًا من صفحة «التقييم الافتتاحي للمخزون»، ثم أعد المحاولة.',
+        $action
+    );
+}
+
+/**
+ * قيمة سطر بتكلفة صفر (وارد بدون تكلفة أو بيع بتكلفة صفر) سُجل قبل آخر تقييم افتتاحي للصنف: حجمه × تكلفة التقييم.
+ * أي سطر آخر يبقى بتكلفته المحفوظة.
+ */
+function costing_line_cost(array $c, array $line, string $docCreatedAt): int
+{
+    $cost = money_to_piasters((string) ($line['cost_amount'] ?? '0'));
+    if ($cost !== 0 || ($line['cost_per_m3'] ?? null) !== null || $c['opening_c'] === null || $docCreatedAt > $c['opening_at']) {
+        return $cost;
+    }
+    return (int) sale_amount_piasters(m3_to_um3((string) $line['total_volume_m3']), $c['opening_c']);
 }
 
 /**
@@ -114,14 +168,14 @@ function costing_record_adjustment(PDO $pdo, int $itemId, ?int $documentId, int 
 
 /* ===================== التقييم الافتتاحي ===================== */
 
-/** الأصناف التي لها رصيد بلا قيمة (Q > 0 و V = 0)، للعرض */
+/** الأصناف التي لها رصيد لم يُقيَّم (Q > 0 و V = 0، وليست تكلفته محسوبة في الأرباح)، للعرض */
 function unvalued_items(PDO $pdo): array
 {
     return $pdo->query(
         'SELECT i.id, i.width_um, i.thickness_um, i.length_um, i.width_unit, i.thickness_unit, i.length_unit,
                 i.piece_volume_m3, t.name AS wood_type_name, SUM(s.qty_on_hand) AS qty
          FROM items i JOIN wood_types t ON t.id = i.wood_type_id JOIN stock s ON s.item_id = i.id
-         WHERE i.inventory_value = 0
+         WHERE i.inventory_value = 0 AND i.cost_written_off = 0
          GROUP BY i.id, i.width_um, i.thickness_um, i.length_um, i.width_unit, i.thickness_unit, i.length_unit, i.piece_volume_m3, t.name
          HAVING SUM(s.qty_on_hand) > 0
          ORDER BY t.name, i.thickness_um, i.width_um, i.length_um, i.id'
@@ -130,7 +184,8 @@ function unvalued_items(PDO $pdo): array
 
 /**
  * يحدد قيمة افتتاحية لصنف له رصيد بلا قيمة: V = sale_amount_piasters(Q × حجم القطعة, c).
- * مسموح فقط والقيمة صفر، بعد قفل الصنف. يُسجل في سجل المراقبة.
+ * مسموح فقط والقيمة صفر وليست تكلفة الرصيد محسوبة في الأرباح، بعد قفل الصنف. يحفظ c ووقت التقييم
+ * لإلغاء المستندات التي سُجلت قبله بتكلفة صفر. يُسجل في سجل المراقبة.
  * @return array{item_id:int, qty:int, value:int}
  */
 function set_opening_valuation(PDO $pdo, int $userId, int $itemId, string $costRaw): array
@@ -151,8 +206,15 @@ function set_opening_valuation(PDO $pdo, int $userId, int $itemId, string $costR
         if ($it['qty'] <= 0) {
             throw new ValidationException(['form' => 'لا يوجد رصيد لهذا الصنف الآن.']);
         }
+        if ($it['written_off']) {
+            throw new ValidationException(['form' => 'قيمة هذا الصنف صفر لأن تكلفة رصيده خُصمت بالفعل من الأرباح عند إلغاء وارد بعد بيع جزء منه '
+                . '(تظهر في «فروق تكلفة المخزون» بتقرير الأرباح)، فلا يُقيَّم مرة أخرى حتى لا تُحسب تكلفته مرتين.']);
+        }
         $value = (int) sale_amount_piasters(Num::mul($it['piece_um3'], (string) $it['qty']), $cost);
-        costing_set_value($pdo, $itemId, $value);
+        costing_set_value($pdo, $itemId, $value, false);
+        // تكلفة المتر ووقت التقييم: إلغاء وارد بلا تكلفة أو بيع بتكلفة صفر سُجل قبل الآن يُعكس بها
+        $pdo->prepare('UPDATE items SET opening_cost_per_m3 = ?, opening_valued_at = ? WHERE id = ?')
+            ->execute([Num::toDecimal($cost, 2), now(), $itemId]);
         acct_audit($pdo, 'opening_valuation', sprintf('تقييم افتتاحي لصنف رقم %d: %s قطعة بقيمة %s', $itemId, $it['qty'], piasters_to_money($value)),
             'item', $itemId, ['qty' => $it['qty'], 'cost_per_m3' => Num::toDecimal($cost, 2), 'value' => piasters_to_money($value)]);
         data_version_bump($pdo);
