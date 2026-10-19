@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# يبني ملف الرفع للاستضافة من محتويات public_html، ثم يتحقق من محتواه.
+# يبني ملف الرفع للاستضافة من ملفات public_html المسجلة في git، ثم يتحقق من محتواه.
 #   dist/wood-inventory-<version>-upload.zip   ← يُرفع ويُفك داخل public_html على Hostinger
 #   dist/wood-inventory-<version>-docs.zip     ← الوثائق (لا تُرفع للاستضافة)
 #   dist/SHA256SUMS
@@ -23,13 +23,30 @@ if grep -rlP '[\x{2013}\x{2014}]' "$ROOT/public_html/app/pages" "$ROOT/public_ht
   fail "long dash found in UI files"
 fi
 
-# البناء من داخل المجلد بالنقطة (وليس *) حتى تدخل ملفات .htaccess
-(cd "$ROOT/public_html" && zip -q -r -X -9 "$UPLOAD" . \
+# الحزمة تُبنى من ملفات public_html المسجلة في git فقط (بمحتواها الحالي على القرص)، لا من كل ما في المجلد:
+# ما تتركه الاختبارات أو التشغيل في app/storage (ذاكرة mPDF المؤقتة وملفات SVG المؤقتة والسجلات والجلسات)
+# وملف الإعدادات وكل ما في .gitignore لا يدخل الحزمة أبدًا، فلا تتغير الحزمة بحالة الجهاز الذي بُنيت عليه.
+git -C "$ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1 || fail "not a git checkout: the upload zip is built from the files tracked by git"
+UNTRACKED="$(git -C "$ROOT" ls-files --others --exclude-standard -- public_html)"
+[ -z "$UNTRACKED" ] || fail "files under public_html are not in git (git add them, or delete them):"$'\n'"$UNTRACKED"
+TRACKED=()
+while IFS= read -r -d '' f; do
+  f="${f#public_html/}"
+  # ملف مسجل حُذف من القرص ولم يُحذف من git بعد: يُبنى المجلد كما هو على القرص
+  if [ -e "$ROOT/public_html/$f" ]; then TRACKED+=("$f"); fi
+done < <(git -C "$ROOT" ls-files -z --cached -- public_html)
+[ "${#TRACKED[@]}" -gt 0 ] || fail "no tracked files under public_html"
+# مدخلات المجلدات أولًا (كما في البناء السابق بـ zip -r) ثم الملفات
+DIRS="$(printf '%s\n' "${TRACKED[@]}" | awk -F/ '{p=""; for (i=1;i<NF;i++) {p=p $i "/"; print p}}' | sort -u)"
+(cd "$ROOT/public_html" && { printf '%s\n' "$DIRS"; printf '%s\n' "${TRACKED[@]}"; } | zip -q -X -9 "$UPLOAD" -@ \
   -x 'app/config.php' 'app/storage/installed.lock' 'app/storage/reset.allow' \
      'app/storage/logs/*.log' 'app/storage/logs/*.log.1' 'app/storage/sessions/sess_*' '*.DS_Store')
 
 # التحقق من المحتوى
 LIST="$(unzip -Z1 "$UPLOAD")"
+# ملفات الحزمة هي ملفات git بالضبط: لا زيادة (ذاكرة مؤقتة أو بيانات تشغيل) ولا نقص
+diff <(grep -v '/$' <<<"$LIST" | sort) <(printf '%s\n' "${TRACKED[@]}" | sort) >&2 \
+  || fail "upload zip files differ from git ls-files public_html (< only in zip, > only in git)"
 for must in .htaccess app/.htaccess app/storage/.htaccess app/storage/sessions/.htaccess app/migrations/.htaccess \
             index.php install.php app/config.sample.php app/migrations/001_initial.sql app/migrations/003_two_factor.sql \
             app/lib/security.php app/lib/totp.php app/lib/tables.php app/lib/exports.php app/pages/asset.php app/pages/export.php app/pages/pdf.php assets/js/app.js assets/js/tables.js assets/js/twofactor.js assets/js/vendor/qrcode.js assets/css/app.css \
@@ -47,7 +64,7 @@ done
 for f in "$ROOT"/public_html/app/migrations/*.sql; do
   grep -qx "app/migrations/$(basename "$f")" <<<"$LIST" || fail "missing app/migrations/$(basename "$f")"
 done
-for mustnot in 'app/config.php' 'installed.lock' 'reset.allow' '\.log$' 'sess_'; do
+for mustnot in 'app/config.php' 'installed.lock' 'reset.allow' '\.log$' 'sess_' 'pdf-cache/mpdf/' '_tempSVG' '\.tmp$'; do
   if grep -qE "$mustnot" <<<"$LIST"; then fail "must not contain $mustnot"; fi
 done
 
