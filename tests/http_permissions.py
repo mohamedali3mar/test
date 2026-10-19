@@ -297,7 +297,7 @@ check('المناطق الحية بمعرفات ثابتة', all(f'id="{i}" data
 check('عمليات الموظف ظاهرة باسمه', staff_name in html and 'فاتورة بيع رقم' in html and 'تحويل رقم' in html and 'إضافة مستخدم' in html)
 check('اسم العميل الخبيث مُهرّب في السجل', '&lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt;' in html and '<script>alert(' not in html)
 check('الجهاز بالعربية', 'كروم على أندرويد' in html)
-check('عنوان IP ظاهر', re.search(r'<td data-label="عنوان IP" class="nowrap">(127\.0\.0\.1|::1)</td>', html) is not None)
+check('عنوان IP ظاهر من اليسار لليمين', re.search(r'<td data-label="عنوان IP" class="nowrap"><bdo dir="ltr">(127\.0\.0\.1|::1)</bdo></td>', html) is not None)
 check('رابط المستند من السجل', f'href="index.php?r=document&amp;id={sale_doc}">عرض المستند</a>' in html)
 check('كل خلايا الجدول لها data-label', re.search(r'<td(?![^>]*data-label)[^>]*>', html.split('id="live-monitor-activity"')[1].split('</section>')[0]) is None)
 check('قسم سجل الدخول', 'سجل الدخول' in html)

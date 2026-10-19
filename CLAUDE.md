@@ -4,6 +4,8 @@ Read this file first, then `PROGRESS_AR.md` (current state and next steps) and `
 what was done, why, how it was verified, the result and the commit). After every finished step: add it to `WORKLOG_AR.md`,
 update `PROGRESS_AR.md`, commit and push.
 The owner communicates in Egyptian Arabic; reply in Arabic. Code comments and UI text are Arabic.
+**Continuing the work:** start with the section «ابدأ من هنا» in `PROGRESS_AR.md`: the current state, the remaining steps in order,
+and how to verify them.
 
 ## What this is
 
