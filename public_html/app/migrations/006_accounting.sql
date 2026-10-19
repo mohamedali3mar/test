@@ -3,6 +3,9 @@
 -- كل المبالغ بالجنيه بخانتين عشريتين (القروش)، وتُحسب في PHP كأعداد صحيحة بالقروش.
 -- الأرصدة المخزنة (parties.balance و cash_boxes.balance) تتغير فقط مع إضافة قيد في دفترها
 -- داخل نفس المعاملة (app/lib/accounting.php)، فيبقى: الرصيد = الافتتاحي + مجموع القيود.
+-- كل أمر آمن لإعادة التنفيذ (IF NOT EXISTS في MariaDB، وشروط WHERE و INSERT IGNORE في البيانات):
+-- إذا انقطعت الترقية بعد تنفيذ أمر وقبل تسجيل تقدمه يُعاد تنفيذه دون خطأ ودون تغيير.
+-- لا يُقسم أمر ولا يُدمج أمران: رقم الأمر يُحفظ في schema_progress لإكمال ترقية متوقفة.
 
 -- العملاء والموردون. الطرف الذي يكون عميلًا ومورّدًا معًا يُسجل مرتين (حسابان مستقلان).
 -- balance موجب = مستحق: على العميل لنا، أو علينا للمورد. سالب = رصيد دائن (دفعة مقدمة).
@@ -174,7 +177,7 @@ CREATE TABLE IF NOT EXISTS cash_ledger (
 
 -- قيمة مخزون الصنف (كل المخازن معًا) لحساب المتوسط المرجح:
 -- متوسط تكلفة القطعة = inventory_value ÷ مجموع القطع في كل المخازن
-ALTER TABLE items ADD COLUMN inventory_value DECIMAL(24,2) NOT NULL DEFAULT 0.00;
+ALTER TABLE items ADD COLUMN IF NOT EXISTS inventory_value DECIMAL(24,2) NOT NULL DEFAULT 0.00;
 
 -- فروق التكلفة: عند إلغاء وارد بعد بيع جزء من الصنف، أو بقاء قيمة بعد نفاد الكمية
 CREATE TABLE IF NOT EXISTS cost_adjustments (
@@ -194,25 +197,25 @@ CREATE TABLE IF NOT EXISTS cost_adjustments (
 
 -- المستندات: التاريخ المحاسبي، العميل أو المورد، طريقة الدفع والخزنة، والتكلفة
 ALTER TABLE documents
-    ADD COLUMN doc_date DATETIME NULL,
-    ADD COLUMN party_id INT UNSIGNED NULL,
-    ADD COLUMN payment_type ENUM('cash','credit','partial') NULL,
-    ADD COLUMN paid_amount DECIMAL(24,2) NULL,
-    ADD COLUMN cash_box_id INT UNSIGNED NULL,
-    ADD COLUMN cash_box_name VARCHAR(100) NULL,
-    ADD COLUMN total_cost DECIMAL(24,2) NULL;
+    ADD COLUMN IF NOT EXISTS doc_date DATETIME NULL,
+    ADD COLUMN IF NOT EXISTS party_id INT UNSIGNED NULL,
+    ADD COLUMN IF NOT EXISTS payment_type ENUM('cash','credit','partial') NULL,
+    ADD COLUMN IF NOT EXISTS paid_amount DECIMAL(24,2) NULL,
+    ADD COLUMN IF NOT EXISTS cash_box_id INT UNSIGNED NULL,
+    ADD COLUMN IF NOT EXISTS cash_box_name VARCHAR(100) NULL,
+    ADD COLUMN IF NOT EXISTS total_cost DECIMAL(24,2) NULL;
 
 UPDATE documents SET doc_date = created_at WHERE doc_date IS NULL;
 
 ALTER TABLE documents
     MODIFY doc_date DATETIME NOT NULL,
-    ADD KEY idx_documents_doc_date (doc_date),
-    ADD KEY idx_documents_kind_doc_date (kind, doc_date),
-    ADD KEY idx_documents_party (party_id),
-    ADD KEY idx_documents_cash_box (cash_box_id),
-    ADD CONSTRAINT fk_documents_party FOREIGN KEY (party_id) REFERENCES parties (id),
-    ADD CONSTRAINT fk_documents_cash_box FOREIGN KEY (cash_box_id) REFERENCES cash_boxes (id),
-    ADD CONSTRAINT chk_documents_payment CHECK (
+    ADD KEY IF NOT EXISTS idx_documents_doc_date (doc_date),
+    ADD KEY IF NOT EXISTS idx_documents_kind_doc_date (kind, doc_date),
+    ADD KEY IF NOT EXISTS idx_documents_party (party_id),
+    ADD KEY IF NOT EXISTS idx_documents_cash_box (cash_box_id),
+    ADD CONSTRAINT fk_documents_party FOREIGN KEY IF NOT EXISTS (party_id) REFERENCES parties (id),
+    ADD CONSTRAINT fk_documents_cash_box FOREIGN KEY IF NOT EXISTS (cash_box_id) REFERENCES cash_boxes (id),
+    ADD CONSTRAINT IF NOT EXISTS chk_documents_payment CHECK (
         (payment_type IS NULL AND paid_amount IS NULL AND cash_box_id IS NULL)
         OR (kind IN ('in','sale') AND payment_type IS NOT NULL AND paid_amount IS NOT NULL AND paid_amount >= 0
             AND (paid_amount = 0 OR cash_box_id IS NOT NULL)
@@ -222,9 +225,9 @@ ALTER TABLE documents
 -- أسطر المستند: تكلفة المتر في الوارد (كما أُدخلت)، وقيمة التكلفة للسطر:
 -- في الوارد = قيمة ما أُضيف للمخزون، وفي البيع = تكلفة البضاعة المباعة بالمتوسط المرجح وقت البيع
 ALTER TABLE document_lines
-    ADD COLUMN cost_per_m3 DECIMAL(12,2) NULL,
-    ADD COLUMN cost_amount DECIMAL(24,2) NULL,
-    ADD CONSTRAINT chk_document_lines_cost CHECK (
+    ADD COLUMN IF NOT EXISTS cost_per_m3 DECIMAL(12,2) NULL,
+    ADD COLUMN IF NOT EXISTS cost_amount DECIMAL(24,2) NULL,
+    ADD CONSTRAINT IF NOT EXISTS chk_document_lines_cost CHECK (
         (cost_per_m3 IS NULL OR cost_per_m3 > 0) AND (cost_amount IS NULL OR cost_amount >= 0)
     );
 

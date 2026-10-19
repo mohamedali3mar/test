@@ -190,6 +190,76 @@ $row = expect_one_audit($pdo, 'تسجيل الترقية', $a0, 'db.migrate', $o
 check_eq('  تفاصيل الترقية', ['applied' => $applied], details_of($row));
 
 /* ---------------------------------------------------------------- */
+section('ترقية انقطعت بعد تنفيذ أمر وقبل تسجيل تقدمه تكمل بالضغط مرة أخرى (003 و004 و006)');
+// MariaDB يكمل أمر ALTER حتى لو توقف PHP أثناءه، فيبقى schema_progress عند الأمر السابق
+// ويُعاد تنفيذ نفس الأمر عند الضغط على الزر مرة أخرى؛ لذلك يجب أن يكون كل أمر آمنًا لإعادة التنفيذ
+$schemaOf = function (PDO $p): array {
+    $out = [];
+    foreach ($p->query('SHOW TABLES')->fetchAll(PDO::FETCH_COLUMN) as $t) {
+        $out[$t] = preg_replace('/ AUTO_INCREMENT=\d+/', '', (string) $p->query("SHOW CREATE TABLE `$t`")->fetch(PDO::FETCH_NUM)[1]);
+    }
+    return $out;
+};
+$refSchema = $schemaOf(fresh_database());
+foreach ([3, 4, 6] as $ver) {
+    $verStmts = split_sql((string) file_get_contents(migration_files()[$ver]));
+    $fails = [];
+    foreach (array_keys($verStmts) as $k) {
+        // قاعدة بالترقيات الأقدم فقط، ثم تُنفذ أوامر الترقية حتى الأمر $k دون تسجيل تقدمه
+        $pdo = database_v1();
+        foreach (migration_files() as $v => $file) {
+            if ($v > 1 && $v < $ver) {
+                foreach (split_sql((string) file_get_contents($file)) as $stmt) {
+                    $pdo->exec($stmt);
+                }
+                save_setting($pdo, 'schema_version', (string) $v);
+            }
+        }
+        foreach (array_slice($verStmts, 0, $k + 1) as $stmt) {
+            $pdo->exec($stmt);
+        }
+        save_setting($pdo, 'schema_progress', $ver . ':' . $k);
+        try {
+            $resumed = run_migrations($pdo);
+            if (($resumed[0] ?? null) !== $ver || pending_migrations($pdo) !== [] || $schemaOf($pdo) !== $refSchema) {
+                $fails[] = "#{$k}: " . json_encode($resumed);
+            }
+        } catch (Throwable $e) {
+            $fails[] = "#{$k}: " . $e->getMessage();
+        }
+    }
+    check(sprintf('الترقية %03d: انقطاع بعد كل أمر من أوامرها (%d) ثم الضغط مرة أخرى يكملها ببنية التثبيت الجديد نفسها', $ver, count($verStmts)),
+        $fails === [], implode(' | ', $fails));
+}
+
+// كل أوامر كل الترقيات تُنفذ مرة ثانية على قاعدة مكتملة فيها بيانات بلا خطأ ولا تغيير
+$pdo = fresh_database();
+$twiceUser = seed_user($pdo, 'owner', 'Owner-Pass-0001');
+act_as($pdo, $twiceUser);
+$twiceWh = catalog_create($pdo, 'warehouse', 'مخزن الترقية');
+$twiceType = catalog_create($pdo, 'type', 'زان الترقية');
+record_receipt($pdo, $twiceUser, receipt_input($twiceWh, $twiceType, '10', 'cm', '5', 'cm', '3', 'm', '20'));
+record_sale($pdo, $twiceUser, sale_input($twiceWh, [[(int) item_id_for($pdo, $twiceType, 100000, 50000, 3000000), 3, '1000']]));
+$tables = $pdo->query('SHOW TABLES')->fetchAll(PDO::FETCH_COLUMN);
+$sums = fn () => $pdo->query('CHECKSUM TABLE `' . implode('`, `', $tables) . '`')->fetchAll(PDO::FETCH_KEY_PAIR);
+$sumsBefore = $sums();
+$schemaBefore = $schemaOf($pdo);
+$twiceErr = [];
+foreach (migration_files() as $v => $file) {
+    foreach (split_sql((string) file_get_contents($file)) as $k => $stmt) {
+        try {
+            $pdo->exec($stmt);
+        } catch (PDOException $e) {
+            $twiceErr[] = sprintf('%03d#%d: %s', $v, $k, $e->getMessage());
+        }
+    }
+}
+check('إعادة تنفيذ كل أوامر كل الترقيات مرة ثانية بلا أخطاء', $twiceErr === [], implode(' | ', $twiceErr));
+check_eq('  ولا تغير البيانات', $sumsBefore, $sums());
+check('  ولا بنية الجداول', $schemaBefore === $schemaOf($pdo) && $schemaBefore === $refSchema);
+act_as_nobody();
+
+/* ---------------------------------------------------------------- */
 section('تثبيت جديد: أول مدير بالقيم الافتراضية للأعمدة');
 $pdo = fresh_database();
 check_eq('كل الترقيات مطبقة (آخرها 4)', max(array_keys(migration_files())), schema_version($pdo));
