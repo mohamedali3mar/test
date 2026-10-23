@@ -111,15 +111,42 @@ function audit_export(PDO $pdo, string $table, string $title, string $format, in
         $subtitle !== '' ? ': ' . $subtitle : ''), 'export', null, ['table' => $table, 'format' => $format, 'rows' => $rows]);
 }
 
-/** يرسل مجموعة البيانات بالصيغة المطلوبة وينهي التنفيذ */
-function export_send(array $ds, string $format): never
+/**
+ * صفوف تُقرأ من البداية في كل تمريرة (مولّد جديد في كل مرة). إذا فشل بناء Excel بعد قراءة جزء من الصفوف
+ * (مساحة القرص مثلًا) يرجع التصدير إلى CSV ويحتاج كل الصفوف، والمولّد (Generator) لا يُقرأ مرتين.
+ */
+final class ExportRows implements IteratorAggregate
+{
+    public function __construct(private Closure $make)
+    {
+    }
+
+    public function getIterator(): Iterator
+    {
+        return ($this->make)();
+    }
+}
+
+/**
+ * يرسل مجموعة البيانات بالصيغة المطلوبة وينهي التنفيذ.
+ * $built(الصيغة المرسلة فعلًا) يُستدعى بعد بناء الملف وقبل إرساله: Excel قد يرجع إلى CSV، والفشل لا يُسجل كتصدير.
+ */
+function export_send(array $ds, string $format, ?Closure $built = null): never
 {
     $name = export_filename((string) $ds['title']);
     if ($format === 'pdf') {
-        pdf_send(pdf_report($ds), $name . '.pdf', false);
+        $bytes = pdf_report($ds);
+        if ($built !== null) {
+            $built('pdf');
+        }
+        pdf_send($bytes, $name . '.pdf', false);
     }
     if ($format === 'csv') {
-        csv_send(csv_build($ds), $name);
+        $bytes = csv_build($ds);
+        if ($built !== null) {
+            $built('csv');
+        }
+        csv_send($bytes, $name);
     }
-    spreadsheet_send($ds, $name, 'xlsx');
+    spreadsheet_send($ds, $name, 'xlsx', $built);
 }

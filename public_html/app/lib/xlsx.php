@@ -148,16 +148,29 @@ function csv_send(string $bytes, string $filename): never
  * يبني التقرير ويرسله للتحميل: xlsx افتراضيًا، ويرجع تلقائيًا إلى CSV إن تعذر xlsx.
  * $filename بدون امتداد أو بأي منهما؛ يُضبط الامتداد حسب الصيغة المرسلة فعلًا.
  */
-function spreadsheet_send(array $dataset, string $filename, string $format = 'xlsx'): never
+function spreadsheet_send(array $dataset, string $filename, string $format = 'xlsx', ?Closure $built = null): never
 {
+    // $built(الصيغة المرسلة فعلًا) يُستدعى بعد بناء الملف وقبل إرساله (التسجيل في المراقبة).
+    // الرجوع إلى CSV يقرأ الصفوف من جديد: الصفوف مصفوفة أو ExportRows، وليست مولّدًا يُقرأ مرة واحدة.
     if ($format !== 'csv') {
         try {
-            xlsx_send(xlsx_build($dataset), $filename);
+            $bytes = xlsx_build($dataset);
         } catch (XlsxUnavailableException $e) {
             error_log('[wood] xlsx export unavailable, sending CSV instead: ' . $e->getMessage());
+            $bytes = null;
+        }
+        if ($bytes !== null) {
+            if ($built !== null) {
+                $built('xlsx');
+            }
+            xlsx_send($bytes, $filename);
         }
     }
-    csv_send(csv_build($dataset), $filename);
+    $bytes = csv_build($dataset);
+    if ($built !== null) {
+        $built('csv');
+    }
+    csv_send($bytes, $filename);
 }
 
 /* ------------------------------------------------------------------ */

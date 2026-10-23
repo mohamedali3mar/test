@@ -167,6 +167,12 @@ render_header($def['title'], 'reports', 'page-report');
       يوجد <?= h(fmt_int($ds['notes']['unvalued'])) ?> صنف له رصيد بدون تكلفة (غير مقيّم)، فقيمة المخزون أقل من الحقيقة.
     </div>
   <?php endif; ?>
+  <?php if (($ds['notes']['nocost']['lines'] ?? 0) > 0): ?>
+    <div class="alert alert-warning" role="status">
+      يوجد <?= h(fmt_int($ds['notes']['nocost']['lines'])) ?> سطر بيع بقيمة <?= h(fmt_money($ds['notes']['nocost']['amount'])) ?>
+      سُجل قبل تفعيل الحسابات بدون تكلفة، فلا يدخل في التكلفة والربح والهامش.
+    </div>
+  <?php endif; ?>
   <?php render_table_tools([
       'key' => 'report.' . $key, 'table' => 'report-table', 'columns' => array_column($ds['columns'], 'label', 'key'),
       'required' => [$ds['columns'][0]['key']],

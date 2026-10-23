@@ -527,6 +527,32 @@ spreadsheet_send($ds, "تقرير", "xlsx");
     check('spreadsheet_send يرسل CSV بدلًا منه', $stdout === "\xEF\xBB\xBFأ\r\n5\r\n'=1\r\n" && $code === 0, json_encode($stdout) . ' ' . $stderr);
 }
 
+section('الرجوع إلى CSV بعد فشل Excel في منتصف الصفوف (مساحة القرص)');
+// سجل المستندات يُصدَّر من مولّد يقرأ قاعدة البيانات. إذا فشل Excel بعد قراءة جزء من الصفوف يجب أن يحتوي CSV على كل الصفوف،
+// وأن تُسجَّل في المراقبة الصيغة المرسلة فعلًا بعد بنائها (CSV)، لا Excel قبل البناء.
+$script = $OUT . '/xlsx_midfail.php';
+file_put_contents($script, '<?php
+require ' . var_export(__DIR__ . '/lib.php', true) . ';
+$c = &settings_cache(); $c = DEFAULT_SETTINGS;
+$pass = 0;
+$make = function () use (&$pass) {
+    $pass++;
+    yield ["a" => "1"];
+    if ($pass === 1) {
+        throw new XlsxUnavailableException("Cannot write a temporary file (disk full?)");
+    }
+    yield ["a" => "2"];
+};
+$ds = ["title" => "ت", "columns" => [["key" => "a", "label" => "أ", "type" => "int"]], "rows" => new ExportRows($make)];
+spreadsheet_send($ds, "تقرير", "xlsx", function (string $sent) { fwrite(STDERR, "SENT:" . $sent . "\n"); });
+');
+$proc = proc_open([PHP_BINARY, $script], [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes, null, ['WOOD_TEST_DB' => test_db_name()] + getenv());
+$stdout = stream_get_contents($pipes[1]);
+$stderr = stream_get_contents($pipes[2]);
+$code = proc_close($proc);
+check('CSV فيه كل الصفوف بعد فشل Excel في المنتصف', $stdout === "\xEF\xBB\xBFأ\r\n1\r\n2\r\n" && $code === 0, json_encode($stdout) . ' ' . $stderr);
+check('  المُرسل المسجل CSV بعد البناء', str_contains($stderr, "SENT:csv\n") && !str_contains($stderr, 'SENT:xlsx'), $stderr);
+
 section('مجلد مؤقت بديل عند تعذر مجلد النظام');
 $script = $OUT . '/xlsx_tmpdir.php';
 file_put_contents($script, '<?php

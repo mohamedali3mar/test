@@ -441,7 +441,11 @@ function acct_report(PDO $pdo, string $key, array $filters): array
 /* ---------------- المبيعات ---------------- */
 
 /** أسطر فواتير البيع السارية حسب التصفية */
-function acct_sales_lines(PDO $pdo, array $f): array
+/**
+ * أسطر البيع السارية حسب التصفية، كمؤشر يُقرأ سطرًا سطرًا (وليس مصفوفة): التقارير تفتح بلا تاريخ،
+ * وتحميل مئات آلاف الأسطر كمصفوفات PHP يتجاوز حد الذاكرة. يُقرأ مرة واحدة فقط.
+ */
+function acct_sales_lines(PDO $pdo, array $f): PDOStatement
 {
     [$where, $params] = acct_date_where('d.doc_date', $f['from'], $f['to']);
     array_unshift($where, "d.kind = 'sale'", "d.status = 'active'");
@@ -468,13 +472,17 @@ function acct_sales_lines(PDO $pdo, array $f): array
          ORDER BY d.doc_date, d.id, l.line_no'
     );
     $stmt->execute($params);
-    return $stmt->fetchAll();
+    return $stmt;
 }
 
-/** يجمع أسطر البيع في مجموعات حسب مفتاح، ويعيد [المجموعات, الإجمالي] */
-function acct_aggregate_sales(array $lines, callable $keyOf): array
+/**
+ * يجمع أسطر البيع في مجموعات حسب مفتاح، ويعيد [المجموعات, الإجمالي].
+ * سطر بلا تكلفة مسجلة (cost_amount NULL: بيع قبل تفعيل الحسابات في الترقية 006) يدخل في الكمية والقيمة،
+ * ولا يدخل في التكلفة والربح والهامش (nocost_*)، حتى لا يظهر بتكلفة صفر وهامش 100٪.
+ */
+function acct_aggregate_sales(iterable $lines, callable $keyOf): array
 {
-    $new = fn () => ['docs' => [], 'qty' => 0, 'um3' => '0', 'amount' => 0, 'cost' => 0];
+    $new = fn () => ['docs' => [], 'qty' => 0, 'um3' => '0', 'amount' => 0, 'cost' => 0, 'lines' => 0, 'nocost_lines' => 0, 'nocost_amount' => 0];
     $groups = [];
     $all = $new();
     foreach ($lines as $l) {
@@ -484,26 +492,44 @@ function acct_aggregate_sales(array $lines, callable $keyOf): array
             $g['docs'][(int) $l['doc_id']] = true;
             $g['qty'] += (int) $l['quantity'];
             $g['um3'] = Num::add($g['um3'], m3_to_um3((string) $l['total_volume_m3']));
-            $g['amount'] += money_to_piasters($l['amount'] ?? '0');
-            $g['cost'] += money_to_piasters($l['cost_amount'] ?? '0');
+            $amount = money_to_piasters($l['amount'] ?? '0');
+            $g['amount'] += $amount;
+            $g['lines']++;
+            if ($l['cost_amount'] === null) {
+                $g['nocost_lines']++;
+                $g['nocost_amount'] += $amount;
+            } else {
+                $g['cost'] += money_to_piasters($l['cost_amount']);
+            }
         }
         unset($g);
     }
     return [$groups, $all];
 }
 
+/** أرقام مجموعة مبيعات. التكلفة والربح والهامش من الأسطر ذات التكلفة فقط، وفارغة إذا لم يكن في المجموعة سطر بتكلفة */
 function acct_sales_figures(array $g): array
 {
-    $profit = $g['amount'] - $g['cost'];
+    $costed = $g['lines'] > $g['nocost_lines'];
+    $revenue = $g['amount'] - $g['nocost_amount'];
+    $profit = $revenue - $g['cost'];
     return [
         'invoices' => count($g['docs']),
         'qty' => $g['qty'],
         'volume' => acct_um3_out($g['um3']),
         'amount' => piasters_to_money($g['amount']),
-        'cost' => piasters_to_money($g['cost']),
-        'profit' => piasters_to_money($profit),
-        'margin' => acct_margin($profit, $g['amount']),
+        'cost' => $costed ? piasters_to_money($g['cost']) : null,
+        'profit' => $costed ? piasters_to_money($profit) : null,
+        'margin' => $costed ? acct_margin($profit, $revenue) : null,
     ];
+}
+
+/** ملاحظة التقرير عن أسطر البيع بلا تكلفة مسجلة، أو [] إن لم توجد */
+function acct_nocost_notes(array $all): array
+{
+    return $all['nocost_lines'] > 0
+        ? ['nocost' => ['lines' => $all['nocost_lines'], 'amount' => piasters_to_money($all['nocost_amount'])]]
+        : [];
 }
 
 function acct_rep_sales_period(PDO $pdo, array $f): array
@@ -522,7 +548,7 @@ function acct_rep_sales_period(PDO $pdo, array $f): array
     }
     $tot = acct_sales_figures($all);
     unset($tot['qty']);
-    return ['rows' => $rows, 'totals' => ['period' => 'الإجمالي'] + $tot];
+    return ['rows' => $rows, 'totals' => ['period' => 'الإجمالي'] + $tot] + array_filter(['notes' => acct_nocost_notes($all)]);
 }
 
 function acct_rep_sales_by(PDO $pdo, array $f): array
@@ -547,7 +573,8 @@ function acct_rep_sales_by(PDO $pdo, array $f): array
     unset($r);
     $columns = ACCT_REPORTS['sales_by']['columns'];
     $columns[0]['label'] = ACCT_DIMENSION_LABELS[$dim];
-    return ['columns' => $columns, 'rows' => $rows, 'totals' => ['label' => 'الإجمالي'] + acct_sales_figures($all)];
+    return ['columns' => $columns, 'rows' => $rows, 'totals' => ['label' => 'الإجمالي'] + acct_sales_figures($all)]
+        + array_filter(['notes' => acct_nocost_notes($all)]);
 }
 
 /* ---------------- الأرباح والمصروفات ---------------- */
@@ -576,8 +603,9 @@ function acct_rep_profit(PDO $pdo, array $f): array
 {
     [, $sales] = acct_aggregate_sales(acct_sales_lines($pdo, $f), fn () => ['all', '']);
     $revenue = $sales['amount'];
+    $nocost = $sales['nocost_amount'];
     $cogs = $sales['cost'];
-    $gross = $revenue - $cogs;
+    $gross = $revenue - $nocost - $cogs;
 
     $byCat = [];
     foreach (acct_expense_rows($pdo, $f) as $e) {
@@ -593,17 +621,20 @@ function acct_rep_profit(PDO $pdo, array $f): array
     $stmt->execute($params);
     $adjust = money_to_piasters((string) $stmt->fetchColumn());
 
-    $rows = [
-        ['label' => 'إيرادات المبيعات', 'amount' => piasters_to_money($revenue)],
-        ['label' => 'تكلفة البضاعة المباعة', 'amount' => piasters_to_money(-$cogs)],
-        ['label' => 'مجمل الربح', 'amount' => piasters_to_money($gross)],
-    ];
+    $rows = [['label' => 'إيرادات المبيعات', 'amount' => piasters_to_money($revenue)]];
+    if ($sales['nocost_lines'] > 0) {
+        // مبيعات قبل تفعيل الحسابات بلا تكلفة: تُستبعد من مجمل الربح بدل حسابها بتكلفة صفر
+        $rows[] = ['label' => 'مبيعات بلا تكلفة مسجلة (لا تدخل في الربح)', 'amount' => piasters_to_money(-$nocost)];
+    }
+    $rows[] = ['label' => 'تكلفة البضاعة المباعة', 'amount' => piasters_to_money(-$cogs)];
+    $rows[] = ['label' => 'مجمل الربح', 'amount' => piasters_to_money($gross)];
     foreach ($byCat as $c) {
         $rows[] = ['label' => 'مصروف: ' . $c['name'], 'amount' => piasters_to_money(-$c['amount'])];
     }
     $rows[] = ['label' => 'إجمالي المصروفات', 'amount' => piasters_to_money(-$expenses)];
     $rows[] = ['label' => 'فروق تكلفة المخزون', 'amount' => piasters_to_money(-$adjust)];
-    return ['rows' => $rows, 'totals' => ['label' => 'صافي الربح', 'amount' => piasters_to_money($gross - $expenses - $adjust)]];
+    return ['rows' => $rows, 'totals' => ['label' => 'صافي الربح', 'amount' => piasters_to_money($gross - $expenses - $adjust)]]
+        + array_filter(['notes' => acct_nocost_notes($sales)]);
 }
 
 function acct_rep_expenses(PDO $pdo, array $f): array
@@ -947,7 +978,7 @@ function acct_dashboard(PDO $pdo, ?string $today = null): array
         return [
             'sales_count' => count($s['docs']),
             'sales_amount' => piasters_to_money($s['amount']),
-            'gross_profit' => piasters_to_money($s['amount'] - $s['cost']),
+            'gross_profit' => piasters_to_money($s['amount'] - $s['nocost_amount'] - $s['cost']),
             'collections' => piasters_to_money($v['collect']),
             'expenses' => piasters_to_money($v['expense']),
         ];

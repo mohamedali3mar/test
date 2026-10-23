@@ -399,6 +399,34 @@ check_eq('الأرصدة', ['3584.50', '540.00', '1500.00', 1], [$dash['cash'], 
 check_eq('أعلى العملاء', [['عميل ب', '310.00'], ['عميل أ', '230.00']], array_map(fn ($c) => [$c['name'], $c['balance']], $dash['top_customers']));
 check_eq('بداية الشهر', '2026-09-01', $dash['month_start']);
 
+/* ---------------- مبيعات بلا تكلفة مسجلة ---------------- */
+section('مبيعات بلا تكلفة مسجلة (فواتير قبل ترقية الحسابات 006)');
+check('أسطر البيع تُقرأ كمؤشر وليس مصفوفة (الذاكرة مع مئات آلاف الأسطر)', acct_sales_lines($pdo, ['from' => null, 'to' => null]) instanceof PDOStatement);
+$saved = $pdo->query("SELECT id, cost_amount FROM document_lines WHERE document_id = $d4")->fetchAll(PDO::FETCH_KEY_PAIR);
+$pdo->prepare('UPDATE document_lines SET cost_amount = NULL WHERE document_id = ?')->execute([$d4]);
+$ds = $R('sales_period');
+check_eq('الفاتورة بلا تكلفة: القيمة تُحسب، والتكلفة والربح والهامش فارغة (وليست صفرًا بهامش 100٪)',
+    $sp('2026-09-20', 1, '0.14', '180.00', null, null, null), $ds['rows'][2]);
+check_eq('  الإجمالي: التكلفة والربح والهامش من الأسطر ذات التكلفة فقط (670 - 460 = 210، والهامش 210 / 670)',
+    $sp('الإجمالي', 4, '0.67', '850.00', '460.00', '210.00', '31.34'), $ds['totals']);
+check_eq('  ملاحظة التقرير بعدد الأسطر وقيمتها', ['lines' => count($saved), 'amount' => '180.00'], $ds['notes']['nocost'] ?? null);
+check_eq('  تحليل المبيعات: نفس الإجمالي', ['850.00', '460.00', '210.00', '31.34'],
+    array_values(array_intersect_key($R('sales_by')['totals'], array_flip(['amount', 'cost', 'profit', 'margin']))));
+$ds = $R('profit');
+check_eq('الأرباح: المبيعات بلا تكلفة تُستبعد من مجمل الربح بسطر واضح', [
+    ['إيرادات المبيعات', '850.00'], ['مبيعات بلا تكلفة مسجلة (لا تدخل في الربح)', '-180.00'], ['تكلفة البضاعة المباعة', '-460.00'], ['مجمل الربح', '210.00'],
+], array_slice($pr($ds), 0, 4));
+check_eq('  صافي الربح', '-877.50', $ds['totals']['amount']);
+$dash = acct_dashboard($pdo, '2026-09-20');
+check_eq('لوحة التحكم: مجمل ربح اليوم والشهر بلا الفاتورة', ['0.00', '180.00'], [$dash['day']['gross_profit'], $dash['month']['gross_profit']]);
+[$html, $w] = render_page('reports', ['report' => 'sales_period']);
+check('صفحة التقرير: تنبيه الأسطر بلا تكلفة', $w === [] && str_contains($html, 'سُجل قبل تفعيل الحسابات بدون تكلفة') && str_contains($html, h(fmt_money('180.00'))));
+$up = $pdo->prepare('UPDATE document_lines SET cost_amount = ? WHERE id = ?');
+foreach ($saved as $lineId => $cost) {
+    $up->execute([$cost, $lineId]);
+}
+check_eq('  بعد إرجاع التكلفة: لا ملاحظة والإجمالي كما كان', [null, '242.00'], [$R('sales_period')['notes'] ?? null, $R('sales_period')['totals']['profit']]);
+
 /* ---------------- الصفحات ---------------- */
 section('عرض الصفحات');
 $_SESSION = ['user_id' => $uid, 'username' => 'admin', 'auth_version' => 1, 'role' => 'admin'];

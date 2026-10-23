@@ -62,7 +62,8 @@ if ($table === 'inventory') {
         'title' => 'الفواتير والحركات',
         'subtitle' => $req['subtitle'],
         'columns' => documents_export_columns($req['show_branch']),
-        'rows' => documents_export_rows($pdo, $req),
+        // تُقرأ من جديد إذا رجع Excel إلى CSV بعد قراءة جزء منها
+        'rows' => new ExportRows(fn () => documents_export_rows($pdo, $req)),
         'totals' => null,
         'generated_at' => now(),
     ];
@@ -86,8 +87,11 @@ if (($err = export_limit_error($rows, $format)) !== null) {
 }
 $ds = dataset_visible_columns($ds, $visible);
 
-audit_export($pdo, $table === 'report' ? 'report.' . $key : $table, (string) $ds['title'], $format, $rows, (string) $ds['subtitle']);
 export_rate_note();
 // الجلسة لم تعد لازمة؛ إغلاقها لا يحجز باقي صفحات المستخدم أثناء إنشاء ملف كبير
 session_write_close();
-export_send($ds, $format);
+// التسجيل في المراقبة بعد بناء الملف فعلًا وبالصيغة المرسلة (Excel قد يرجع إلى CSV)
+$audited = $table === 'report' ? 'report.' . $key : $table;
+export_send($ds, $format, function (string $sent) use ($pdo, $audited, $ds, $rows): void {
+    audit_export($pdo, $audited, (string) $ds['title'], $sent, $rows, (string) $ds['subtitle']);
+});
